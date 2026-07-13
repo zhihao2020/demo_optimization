@@ -355,9 +355,7 @@ package TypicalScenarios "典型场景模型"
     parameter Modelica.SIunits.TimeAging rate_max = 0.0025 / 60 "最大变负荷速率";
 
     parameter TypicalScensrio.Utilities.Types.Cost Capex = 3e9 "造价";
-    parameter Real k = 1 "罚函数系数";
-
-    Real C_penality "罚函数";
+    // 经济惩罚项已删除；约束/惩罚由 Python 侧后续计算。
 
     // SI.TimeAging rate "负荷变化速率";
     // SI.Power P_act0(start = -table[1,2] * P_cap);
@@ -393,10 +391,8 @@ package TypicalScenarios "典型场景模型"
     // SI.Power P_act
   equation
     positivePlug.P_plan = -u_dispatch * P_cap;
-    // positivePlug.C = -positivePlug.P_act * positivePlug.c2 / 3.6e6 + k * max(positivePlug.P_act + P_min, 0) - k * min(P_max + positivePlug.P_act, 0);
-    positivePlug.C = -positivePlug.P_act * positivePlug.c2 / 3.6e6 + C_penality;
-    // C_penality = k * P_cap * (e ^ max(positivePlug.P_act / P_cap + P_min / P_cap, 0) - 1) + k * (e ^ (-min(P_max / P_cap + positivePlug.P_act / P_cap, 0)) - 1);
-    C_penality = k * P_cap * (e ^ max(positivePlug.P_act + P_min, 0) - 1) + k * (e ^ (-min(P_max + positivePlug.P_act, 0)) - 1);
+    // 仅保留燃料/电价现金流；原指数经济罚函数已删除（易 Inf/NaN，改由 Python 计算）。
+    positivePlug.C = -positivePlug.P_act * positivePlug.c2 / 3.6e6;
 
     positivePlug.C - C = 0;
     positivePlug.Capex = Capex;
@@ -584,10 +580,9 @@ package TypicalScenarios "典型场景模型"
     parameter Real Capex = 1e7 "造价，单位：元/千瓦时";
     parameter Real SOC_start = 0.5;
     parameter Real eta = 0.85 "电池充放效率";
-    parameter Real k = 1 "SOC罚函数系数";
+    // 经济惩罚项已删除；SOC 约束/惩罚由 Python 侧后续计算。
     parameter TypicalScensrio.Utilities.Types.Cost Income_start = 0;
     TypicalScensrio.Utilities.Types.Cost Income(start = Income_start);
-    Real C_penality "罚函数";
     Real SOC(start = SOC_start);
     // Real SOC0(start = SOC_start);
     // SI.Power P "充放电功率";
@@ -605,16 +600,12 @@ package TypicalScenarios "典型场景模型"
       extent = {{-14.0, -14.0}, {14.0, 14.0}})));
   equation
     PBS.P_plan = u_dispatch * P_cap;
+    // 原 SOC 指数罚函数已删除；经济惩罚由 Python 侧后续计算。
     if PBS.P_act >= 0 then
-      // PBS.C = -PBS.P_act * PBS.c1 / 3.6e6 - k * min(SOC - SOC_min, 0) - k * min(SOC_max - SOC, 0);
-      PBS.C = -PBS.P_act * PBS.c1 / 3.6e6 + C_penality;
-      C_penality = k * E_cap * (e ^ (-min(SOC - SOC_min, 0)) - 1) + k * (e ^ (-min(SOC_max - SOC, 0)) - 1);
-
+      PBS.C = -PBS.P_act * PBS.c1 / 3.6e6;
       der(SOC) = PBS.P_act / E_cap;
     else
-      // PBS.C = -PBS.P_act * PBS.c2 / 3.6e6 - k * min(SOC - SOC_min, 0) - k * min(SOC_max - SOC, 0);
-      PBS.C = -PBS.P_act * PBS.c2 / 3.6e6 + C_penality;
-      C_penality = k * E_cap * (e ^ (-min(SOC - SOC_min, 0)) - 1) + k * (e ^ (-min(SOC_max - SOC, 0)) - 1);
+      PBS.C = -PBS.P_act * PBS.c2 / 3.6e6;
       der(SOC) = PBS.P_act / E_cap / eta;
     end if;
     PBS.P_act = PBS.P_plan;
@@ -674,14 +665,13 @@ package TypicalScenarios "典型场景模型"
   end Battery;
   model Bus "功率母线"
     parameter TypicalScensrio.Utilities.Types.Cost Income_start = 0;
-    parameter Real k = 1 "电力系统惩罚因子调节系数";
+    // 经济惩罚项已删除；弃电/缺供惩罚由 Python 侧基于 p_curtailment/p_unserved 计算。
     TypicalScensrio.Utilities.Types.Cost Income(start = Income_start);
     TypicalScensrio.Utilities.Types.Cost Capex "造价";
-    Modelica.SIunits.Power P_res "功率偏差，缺口或弃电";
+    Modelica.SIunits.Power P_res "功率偏差：负=弃电，正=缺供；顶层拆为 p_curtailment/p_unserved";
     Modelica.SIunits.Power P_res1 "功率偏差，缺口或弃电";
     Modelica.SIunits.Power P_res2 "功率偏差，缺口或弃电";
-    Real OPT_goal "优化目标";
-    Real C_penality "罚函数";
+    Real OPT_goal "内部累计现金流（仅内部记账，顶层不再导出）";
 
     annotation (Icon(coordinateSystem(extent = {{-100.0, -300.0}, {100.0, 300.0}},
       grid = {2.0, 2.0}), graphics = {Rectangle(origin = {6.0, 26.0},
@@ -750,8 +740,8 @@ package TypicalScenarios "典型场景模型"
 
     // 造价
     Capex = Power_PV.Capex + Power_WT.Capex + Power_TP.Capex + Power_BT.Capex + Power_CAES.Capex + Power_Eload.Capex + Power_Gird.Capex;
-    der(Income) = (Power_PV.C + Power_WT.C + Power_TP.C + Power_BT.C + Power_CAES.C + Power_Eload.C + Power_Gird.C) - C_penality;
-    C_penality = (k * P_res) ^ 2;
+    // 原 (k*P_res)^2 惩罚已删除；仅累加各设备现金流。
+    der(Income) = Power_PV.C + Power_WT.C + Power_TP.C + Power_BT.C + Power_CAES.C + Power_Eload.C + Power_Gird.C;
 
   end Bus;
   package CompressedAirEnergyStorage "压缩空气储能系统数据模型"
@@ -763,7 +753,7 @@ package TypicalScenarios "典型场景模型"
       parameter Modelica.SIunits.Power P_cap(displayUnit = "MW") = 1.5e8 "功率装机容量";
       parameter Modelica.SIunits.Energy E_cap = 400e6 * 3600 "储能装机容量";
       parameter Real Capex = 1e7 "造价，单位：元/千瓦时";
-      parameter Real k = 1 "SOC罚函数系数";
+      // 经济惩罚项已删除；气/热/冷罐 SOC 约束与惩罚由 Python 侧后续计算。
       parameter TypicalScensrio.Utilities.Types.Cost Income_start = 0;
       parameter Modelica.SIunits.Length level_coldtank_start = 30;
       parameter Modelica.SIunits.Length level_hottank_start = 30;
@@ -773,9 +763,6 @@ package TypicalScenarios "典型场景模型"
       parameter Modelica.SIunits.SpecificEnthalpy h_gastank_start = 276700;
 
 
-      Real C_GasTank_penality "罚函数";
-      Real C_HotTank_penality "罚函数";
-      Real C_ColdTank_penality "罚函数";
       TypicalScensrio.Utilities.Types.Cost Income(start = Income_start);
       Modelica.Blocks.Sources.CombiTimeTable Table(table = table,
         extrapolation = Modelica.Blocks.Types.Extrapolation.LastTwoPoints,
@@ -1030,16 +1017,11 @@ package TypicalScenarios "典型场景模型"
         Mdot_g2.mflow_in = 0;
       end if;
       PBS.P_plan = u_dispatch * P_cap;
+      // 原气/热/冷罐 SOC 指数罚函数已删除；经济惩罚由 Python 侧后续计算。
       if PBS.P_act >= 0 then
-        PBS.C = -PBS.P_act * PBS.c1 / 3.6e6 + C_GasTank_penality + C_HotTank_penality + C_ColdTank_penality;
-        C_GasTank_penality = k * E_cap * (e ^ (-min(gastank.SOC - gastank.SOC_min, 0)) - 1) + k * (e ^ (-min(gastank.SOC_max - gastank.SOC, 0)) - 1);
-        C_HotTank_penality = k * E_cap * (e ^ (-min(hottank.SOC - hottank.SOC_min, 0)) - 1) + k * (e ^ (-min(hottank.SOC_max - hottank.SOC, 0)) - 1);
-        C_ColdTank_penality = k * E_cap * (e ^ (-min(coldtank.SOC - coldtank.SOC_min, 0)) - 1) + k * (e ^ (-min(coldtank.SOC_max - coldtank.SOC, 0)) - 1);
+        PBS.C = -PBS.P_act * PBS.c1 / 3.6e6;
       else
-        PBS.C = -PBS.P_act * PBS.c2 / 3.6e6 + C_GasTank_penality + C_HotTank_penality + C_ColdTank_penality;
-        C_GasTank_penality = k * E_cap * (e ^ (-min(gastank.SOC - gastank.SOC_min, 0)) - 1) + k * (e ^ (-min(gastank.SOC_max - gastank.SOC, 0)) - 1);
-        C_HotTank_penality = k * E_cap * (e ^ (-min(hottank.SOC - hottank.SOC_min, 0)) - 1) + k * (e ^ (-min(hottank.SOC_max - hottank.SOC, 0)) - 1);
-        C_ColdTank_penality = k * E_cap * (e ^ (-min(coldtank.SOC - coldtank.SOC_min, 0)) - 1) + k * (e ^ (-min(coldtank.SOC_max - coldtank.SOC, 0)) - 1);
+        PBS.C = -PBS.P_act * PBS.c2 / 3.6e6;
       end if;
       PBS.P_act = PBS.P_plan;
 
