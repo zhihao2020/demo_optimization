@@ -14,5 +14,5 @@ build/
 reference_modelica_code/
 *.assets/
 outputs/
-resources/
+
 *.log
