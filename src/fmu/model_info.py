@@ -1,4 +1,7 @@
-"""从 FMU 的 modelDescription 读取输入/输出清单（只读，不仿真）。"""
+"""从 FMU 的 modelDescription 读取输入/输出清单（只读，不仿真）。
+
+用于脚本检查与 registry 构建前的元数据审计，不启动 solver。
+"""
 
 from __future__ import annotations
 
@@ -11,6 +14,8 @@ import fmpy
 
 @dataclass
 class ModelVariable:
+    """单个 modelDescription 变量的精简视图。"""
+
     name: str
     causality: str
     description: str
@@ -20,6 +25,8 @@ class ModelVariable:
 
 @dataclass
 class ModelInfo:
+    """FMU 静态元数据：名称、FMI 版本、默认实验、变量列表。"""
+
     path: Path
     model_name: str
     fmi_version: str
@@ -36,6 +43,7 @@ class ModelInfo:
         return [v for v in self.variables if v.causality == "output"]
 
     def summary_dict(self) -> dict[str, Any]:
+        """便于 JSON 打印的摘要（不含全部变量详情）。"""
         return {
             "path": str(self.path),
             "model_name": self.model_name,
@@ -49,6 +57,7 @@ class ModelInfo:
 
 
 def read_model_info(fmu_path: Path) -> ModelInfo:
+    """解析 FMU ZIP 内 modelDescription，不 instantiate。"""
     md = fmpy.read_model_description(str(fmu_path))
 
     step_size = None

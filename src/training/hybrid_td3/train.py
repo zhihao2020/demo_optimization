@@ -1,4 +1,8 @@
-"""Hybrid-GiveSafe-TD3 训练入口。禁止 fallback；Phase E 默认阻断。"""
+"""Hybrid-GiveSafe-TD3 训练入口。
+
+``run_smoke`` / ``run_short`` / ``run_formal`` 由 ``scripts/train_hybrid_td3.py`` 调用。
+禁止规则 fallback；GiveSafe 重采样失败则抛错/截断，不伪造合法动作。
+"""
 
 from __future__ import annotations
 
@@ -27,6 +31,8 @@ from .givesafe_collector import GiveSafeTransitionCollector
 
 
 class RandomFeasiblePolicy:
+    """在当前动态可行域内均匀采样，用作探索热身与基线对比。"""
+
     def __init__(self, env: PowerSystemEnv):
         self.env = env
 

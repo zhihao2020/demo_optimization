@@ -11,6 +11,8 @@ CHARGE_HI = 1.0
 
 
 class HybridActionDecoder:
+    """把 caes_mode+magnitude 线性映射到 CAES 合法闭区间，火电/电池原样透传。"""
+
     def decode(self, action: HybridAction) -> PhysicalFmuAction:
         mag = 0.0 if action.caes_mode == CaesMode.IDLE else float(action.caes_magnitude)
         if action.caes_mode == CaesMode.DISCHARGE:
@@ -21,7 +23,11 @@ class HybridActionDecoder:
             u_caes = CHARGE_LO + mag * (CHARGE_HI - CHARGE_LO)
         else:
             raise ValueError(f"未知 CaesMode: {action.caes_mode}")
-        return PhysicalFmuAction(u_tp=float(action.u_tp), u_battery=float(action.u_battery), u_caes=float(u_caes))
+        return PhysicalFmuAction(
+            u_tp=float(action.u_tp),
+            u_battery=float(action.u_battery),
+            u_caes=float(u_caes),
+        )
 
     def decode_dict(self, action: dict) -> PhysicalFmuAction:
         mode = action["caes_mode"]
@@ -30,6 +36,14 @@ class HybridActionDecoder:
         mag = float(action["caes_magnitude"])
         if hasattr(mag, "__len__"):
             mag = float(mag[0]) if len(mag) else 0.0
-        u_tp = float(action["u_tp"][0] if hasattr(action["u_tp"], "__len__") else action["u_tp"])
-        u_bat = float(action["u_battery"][0] if hasattr(action["u_battery"], "__len__") else action["u_battery"])
-        return self.decode(HybridAction(u_tp=u_tp, u_battery=u_bat, caes_mode=mode, caes_magnitude=mag))
+        u_tp = float(
+            action["u_tp"][0] if hasattr(action["u_tp"], "__len__") else action["u_tp"]
+        )
+        u_bat = float(
+            action["u_battery"][0]
+            if hasattr(action["u_battery"], "__len__")
+            else action["u_battery"]
+        )
+        return self.decode(
+            HybridAction(u_tp=u_tp, u_battery=u_bat, caes_mode=mode, caes_magnitude=mag)
+        )

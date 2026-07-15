@@ -24,6 +24,7 @@ class ModeMask:
 
     def as_bool_array(self):
         import numpy as np
+
         return np.asarray([self.discharge, self.idle, self.charge], dtype=bool)
 
     def as_dict(self) -> dict[str, bool]:
@@ -32,6 +33,7 @@ class ModeMask:
     def logits_mask_value(self, fill: float = -1e9):
         """返回加到 logits 上的 mask（非法模式为 fill）。"""
         import numpy as np
+
         values = np.zeros(3, dtype=np.float32)
         if not self.discharge:
             values[0] = fill

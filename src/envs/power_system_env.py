@@ -1,4 +1,10 @@
-"""混合动作 Gymnasium 环境：Dict 动作空间 + 动态可行域 + 硬约束预检。"""
+"""混合动作 Gymnasium 环境：Dict 动作空间 + 动态可行域 + 硬约束预检。
+
+数据流概要：
+  策略 HybridAction → Decoder → 物理 {u_tp,u_battery,u_caes}
+  →（可选 GiveSafe）→ FmuAdapter.step → 经济 RewardCalculator
+  非法/FMU 失败：reward=0、truncated=True，不写入经济 replay。
+"""
 
 from __future__ import annotations
 
@@ -53,6 +59,13 @@ class HybridDictSpace(Dict):
 
 
 class PowerSystemEnv(gym.Env):
+    """火电+电池+CAES+风光荷的一小时决策环境。
+
+    - 动作：Dict（连续火电/电池 + 离散 CAES 模式 + 幅值），非凸合法集由 Oracle 表达。
+    - 观测：物理输出（固定顺序）+ 可选 24h 日前 forecast。
+    - 硬约束拒绝不调用 FMU、不算经济 reward；见 ``docs/RL奖励于成本配置.md``。
+    """
+
     metadata = {"render_modes": []}
 
     def __init__(
@@ -66,6 +79,7 @@ class PowerSystemEnv(gym.Env):
         run_id: str = "default",
         forecast_enabled: bool | None = None,
     ):
+        """加载 YAML、构建 registry/FMU/Oracle；``adapter`` 可注入假对象便于单测。"""
         super().__init__()
         self.root = Path(__file__).resolve().parents[2]
         self.config_path = self._resolve(config_path)
@@ -198,6 +212,7 @@ class PowerSystemEnv(gym.Env):
         return observation, info
 
     def step(self, action: dict | HybridAction):
+        """预检 →（合法则）推进 FMU → 经济 reward；失败返回 reward=0 且 truncated。"""
         if self.last_outputs is None:
             raise RuntimeError("必须先 reset")
         action_meta = dict(self._pending_action_meta)

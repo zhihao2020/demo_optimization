@@ -1,4 +1,4 @@
-"""Hybrid-TD3 / Hybrid-GiveSafe-TD3。"""
+"""Hybrid-TD3 / Hybrid-GiveSafe-TD3：Actor-Critic、过滤 buffer、合法转移采集。"""
 
 from .actor import HybridActor
 from .critic import HybridCritic

@@ -1,4 +1,8 @@
-"""经济 reward：仅评价合法物理轨迹。硬约束与 FMU 失败不进入 reward。"""
+"""经济 reward：仅评价合法物理轨迹。硬约束与 FMU 失败不进入 reward。
+
+正式公式：``r = -C_sys / C_ref + b_SOC``（仅完整合法 episode 末步可发终端 SOC 奖励）。
+成本分项与标定见 ``docs/RL奖励于成本配置.md``、``src/config/reward_config.yaml``。
+"""
 
 from __future__ import annotations
 
@@ -13,6 +17,11 @@ class IncompleteRewardConfigError(RuntimeError):
 
 
 class RewardCalculator:
+    """把一步 FMU 输出折算为系统成本与归一化经济奖励。
+
+    ``require_complete=True`` 时强制 C_ref / 电价 / 终端 SOC 参数齐全，防止冒充正式训练。
+    """
+
     def __init__(self, config: dict[str, Any], *, require_complete: bool = False):
         self.config = config
         self.dt_hours = float(config["decision_interval_seconds"]) / 3600.0
@@ -67,6 +76,7 @@ class RewardCalculator:
         return default if value is None else float(value)
 
     def raw_costs(self, outputs: dict[str, float], previous_thermal: float) -> dict[str, float]:
+        """七项原始成本（元/步）：电网、火电、储能吞吐、弃电、缺供、爬坡。"""
         dt, power_to_mw = self.dt_hours, 1e-6
         p_grid = float(outputs.get("p_grid", 0.0))
         p_thermal = abs(float(outputs.get("p_thermal", 0.0)))
@@ -129,6 +139,7 @@ class RewardCalculator:
         no_failure: bool,
         valid_episode_steps: int | None = None,
     ) -> tuple[float, dict[str, float]]:
+        """返回 (reward, 分项字典)。终端 bonus 受完整步数/无失败门控。"""
         costs = self.raw_costs(outputs, previous_thermal)
         cref = self._nested(self.config, "cost_reference", "value")
         if cref is None or float(cref) <= 0:

@@ -1,3 +1,8 @@
+"""训练期审计回调（主要为遗留 SB3 路径保留）。
+
+正式 Hybrid-GiveSafe-TD3 使用 evaluate_td3 / collector 写轨迹，不必依赖本回调。
+"""
+
 from __future__ import annotations
 
 import csv

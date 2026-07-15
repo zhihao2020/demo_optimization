@@ -1,10 +1,12 @@
 """SafetyClassifier / FeasibilityCalibrator：与经济 Critic 分离，优化 unsafe recall。"""
+
 from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 import numpy as np
+
 FEATURE_KEYS = (
     "battery_soc",
     "caes_gas_soc",
@@ -23,6 +25,8 @@ FEATURE_KEYS = (
     "dist_gas_min",
     "dist_gas_max",
 )
+
+
 @dataclass
 class SafetyMetrics:
     unsafe_recall: float
@@ -34,6 +38,7 @@ class SafetyMetrics:
     n_unsafe: int
     threshold: float
     model_version: str
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "unsafe_recall": self.unsafe_recall,
@@ -47,11 +52,14 @@ class SafetyMetrics:
             "model_version": self.model_version,
             "gate_metric": "false_safe_rate",
         }
+
+
 class SafetyClassifier:
     """逻辑回归风格安全分类器：P(safe | s,a)。
     标签：1=post-step 成功（safe），0=post-step 硬失败（unsafe）。
     门控指标：false_safe_rate = FN_unsafe / n_unsafe（把危险判成安全）。
     """
+
     def __init__(
         self,
         *,
@@ -62,9 +70,14 @@ class SafetyClassifier:
     ):
         self.threshold = float(threshold)
         self.model_version = model_version
-        self.weights = weights if weights is not None else np.zeros(len(FEATURE_KEYS), dtype=np.float64)
+        self.weights = (
+            weights
+            if weights is not None
+            else np.zeros(len(FEATURE_KEYS), dtype=np.float64)
+        )
         self.bias = float(bias)
         self._fitted = weights is not None
+
     def featurize(
         self,
         outputs: Mapping[str, float],
@@ -72,8 +85,16 @@ class SafetyClassifier:
         distances: Mapping[str, float] | None = None,
     ) -> np.ndarray:
         mode = int(action.get("caes_mode", 1))
-        u_tp = float(action["u_tp"][0] if hasattr(action.get("u_tp"), "__len__") else action.get("u_tp", 1.0))
-        u_bat = float(action["u_battery"][0] if hasattr(action.get("u_battery"), "__len__") else action.get("u_battery", 0.0))
+        u_tp = float(
+            action["u_tp"][0]
+            if hasattr(action.get("u_tp"), "__len__")
+            else action.get("u_tp", 1.0)
+        )
+        u_bat = float(
+            action["u_battery"][0]
+            if hasattr(action.get("u_battery"), "__len__")
+            else action.get("u_battery", 0.0)
+        )
         mag = float(
             action["caes_magnitude"][0]
             if hasattr(action.get("caes_magnitude"), "__len__")
@@ -94,14 +115,34 @@ class SafetyClassifier:
                 1.0 if mode == 1 else 0.0,
                 1.0 if mode == 2 else 0.0,
                 mag,
-                float(dist.get("battery_soc_to_min", outputs.get("battery_soc", 0.5) - 0.1)),
-                float(dist.get("battery_soc_to_max", 0.9 - float(outputs.get("battery_soc", 0.5)))),
-                float(dist.get("caes_gas_soc_to_min", float(outputs.get("caes_gas_soc", 0.8)) - 0.6)),
-                float(dist.get("caes_gas_soc_to_max", 1.0 - float(outputs.get("caes_gas_soc", 0.8)))),
+                float(
+                    dist.get(
+                        "battery_soc_to_min", outputs.get("battery_soc", 0.5) - 0.1
+                    )
+                ),
+                float(
+                    dist.get(
+                        "battery_soc_to_max",
+                        0.9 - float(outputs.get("battery_soc", 0.5)),
+                    )
+                ),
+                float(
+                    dist.get(
+                        "caes_gas_soc_to_min",
+                        float(outputs.get("caes_gas_soc", 0.8)) - 0.6,
+                    )
+                ),
+                float(
+                    dist.get(
+                        "caes_gas_soc_to_max",
+                        1.0 - float(outputs.get("caes_gas_soc", 0.8)),
+                    )
+                ),
             ],
             dtype=np.float64,
         )
         return feats
+
     def predict_proba(self, features: np.ndarray) -> float:
         z = float(np.dot(self.weights, features) + self.bias)
         # stable sigmoid
@@ -110,9 +151,16 @@ class SafetyClassifier:
             return float(1.0 / (1.0 + ez))
         ez = np.exp(z)
         return float(ez / (1.0 + ez))
-    def is_safe(self, outputs: Mapping[str, float], action: Mapping[str, Any], distances: Mapping[str, float] | None = None) -> tuple[bool, float]:
+
+    def is_safe(
+        self,
+        outputs: Mapping[str, float],
+        action: Mapping[str, Any],
+        distances: Mapping[str, float] | None = None,
+    ) -> tuple[bool, float]:
         p = self.predict_proba(self.featurize(outputs, action, distances))
         return p >= self.threshold, p
+
     def fit(
         self,
         X: np.ndarray,
@@ -143,6 +191,7 @@ class SafetyClassifier:
         self.bias = b
         self._fitted = True
         return self
+
     def evaluate(
         self,
         X: np.ndarray,
@@ -190,6 +239,7 @@ class SafetyClassifier:
             threshold=thr,
             model_version=self.model_version,
         )
+
     def save(self, path: str | Path) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -201,6 +251,7 @@ class SafetyClassifier:
             "feature_keys": list(FEATURE_KEYS),
         }
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
     @classmethod
     def load(cls, path: str | Path) -> "SafetyClassifier":
         data = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -210,10 +261,14 @@ class SafetyClassifier:
             weights=np.asarray(data["weights"], dtype=np.float64),
             bias=float(data.get("bias", 0.0)),
         )
+
+
 class FeasibilityCalibrator:
     """从 SafetyDataset 训练 SafetyClassifier。"""
+
     def __init__(self, classifier: SafetyClassifier | None = None):
         self.classifier = classifier or SafetyClassifier()
+
     def fit_from_records(
         self,
         safe_records: Sequence[Mapping[str, Any]],
@@ -223,14 +278,26 @@ class FeasibilityCalibrator:
         X_list = []
         y_list = []
         for rec in safe_records:
-            outputs = rec.get("last_valid_state") or rec.get("previous_observation") or {}
+            outputs = (
+                rec.get("last_valid_state") or rec.get("previous_observation") or {}
+            )
             action = rec.get("hybrid_action") or {}
-            X_list.append(self.classifier.featurize(outputs, action, rec.get("distance_to_physical_boundary")))
+            X_list.append(
+                self.classifier.featurize(
+                    outputs, action, rec.get("distance_to_physical_boundary")
+                )
+            )
             y_list.append(1.0)
         for rec in fail_records:
-            outputs = rec.get("last_valid_state") or rec.get("previous_observation") or {}
+            outputs = (
+                rec.get("last_valid_state") or rec.get("previous_observation") or {}
+            )
             action = rec.get("hybrid_action") or {}
-            X_list.append(self.classifier.featurize(outputs, action, rec.get("distance_to_physical_boundary")))
+            X_list.append(
+                self.classifier.featurize(
+                    outputs, action, rec.get("distance_to_physical_boundary")
+                )
+            )
             y_list.append(0.0)
         if not X_list:
             raise ValueError("无样本可训练 SafetyClassifier")

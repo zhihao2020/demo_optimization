@@ -1,4 +1,7 @@
-"""GiveSafe 约束奖励：与经济 reward 严格分离，禁止 -1e9。"""
+"""GiveSafe 约束奖励：与经济 reward 严格分离，禁止 -1e9。
+
+拒绝样本写入 GiveSafeReplay，供 Critic 学习「不安全动作更差」，不污染经济成本尺度。
+"""
 
 from __future__ import annotations
 
@@ -8,6 +11,7 @@ from .safety_result import SafetyCheckResult
 
 
 class ConstraintRewardCalculator:
+    """按 violation 类型加权：``r_c = -base * weight``（配置见 givesafe_config.yaml）。"""
     def __init__(self, config: Mapping[str, Any] | None = None):
         cfg = dict(config or {})
         self.base = float(cfg.get("base_rejection_cost", 1.0))

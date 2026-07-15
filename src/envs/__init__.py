@@ -1,4 +1,4 @@
-"""Gymnasium 电力系统环境包。"""
+"""Gymnasium 电力系统环境包（对外主类：PowerSystemEnv）。"""
 
 __all__ = ["PowerSystemEnv"]
 

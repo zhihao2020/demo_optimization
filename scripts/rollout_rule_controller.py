@@ -1,3 +1,5 @@
+"""滚动运行规则基线一周，轨迹写入 ``runs/rule_controller/``。"""
+
 from pathlib import Path
 import sys
 

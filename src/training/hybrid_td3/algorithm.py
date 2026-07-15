@@ -1,4 +1,8 @@
-"""Hybrid-TD3 算法更新循环。"""
+"""Hybrid-TD3 算法更新循环。
+
+相对经典 TD3：Actor/Critic 显式处理离散 CAES 模式与动态动作边界；
+采样动作时用 mode_mask 与 [low,high] 把输出压回当前可行域。
+"""
 
 from __future__ import annotations
 
@@ -15,6 +19,8 @@ from .critic import HybridCritic
 
 
 class HybridTD3:
+    """Twin Delayed DDPG，动作为 hybrid（连续 + 三模式 one-hot + 幅值）。"""
+
     def __init__(
         self,
         obs_dim: int,

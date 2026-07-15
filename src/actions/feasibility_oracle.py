@@ -1,4 +1,8 @@
-"""根据当前状态计算动态可行域 A(s_t)；逐设备方程 + residual 方向裕度。"""
+"""根据当前状态计算动态可行域 A(s_t)；逐设备方程 + residual 方向裕度。
+
+参数来自 ``device_params.yaml``，裕度来自 ``feasibility_margins.yaml``。
+输出既可给 Actor 做边界映射，也可给 GiveSafe 一级预检，避免盲目写 FMU。
+"""
 from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
@@ -47,7 +51,11 @@ def load_margins(path: Path | None = None) -> dict[str, Any]:
     p = path or Path(__file__).resolve().parents[1] / "config" / "feasibility_margins.yaml"
     with Path(p).open(encoding="utf-8") as stream:
         return yaml.safe_load(stream) or {}
+
+
 class FeasibilityOracle:
+    """状态相关可行域、可执行预检、一步状态预测与后验硬约束检查。"""
+
     def __init__(
         self,
         params: Mapping[str, Any] | None = None,

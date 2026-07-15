@@ -1,4 +1,7 @@
-"""状态相关动态可行动作集合。"""
+"""状态相关动态可行动作集合 A(s)：连续边界 + CAES ModeMask。
+
+由 FeasibilityOracle.compute 生成；Actor 与校验器只消费此结构，不各自猜边界。
+"""
 
 from __future__ import annotations
 

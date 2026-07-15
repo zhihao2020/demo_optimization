@@ -1,3 +1,5 @@
+"""打印仓库内默认 FMU 的 FMI 版本与 input/output 清单（不仿真）。"""
+
 from __future__ import annotations
 
 from pathlib import Path
