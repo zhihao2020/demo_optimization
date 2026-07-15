@@ -118,7 +118,7 @@ class ValidTransitionCollector:
         self.stats["caes_mode_counts"][int(hybrid.caes_mode)] = (
             self.stats["caes_mode_counts"].get(int(hybrid.caes_mode), 0) + 1
         )
-        next_feasible = env.oracle.compute(env.last_outputs, env.previous_thermal) if env.last_outputs is not None else feasible
+        next_feasible = env.get_feasible_action_spec() if env.last_outputs is not None else feasible
         # safe 样本也进入 SafetyDataset（供校准）
         self.safety_dataset.add_safe_transition(
             previous_observation=prev_outputs,

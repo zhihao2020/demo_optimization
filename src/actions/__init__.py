@@ -9,6 +9,7 @@ from .failure_taxonomy import classify_failure
 from .safety_classifier import SafetyClassifier, FeasibilityCalibrator, SafetyMetrics
 from .action_pipeline import SafeActionGenerator
 from .boundary_stress import BoundaryStressTester, BoundaryStressResult
+from .caes_min_run import CaesMinimumRunController, MIN_CAES_RUN_STEPS
 __all__ = [
     "CaesMode",
     "HybridAction",
@@ -26,4 +27,6 @@ __all__ = [
     "SafeActionGenerator",
     "BoundaryStressTester",
     "BoundaryStressResult",
+    "CaesMinimumRunController",
+    "MIN_CAES_RUN_STEPS",
 ]

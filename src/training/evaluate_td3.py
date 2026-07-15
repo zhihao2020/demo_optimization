@@ -41,6 +41,8 @@ def evaluate_policy(
     terminal_bonus = 0.0
     forbidden = 0
     invalid_transition = 0
+    caes_segments: list[dict[str, Any]] = []
+    caes_interruptions = 0
     while True:
         predicted = policy.predict(obs, deterministic=True)
         action = predicted[0] if isinstance(predicted, tuple) else predicted
@@ -56,6 +58,15 @@ def evaluate_policy(
         weekly_reward += float(reward)
         weekly_discounted += (gamma ** len(rows)) * float(reward)
         terminal_bonus += float(terms.get("terminal_soc_bonus", 0.0))
+        if info.get("caes_min_run_completed_segment"):
+            caes_segments.append(dict(info["caes_min_run_completed_segment"]))
+        if info.get("caes_min_run_final_event"):
+            caes_segments.append(dict(info["caes_min_run_final_event"]))
+            caes_interruptions += 1
+        event = (info.get("feasible_action_spec") or {}).get("caes_min_run_event")
+        if event:
+            caes_segments.append(dict(event))
+            caes_interruptions += 1
         row = {
             "time": info.get("time"),
             "step": len(rows),
@@ -79,6 +90,7 @@ def evaluate_policy(
                 "u_tp_dynamic_low", "u_tp_dynamic_high",
                 "u_battery_dynamic_low", "u_battery_dynamic_high",
                 "caes_discharge_allowed", "caes_idle_allowed", "caes_charge_allowed",
+                "caes_locked_mode", "caes_locked_steps_completed", "caes_locked_steps_remaining",
             )},
         }
         rows.append(row)
@@ -137,6 +149,16 @@ def evaluate_policy(
         "forbidden_action_count": forbidden,
         "invalid_transition_count": invalid_transition,
         "action_violation_count": forbidden,
+        "economic_cashflow_total": float(last.get("economic_cashflow_total", float("nan"))),
+        "economic_cashflow_components": {
+            name: float(last.get(f"economic_cashflow_{name}", float("nan")))
+            for name in ("wind", "pv", "thermal", "battery", "caes", "load", "grid")
+        },
+        "caes_run_segments": caes_segments,
+        "caes_min_run_interruption_count": caes_interruptions,
+        "caes_min_run_compliance_rate": (
+            1.0 if not caes_segments else sum(bool(item.get("completed")) for item in caes_segments) / len(caes_segments)
+        ),
         "gamma": gamma,
     }
 
@@ -190,4 +212,8 @@ def evaluate_annual_policy(
         "forbidden_action_count": sum(int(item["forbidden_action_count"]) for item in windows),
         "invalid_transition_count": sum(int(item["invalid_transition_count"]) for item in windows),
         "terminal_soc_satisfied_windows": sum(bool(item["terminal_soc_satisfied"]) for item in windows),
+        "annual_economic_cashflow": sum(
+            float(item["cost_terms"].get("economic_cashflow_delta", 0.0)) for item in windows
+        ),
+        "caes_min_run_interruption_count": sum(int(item["caes_min_run_interruption_count"]) for item in windows),
     }

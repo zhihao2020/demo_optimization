@@ -38,9 +38,17 @@ def test_default_outputs_cover_physical_groups() -> None:
         "caes_gas_temperature",
         "caes_hot_temperature",
         "caes_cold_temperature",
+        "economic_cashflow_total",
+        "economic_cashflow_wind",
+        "economic_cashflow_pv",
+        "economic_cashflow_thermal",
+        "economic_cashflow_battery",
+        "economic_cashflow_caes",
+        "economic_cashflow_load",
+        "economic_cashflow_grid",
     }
     assert names == required
-    # 不应再出现已删除的经济/penalty 接口
+    # 不泄露内部变量或已删除 penalty 接口；经济输出使用稳定的顶层名称。
     assert "OPT_goal" not in names
     assert "P_res" not in names
     assert "battery_penalty" not in names

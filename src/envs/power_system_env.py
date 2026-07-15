@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from dataclasses import replace
 
 import gymnasium as gym
 import numpy as np
@@ -12,6 +13,7 @@ from gymnasium.spaces import Box, Dict, Discrete
 
 from actions import (
     CaesMode,
+    CaesMinimumRunController,
     DynamicFeasibleActionSet,
     FeasibilityOracle,
     HybridAction,
@@ -76,7 +78,10 @@ class PowerSystemEnv(gym.Env):
             reward_config = yaml.safe_load(stream)
         reward_config["decision_interval_seconds"] = self.config["fmu"]["decision_interval_seconds"]
         reward_config["episode_steps"] = int(self.config["fmu"]["episode_steps"])
-        self.registry = build_registry(self.root / self.config["fmu"]["path"], self.config)
+        self.registry = build_registry(
+            self.root / self.config["fmu"]["path"], self.config,
+            verify_metadata=adapter is None,
+        )
         self.observation_builder = ObservationBuilder(self.registry)
         forecast_cfg = self.config.get("forecast") or {}
         self.forecast_enabled = bool(forecast_cfg.get("enabled", True)) if forecast_enabled is None else bool(forecast_enabled)
@@ -136,6 +141,7 @@ class PowerSystemEnv(gym.Env):
         self.failure_records: list[FailureRecord] = []
         self.last_step_diagnostics: dict[str, Any] = {}
         self._pending_action_meta: dict[str, Any] = {}
+        self.caes_min_run = CaesMinimumRunController()
 
     def build_observation(self) -> np.ndarray:
         """当前 FMU 物理输出 + 可选只读日前 forecast 的唯一 observation 构造入口。"""
@@ -154,10 +160,27 @@ class PowerSystemEnv(gym.Env):
     def get_feasible_action_spec(self) -> DynamicFeasibleActionSet:
         if self.last_outputs is None:
             raise RuntimeError("环境未 reset")
-        self._current_feasible = self.oracle.compute(self.last_outputs, self.previous_thermal)
+        self._current_feasible = self._constrain_caes_min_run(
+            self.oracle.compute(self.last_outputs, self.previous_thermal)
+        )
         if self.oracle.is_feasible_set_empty(self._current_feasible):
             raise FeasibleSetEmpty("当前状态动态可行集为空")
         return self._current_feasible
+
+    def _constrain_caes_min_run(self, feasible: DynamicFeasibleActionSet) -> DynamicFeasibleActionSet:
+        """交集：Oracle 物理安全域 ∩ CAES 最短连续运行规则。"""
+        mask, state = self.caes_min_run.constrain(
+            feasible.mode_mask,
+            steps_remaining=self.episode_steps - self.step_index,
+            step=self.step_index,
+        )
+        metadata = {**(feasible.metadata or {}), **state}
+        metadata["feasible_set_empty"] = (
+            feasible.u_tp_low > feasible.u_tp_high + 1e-12
+            or feasible.u_battery_low > feasible.u_battery_high + 1e-12
+            or not (mask.discharge or mask.idle or mask.charge)
+        )
+        return replace(feasible, mode_mask=mask, metadata=metadata)
 
     def decode_action(self, action: dict | HybridAction) -> PhysicalFmuAction:
         hybrid = action if isinstance(action, HybridAction) else hybrid_from_dict(action)
@@ -177,13 +200,16 @@ class PowerSystemEnv(gym.Env):
         self.step_index = 0
         self.valid_episode_steps = 0
         self.episode_failed = False
+        self.caes_min_run.reset()
         self.previous_thermal = float(self.last_outputs["p_thermal"])
         self.reward_calculator.reset(self.last_outputs)
         self.initial_soc = {
             k: float(self.last_outputs[k])
             for k in ("battery_soc", "caes_gas_soc", "caes_hot_soc", "caes_cold_soc")
         }
-        self._current_feasible = self.oracle.compute(self.last_outputs, self.previous_thermal)
+        self._current_feasible = self._constrain_caes_min_run(
+            self.oracle.compute(self.last_outputs, self.previous_thermal)
+        )
         self._pending_action_meta = {}
         observation = self.build_observation()
         info = {
@@ -202,7 +228,9 @@ class PowerSystemEnv(gym.Env):
             raise RuntimeError("必须先 reset")
         action_meta = dict(self._pending_action_meta)
         self._pending_action_meta = {}
-        feasible = self.oracle.compute(self.last_outputs, self.previous_thermal)
+        feasible = self._constrain_caes_min_run(
+            self.oracle.compute(self.last_outputs, self.previous_thermal)
+        )
         self._current_feasible = feasible
         if self.oracle.is_feasible_set_empty(feasible):
             exc = FeasibleSetEmpty("当前状态动态可行集为空")
@@ -257,6 +285,7 @@ class PowerSystemEnv(gym.Env):
                     triggering_constraint=trig,
                 )
         except ConstraintFailure as exc:
+            self.caes_min_run.interrupt("fmu_or_post_step_failure", step=self.step_index)
             self._count(exc.failure_type)
             self.episode_failed = True
             info = self._failure_info(
@@ -275,6 +304,7 @@ class PowerSystemEnv(gym.Env):
                 fail = FmuNumericalFailure(str(exc), fine_type="nonlinear_solver_failure")
             self._count(fail.failure_type)
             self.episode_failed = True
+            self.caes_min_run.interrupt("fmu_or_post_step_failure", step=self.step_index)
             info = self._failure_info(
                 hybrid, physical, mag_logged, feasible, fail, applied=None,
                 predicted=predicted, actual=outputs, action_meta=action_meta,
@@ -293,6 +323,10 @@ class PowerSystemEnv(gym.Env):
         is_final = truncated or terminated
         episode_completed = truncated and not self.episode_failed
         self.valid_episode_steps += 1
+        completed_segment = self.caes_min_run.record_success(hybrid.caes_mode, step=next_step)
+        final_min_run_event = None
+        if is_final and self.caes_min_run.active_mode is not None:
+            final_min_run_event = self.caes_min_run.interrupt("episode_ended_before_min_run", step=next_step)
         reward, terms = self.reward_calculator.calculate(
             outputs,
             self.previous_thermal,
@@ -305,7 +339,9 @@ class PowerSystemEnv(gym.Env):
         self.step_index = next_step
         self.previous_thermal = float(outputs["p_thermal"])
         self.last_outputs = outputs
-        self._current_feasible = self.oracle.compute(outputs, self.previous_thermal)
+        self._current_feasible = self._constrain_caes_min_run(
+            self.oracle.compute(outputs, self.previous_thermal)
+        )
         observation = self.build_observation()
         info = {
             "time": self.adapter.time,
@@ -346,7 +382,10 @@ class PowerSystemEnv(gym.Env):
             **feasible.as_dict(),
             "observations": dict(outputs),
             "initial_soc": dict(self.initial_soc) if self.initial_soc else None,
-        }
+            "caes_min_run_completed_segment": completed_segment,
+            "caes_min_run_final_event": final_min_run_event,
+            **self.caes_min_run.status(),
+            }
         self.last_step_diagnostics = info
         if is_final and self.initial_soc:
             info.update(self._episode_summary(outputs, terms, episode_completed))
@@ -394,6 +433,7 @@ class PowerSystemEnv(gym.Env):
         summary["terminal_soc_l1_error"] = terms.get("terminal_soc_l1_error", 0.0)
         summary["terminal_soc_l2_error"] = terms.get("terminal_soc_l2_error", 0.0)
         summary["terminal_soc_satisfied"] = terms.get("terminal_soc_satisfied", 0.0)
+        summary.update(self.caes_min_run.summary())
         return summary
 
     def _reject_info(

@@ -19,6 +19,9 @@ class FakeAdapter:
             "p_thermal": -150e6, "p_battery": 0., "p_caes": 0., "p_grid": 1e6,
             "p_wind_available": -2e6, "p_wind_actual": -2e6, "p_pv_available": 0., "p_pv_actual": 0.,
             "p_load_actual": 151e6, "p_curtailment": 0., "p_unserved": 0.,
+            "economic_cashflow_total": 0., "economic_cashflow_wind": 0., "economic_cashflow_pv": 0.,
+            "economic_cashflow_thermal": 0., "economic_cashflow_battery": 0., "economic_cashflow_caes": 0.,
+            "economic_cashflow_load": 0., "economic_cashflow_grid": 0.,
         }
 
     def reset(self, start):

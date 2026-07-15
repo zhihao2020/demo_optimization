@@ -66,7 +66,7 @@ class GiveSafeTransitionCollector:
             "u_battery_high": float(getattr(env, "_current_feasible", None).u_battery_high if getattr(env, "_current_feasible", None) else 1.0),
         }
         try:
-            feasible = env.oracle.compute(env.last_outputs, env.previous_thermal)
+            feasible = env.get_feasible_action_spec()
             mask = feasible.mode_mask.as_bool_array()
             bounds = {
                 "u_tp_low": feasible.u_tp_low,
@@ -130,6 +130,7 @@ class GiveSafeTransitionCollector:
         obs_before = env.build_observation()
         sim_time_before = float(getattr(env.adapter, "time", 0.0))
         valid_steps_before = int(env.valid_episode_steps)
+        feasible = env.get_feasible_action_spec()
 
         def on_rejection(action, safety, terms):
             self.stats["policy_attempt_count"] += 1
@@ -142,6 +143,7 @@ class GiveSafeTransitionCollector:
                 propose_fn,
                 deterministic=deterministic,
                 on_rejection=on_rejection,
+                feasible_override=feasible,
             )
         except NoSafeActionFoundError as exc:
             self.stats["no_safe_action_found_count"] += 1
@@ -192,12 +194,6 @@ class GiveSafeTransitionCollector:
                     normalized_violations={"unknown": 1.0},
                 )
             )
-            feasible = None
-            try:
-                # 状态可能仍是 last_valid；用执行前观测
-                pass
-            except Exception:
-                pass
             mask = np.ones(3, dtype=bool)
             bounds = {"u_tp_low": 1 / 3, "u_tp_high": 1.0, "u_battery_low": -1.0, "u_battery_high": 1.0}
             tr = Transition(
@@ -258,6 +254,7 @@ class GiveSafeTransitionCollector:
             "u_battery_low": float(info.get("u_battery_dynamic_low", -1.0)),
             "u_battery_high": float(info.get("u_battery_dynamic_high", 1.0)),
         }
+        next_feasible = env.get_feasible_action_spec()
         mask = np.asarray(
             [
                 bool(info.get("caes_discharge_allowed", True)),
@@ -285,8 +282,11 @@ class GiveSafeTransitionCollector:
             truncated=bool(truncated),
             valid_mode_mask=mask,
             dynamic_action_bounds=bounds,
-            next_valid_mode_mask=mask.copy(),
-            next_dynamic_action_bounds=dict(bounds),
+            next_valid_mode_mask=next_feasible.mode_mask.as_bool_array(),
+            next_dynamic_action_bounds={
+                "u_tp_low": next_feasible.u_tp_low, "u_tp_high": next_feasible.u_tp_high,
+                "u_battery_low": next_feasible.u_battery_low, "u_battery_high": next_feasible.u_battery_high,
+            },
             reward_terms=terms,
             constraint_metadata={},
             physically_valid=True,

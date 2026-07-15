@@ -665,13 +665,20 @@ package TypicalScenarios "典型场景模型"
   end Battery;
   model Bus "功率母线"
     parameter TypicalScensrio.Utilities.Types.Cost Income_start = 0;
-    // 经济惩罚项已删除；弃电/缺供惩罚由 Python 侧基于 p_curtailment/p_unserved 计算。
+    // 经济惩罚项已删除；弃电/缺供约束仍由 Python 侧处理。
     TypicalScensrio.Utilities.Types.Cost Income(start = Income_start);
     TypicalScensrio.Utilities.Types.Cost Capex "造价";
     Modelica.SIunits.Power P_res "功率偏差：负=弃电，正=缺供；顶层拆为 p_curtailment/p_unserved";
     Modelica.SIunits.Power P_res1 "功率偏差，缺口或弃电";
     Modelica.SIunits.Power P_res2 "功率偏差，缺口或弃电";
-    Real OPT_goal "内部累计现金流（仅内部记账，顶层不再导出）";
+    Real OPT_goal "内部累计现金流";
+    TypicalScensrio.Utilities.Types.Cost Income_PV(start = 0) "光伏累计现金流";
+    TypicalScensrio.Utilities.Types.Cost Income_WT(start = 0) "风电累计现金流";
+    TypicalScensrio.Utilities.Types.Cost Income_TP(start = 0) "火电累计现金流";
+    TypicalScensrio.Utilities.Types.Cost Income_BT(start = 0) "电池累计现金流";
+    TypicalScensrio.Utilities.Types.Cost Income_CAES(start = 0) "CAES累计现金流";
+    TypicalScensrio.Utilities.Types.Cost Income_Eload(start = 0) "负荷累计现金流";
+    TypicalScensrio.Utilities.Types.Cost Income_Grid(start = 0) "电网累计现金流";
 
     annotation (Icon(coordinateSystem(extent = {{-100.0, -300.0}, {100.0, 300.0}},
       grid = {2.0, 2.0}), graphics = {Rectangle(origin = {6.0, 26.0},
@@ -742,6 +749,13 @@ package TypicalScenarios "典型场景模型"
     Capex = Power_PV.Capex + Power_WT.Capex + Power_TP.Capex + Power_BT.Capex + Power_CAES.Capex + Power_Eload.Capex + Power_Gird.Capex;
     // 原 (k*P_res)^2 惩罚已删除；仅累加各设备现金流。
     der(Income) = Power_PV.C + Power_WT.C + Power_TP.C + Power_BT.C + Power_CAES.C + Power_Eload.C + Power_Gird.C;
+    der(Income_PV) = Power_PV.C;
+    der(Income_WT) = Power_WT.C;
+    der(Income_TP) = Power_TP.C;
+    der(Income_BT) = Power_BT.C;
+    der(Income_CAES) = Power_CAES.C;
+    der(Income_Eload) = Power_Eload.C;
+    der(Income_Grid) = Power_Gird.C;
 
   end Bus;
   package CompressedAirEnergyStorage "压缩空气储能系统数据模型"

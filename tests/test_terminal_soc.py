@@ -41,6 +41,14 @@ def _mk(mode="binary_bonus"):
         "caes_gas_soc": 0.8,
         "caes_hot_soc": 0.4,
         "caes_cold_soc": 0.4,
+        "economic_cashflow_total": 0.0,
+        "economic_cashflow_wind": 0.0,
+        "economic_cashflow_pv": 0.0,
+        "economic_cashflow_thermal": 0.0,
+        "economic_cashflow_battery": 0.0,
+        "economic_cashflow_caes": 0.0,
+        "economic_cashflow_load": 0.0,
+        "economic_cashflow_grid": 0.0,
     }
     calc.reset(init)
     return calc, init

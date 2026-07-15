@@ -34,7 +34,7 @@ CSV 两列：`time(s), value`（可带 `time,value` 表头）。
 
 ## FMU 变量映射
 
-权威配置见 [`configs/fmu_variables.yaml`](../configs/fmu_variables.yaml)。
+权威配置见 [`src/config/env_config.yaml`](../src/config/env_config.yaml)。
 
 ### 调度输入（逻辑名 -> FMU 变量）
 
@@ -46,20 +46,19 @@ CSV 两列：`time(s), value`（可带 `time,value` 表头）。
 | u_battery | u_battery | 电池调度指令（正充负放） | [-1, 1] |
 | u_caes | u_caes | 压空储能调度指令（正充负放） | [-1, -0.33] ∪ {0} ∪ [0.86, 1] |
 
-### 仿真输出（请求列表）
+### 仿真输出（当前物理接口）
 
 | FMU 变量 | 逻辑指标 |
 |----------|----------|
-| OPT_goal | opt_goal（全年现金流） |
-| P_res | curtailment（弃电/缺口） |
-| battery_penalty | penalties[0] |
-| thermal_penalty | penalties[1] |
-| caes_gas_penalty | penalties[2] |
-| caes_hot_penalty | penalties[3] |
-| caes_cold_penalty | penalties[4] |
-| battery.SOC | state.battery_soc |
+| p_curtailment / p_unserved | 弃电 / 缺供功率（W，非负） |
+| battery_soc / caes_*_soc | 储能 SOC |
+| p_thermal / p_battery / p_caes / p_grid | 实际设备与联络线功率（W） |
+| p_wind_* / p_pv_* / p_load_actual | 风光可用/实际与负荷功率（W） |
+| caes_*_pressure / caes_*_temperature | CAES 热力状态（Pa/K） |
 
-配置中每个逻辑指标支持多个别名（如 `OPT_goal` / `bus.OPT_goal`），按顺序匹配。
+### 累计经济输出（不进入 observation）
+
+`economic_cashflow_total` 与 wind/pv/thermal/battery/caes/load/grid 七个分项均为累计现金流（CNY，正=收益、负=成本）。Python 只做相邻步差分、训练归一化和报告汇总，详见 [`economic_fmu_interface.md`](economic_fmu_interface.md)。
 
 ## 调度输出 plan.csv
 

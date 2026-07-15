@@ -1,13 +1,5 @@
-buy_price_yuan_per_mwh: 600.0
-sell_price_yuan_per_mwh: 100.0
-thermal_a: 0.0
-thermal_b: 400.0
-thermal_c: 0.0
-curtailment_yuan_per_mwh: 0.0
-unserved_yuan_per_mwh: 0.0
-battery_throughput_yuan_per_mwh: 0.0
-caes_throughput_yuan_per_mwh: 0.0
-ramp_yuan_per_mw: 0.0
+# 经济量唯一来源：FMU 的 economic_cashflow_* 累计输出；Python 不重复结算。
+economic_source: Modelica_FMU_cumulative_cashflow
 cost_reference:
   value: 156539.83544146415
   unit: CNY_per_step

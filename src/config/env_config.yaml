@@ -63,6 +63,18 @@ observations:
   - {name: p_curtailment, unit: W, low: 0.0}
   - {name: p_unserved, unit: W, low: 0.0}
 
+# 经济量不进入 observation；只用于 Python 的 reward、审计与年度评估。
+# 全部是 Modelica 内部现金流的累计值，单位 CNY，正=收益、负=成本。
+economics:
+  - {name: economic_cashflow_total, unit: CNY}
+  - {name: economic_cashflow_wind, unit: CNY}
+  - {name: economic_cashflow_pv, unit: CNY}
+  - {name: economic_cashflow_thermal, unit: CNY}
+  - {name: economic_cashflow_battery, unit: CNY}
+  - {name: economic_cashflow_caes, unit: CNY}
+  - {name: economic_cashflow_load, unit: CNY}
+  - {name: economic_cashflow_grid, unit: CNY}
+
 market:
   available: false
   buy_price_source: null

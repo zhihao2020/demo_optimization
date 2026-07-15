@@ -8,7 +8,7 @@ from typing import Any, Callable, Mapping
 import numpy as np
 import yaml
 
-from actions import FeasibilityOracle
+from actions import DynamicFeasibleActionSet, FeasibilityOracle, HybridActionValidator
 from actions.validator import hybrid_from_dict
 
 from .constraint_checker import GiveSafeConstraintChecker
@@ -58,6 +58,7 @@ class GiveSafeController:
         *,
         deterministic: bool = False,
         on_rejection: Callable[[dict, SafetyCheckResult, dict[str, float]], None] | None = None,
+        feasible_override: DynamicFeasibleActionSet | None = None,
     ) -> GiveSafeResult:
         """policy_sample_fn: 无参，在当前状态采样候选动作 dict。"""
         result = GiveSafeResult(safe_action=None, oracle_version=self.oracle.oracle_version)
@@ -65,7 +66,25 @@ class GiveSafeController:
             proposed = policy_sample_fn()
             result.proposed_actions.append(proposed)
             result.attempt_count = attempt + 1
-            level1 = self.checker.check(observation_outputs, proposed, previous_thermal_w)
+            if feasible_override is not None:
+                try:
+                    HybridActionValidator().validate(hybrid_from_dict(proposed), feasible_override)
+                except Exception as exc:
+                    level1 = SafetyCheckResult(
+                        safe=False,
+                        rejection_stage="oracle",
+                        violation_type="forbidden_mode",
+                        violation_severity=1.0,
+                        normalized_violations={"forbidden_mode": 1.0},
+                        mode_mask=feasible_override.mode_mask.as_dict(),
+                        oracle_safe=False,
+                        oracle_rejection_reason=str(exc),
+                        metadata={"oracle_version": self.oracle.oracle_version, "caes_min_run": True},
+                    )
+                else:
+                    level1 = self.checker.check(observation_outputs, proposed, previous_thermal_w)
+            else:
+                level1 = self.checker.check(observation_outputs, proposed, previous_thermal_w)
             safety = level1
             if level1.safe and self.shadow is not None:
                 safety = self.shadow.validate(proposed, level1)

@@ -1,7 +1,7 @@
 within TypicalScensrio.Example.TypicalScene;
 model PowerSystem_8760h "典型场景模型"
   // 职责边界：本 FMU 仅负责物理状态演化与真实物理量输出；
-  // 市场结算、reward、经济成本与约束惩罚由 Python 侧后续计算。
+  // Modelica 保留设备现金流/累计经济核算；Python 负责约束、训练 reward 和审计汇总。
   // 功率符号约定：发电为负、用电/充电为正；功率单位 W；压力 Pa；温度 K；SOC 为 0～1。
   parameter Real table[:,2] = {{0, 1}, {3600, 1}, {7200, 0}, {10800, 0}, {14400, -1}, {18000, -1}, {21600, 0}, {25200, 0}, {28800, 0}, {32400, 0}, {36000, 0}, {39600, 0}, {43200, 0}, {46800, 0}, {50400, 0}, {54000, 0}, {57600, 0}, {61200, 0}, {64800, 0}, {68400, 0}, {72000, 0}, {75600, 0}, {79200, 0}, {82800, 0}} "正值充电，负值放电";
 
@@ -57,6 +57,15 @@ model PowerSystem_8760h "典型场景模型"
     extent={{-14,-14},{14,14}})));
   Modelica.Blocks.Interfaces.RealOutput caes_cold_temperature "CAES 冷罐温度，K" annotation (Placement(transformation(origin={250,-144},
     extent={{-14,-14},{14,14}})));
+  // Modelica 经济核算：累计现金流，正值表示收益、负值表示成本；Python 对相邻输出做差分。
+  Modelica.Blocks.Interfaces.RealOutput economic_cashflow_total(unit="CNY") "累计总现金流，CNY" annotation (Placement(transformation(origin={284,96}, extent={{-14,-14},{14,14}})));
+  Modelica.Blocks.Interfaces.RealOutput economic_cashflow_wind(unit="CNY") "风电累计现金流，CNY" annotation (Placement(transformation(origin={284,66}, extent={{-14,-14},{14,14}})));
+  Modelica.Blocks.Interfaces.RealOutput economic_cashflow_pv(unit="CNY") "光伏累计现金流，CNY" annotation (Placement(transformation(origin={284,36}, extent={{-14,-14},{14,14}})));
+  Modelica.Blocks.Interfaces.RealOutput economic_cashflow_thermal(unit="CNY") "火电累计现金流，CNY" annotation (Placement(transformation(origin={284,6}, extent={{-14,-14},{14,14}})));
+  Modelica.Blocks.Interfaces.RealOutput economic_cashflow_battery(unit="CNY") "电池累计现金流，CNY" annotation (Placement(transformation(origin={284,-24}, extent={{-14,-14},{14,14}})));
+  Modelica.Blocks.Interfaces.RealOutput economic_cashflow_caes(unit="CNY") "CAES累计现金流，CNY" annotation (Placement(transformation(origin={284,-54}, extent={{-14,-14},{14,14}})));
+  Modelica.Blocks.Interfaces.RealOutput economic_cashflow_load(unit="CNY") "负荷累计现金流，CNY" annotation (Placement(transformation(origin={284,-84}, extent={{-14,-14},{14,14}})));
+  Modelica.Blocks.Interfaces.RealOutput economic_cashflow_grid(unit="CNY") "电网累计现金流，CNY" annotation (Placement(transformation(origin={284,-114}, extent={{-14,-14},{14,14}})));
 
   TypicalScensrio.TypicalScenarios.Wind wind(Pn(displayUnit = "MW") = 3e8,
     c = 0.35,
@@ -795,5 +804,14 @@ equation
   caes_gas_temperature = compressedAirEnergyStorage.gastank.T;
   caes_hot_temperature = compressedAirEnergyStorage.hottank.T;
   caes_cold_temperature = compressedAirEnergyStorage.coldtank.T;
+  // 经济输出直接复用 Bus 的既有累计现金流；不在 Modelica 中加入约束罚分。
+  economic_cashflow_total = bus.OPT_goal;
+  economic_cashflow_wind = bus.Income_WT;
+  economic_cashflow_pv = bus.Income_PV;
+  economic_cashflow_thermal = bus.Income_TP;
+  economic_cashflow_battery = bus.Income_BT;
+  economic_cashflow_caes = bus.Income_CAES;
+  economic_cashflow_load = bus.Income_Eload;
+  economic_cashflow_grid = bus.Income_Grid;
 
 end PowerSystem_8760h;

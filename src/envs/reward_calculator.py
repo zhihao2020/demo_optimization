@@ -1,4 +1,4 @@
-"""经济 reward：仅评价合法物理轨迹。硬约束与 FMU 失败不进入 reward。"""
+"""经济 reward：只使用 Modelica 导出的累计现金流，Python 不重复结算。"""
 
 from __future__ import annotations
 
@@ -6,6 +6,16 @@ from typing import Any
 
 
 SOC_KEYS = ("battery_soc", "caes_gas_soc", "caes_hot_soc", "caes_cold_soc")
+ECONOMIC_TOTAL = "economic_cashflow_total"
+ECONOMIC_COMPONENTS = (
+    "economic_cashflow_wind",
+    "economic_cashflow_pv",
+    "economic_cashflow_thermal",
+    "economic_cashflow_battery",
+    "economic_cashflow_caes",
+    "economic_cashflow_load",
+    "economic_cashflow_grid",
+)
 
 
 class IncompleteRewardConfigError(RuntimeError):
@@ -15,8 +25,8 @@ class IncompleteRewardConfigError(RuntimeError):
 class RewardCalculator:
     def __init__(self, config: dict[str, Any], *, require_complete: bool = False):
         self.config = config
-        self.dt_hours = float(config["decision_interval_seconds"]) / 3600.0
         self.initial_soc: dict[str, float] | None = None
+        self.previous_cashflow: dict[str, float] | None = None
         self.step_in_episode = 0
         self.episode_steps = int(config.get("episode_steps", 168))
         self.require_complete = require_complete
@@ -26,15 +36,8 @@ class RewardCalculator:
         cref = self._nested(self.config, "cost_reference", "value")
         term = self.config.get("terminal_soc") or {}
         if self.require_complete:
-            required = [
-                "buy_price_yuan_per_mwh",
-                "sell_price_yuan_per_mwh",
-                "thermal_a",
-                "thermal_b",
-                "thermal_c",
-            ]
-            missing = [k for k in required if self.config.get(k) is None]
-            if cref is None:
+            missing = []
+            if cref is None or float(cref) <= 0:
                 missing.append("cost_reference.value")
             if term.get("enabled", True):
                 if term.get("bonus") is None:
@@ -58,123 +61,90 @@ class RewardCalculator:
             cur = cur.get(key)
         return cur
 
+    @staticmethod
+    def _cashflows(outputs: dict[str, float]) -> dict[str, float]:
+        required = (ECONOMIC_TOTAL, *ECONOMIC_COMPONENTS)
+        missing = [name for name in required if name not in outputs]
+        if missing:
+            raise KeyError(f"FMU 缺少累计经济输出: {missing}")
+        return {name: float(outputs[name]) for name in required}
+
     def reset(self, outputs: dict[str, float]) -> None:
         self.initial_soc = {key: float(outputs[key]) for key in SOC_KEYS}
+        self.previous_cashflow = self._cashflows(outputs)
         self.step_in_episode = 0
-
-    def _rate(self, key: str, default: float = 0.0) -> float:
-        value = self.config.get(key)
-        return default if value is None else float(value)
-
-    def raw_costs(self, outputs: dict[str, float], previous_thermal: float) -> dict[str, float]:
-        dt, power_to_mw = self.dt_hours, 1e-6
-        p_grid = float(outputs.get("p_grid", 0.0))
-        p_thermal = abs(float(outputs.get("p_thermal", 0.0)))
-        grid = (
-            self._rate("buy_price_yuan_per_mwh") * max(p_grid, 0.0)
-            - self._rate("sell_price_yuan_per_mwh") * max(-p_grid, 0.0)
-        ) * power_to_mw * dt
-        a, b, c = (self._rate(k) for k in ("thermal_a", "thermal_b", "thermal_c"))
-        thermal_mw = p_thermal * power_to_mw
-        thermal = (a * thermal_mw ** 2 + b * thermal_mw + c) * dt
-        battery = self._rate("battery_throughput_yuan_per_mwh") * abs(float(outputs.get("p_battery", 0.0))) * power_to_mw * dt
-        caes = self._rate("caes_throughput_yuan_per_mwh") * abs(float(outputs.get("p_caes", 0.0))) * power_to_mw * dt
-        curtailment = self._rate("curtailment_yuan_per_mwh") * float(outputs.get("p_curtailment", 0.0)) * power_to_mw * dt
-        unserved = self._rate("unserved_yuan_per_mwh") * float(outputs.get("p_unserved", 0.0)) * power_to_mw * dt
-        ramp = self._rate("ramp_yuan_per_mw") * abs(float(outputs.get("p_thermal", 0.0)) - previous_thermal) * power_to_mw
-        terms = {
-            "raw_grid_cost": grid,
-            "raw_thermal_cost": thermal,
-            "raw_battery_cost": battery,
-            "raw_caes_cost": caes,
-            "raw_curtailment_cost": curtailment,
-            "raw_unserved_cost": unserved,
-            "raw_ramp_cost": ramp,
-        }
-        terms["raw_total_cost"] = sum(terms.values())
-        return terms
 
     def terminal_soc_diagnostics(self, outputs: dict[str, float]) -> dict[str, float]:
         term = self.config.get("terminal_soc") or {}
-        weights = term.get("weights") or {
-            "battery_soc": 1.0,
-            "caes_gas_soc": 1.0,
-            "caes_hot_soc": 1.0,
-            "caes_cold_soc": 1.0,
-        }
+        weights = term.get("weights") or {key: 1.0 for key in SOC_KEYS}
         assert self.initial_soc is not None
-        l1 = 0.0
-        l2 = 0.0
+        l1 = l2 = 0.0
         for key in SOC_KEYS:
-            w = float(weights.get(key, 1.0))
             delta = float(outputs[key]) - self.initial_soc[key]
-            l1 += w * abs(delta)
-            l2 += w * delta * delta
+            weight = float(weights.get(key, 1.0))
+            l1 += weight * abs(delta)
+            l2 += weight * delta * delta
         tol = term.get("tolerance")
-        satisfied = float(tol is not None and l1 <= float(tol))
         return {
             "terminal_soc_l1_error": l1,
             "terminal_soc_l2_error": l2,
             "terminal_soc_tolerance": float(tol) if tol is not None else float("nan"),
-            "terminal_soc_satisfied": satisfied,
+            "terminal_soc_satisfied": float(tol is not None and l1 <= float(tol)),
         }
 
     def calculate(
         self,
         outputs: dict[str, float],
-        previous_thermal: float,
+        previous_thermal: float | None = None,
         *,
         is_final_step: bool,
         episode_completed: bool,
         no_failure: bool,
         valid_episode_steps: int | None = None,
     ) -> tuple[float, dict[str, float]]:
-        costs = self.raw_costs(outputs, previous_thermal)
+        """奖励为累计现金流的增量；``previous_thermal`` 保留仅为调用兼容。"""
+        if self.previous_cashflow is None:
+            raise RuntimeError("RewardCalculator 必须先 reset")
+        current = self._cashflows(outputs)
+        delta = {name: current[name] - self.previous_cashflow[name] for name in current}
+        self.previous_cashflow = current
         cref = self._nested(self.config, "cost_reference", "value")
         if cref is None or float(cref) <= 0:
-            # smoke 允许：尚未标定则 normalized_cost 用 raw（不伪装 C_ref）
-            cost_reference = 1.0
-            cref_missing = True
+            reference, reference_missing = 1.0, True
         else:
-            cost_reference = float(cref)
-            cref_missing = False
-        normalized = costs["raw_total_cost"] / cost_reference
+            reference, reference_missing = float(cref), False
+        economic_reward = delta[ECONOMIC_TOTAL] / reference
+        # 离线报告以“成本”为正，严格等于现金流增量的相反数。
+        raw_total_cost = -delta[ECONOMIC_TOTAL]
         terminal_bonus = 0.0
         diag = self.terminal_soc_diagnostics(outputs) if self.initial_soc else {
-            "terminal_soc_l1_error": 0.0,
-            "terminal_soc_l2_error": 0.0,
-            "terminal_soc_tolerance": float("nan"),
-            "terminal_soc_satisfied": 0.0,
+            "terminal_soc_l1_error": 0.0, "terminal_soc_l2_error": 0.0,
+            "terminal_soc_tolerance": float("nan"), "terminal_soc_satisfied": 0.0,
         }
         term = self.config.get("terminal_soc") or {}
-        mode = term.get("mode", "binary_bonus")
         steps_ok = valid_episode_steps if valid_episode_steps is not None else self.step_in_episode + 1
-        gates = (
-            bool(term.get("enabled", True))
-            and is_final_step
-            and episode_completed
-            and no_failure
-            and steps_ok >= self.episode_steps
-            and (not term.get("require_complete_episode", True) or episode_completed)
-            and (not term.get("require_no_failure", True) or no_failure)
-        )
-        if gates and mode == "binary_bonus":
-            bonus = term.get("bonus")
-            tol = term.get("tolerance")
-            if bonus is not None and tol is not None and diag["terminal_soc_l1_error"] <= float(tol):
-                terminal_bonus = float(bonus)
-        elif gates and mode == "quadratic_penalty":
-            weight = float(term.get("quadratic_weight", 1.0))
-            terminal_bonus = -weight * diag["terminal_soc_l2_error"]
-
-        reward = -normalized + terminal_bonus
-        terms = {
-            **costs,
-            "cost_reference": cost_reference,
-            "cost_reference_missing": float(cref_missing),
-            "normalized_cost": normalized,
+        gates = bool(term.get("enabled", True)) and is_final_step and episode_completed and no_failure and steps_ok >= self.episode_steps
+        if gates and term.get("mode", "binary_bonus") == "binary_bonus":
+            if diag["terminal_soc_l1_error"] <= float(term.get("tolerance", float("-inf"))):
+                terminal_bonus = float(term.get("bonus", 0.0))
+        elif gates and term.get("mode") == "quadratic_penalty":
+            terminal_bonus = -float(term.get("quadratic_weight", 1.0)) * diag["terminal_soc_l2_error"]
+        reward = economic_reward + terminal_bonus
+        terms: dict[str, float] = {
+            "economic_cashflow_total": current[ECONOMIC_TOTAL],
+            "economic_cashflow_delta": delta[ECONOMIC_TOTAL],
+            "economic_reward": economic_reward,
+            "raw_total_cost": raw_total_cost,
+            "normalized_cost": raw_total_cost / reference,
+            "cost_reference": reference,
+            "cost_reference_missing": float(reference_missing),
             "terminal_soc_bonus": terminal_bonus,
             "reward": reward,
             **diag,
         }
+        for name in ECONOMIC_COMPONENTS:
+            suffix = name.removeprefix("economic_cashflow_")
+            terms[f"economic_cashflow_{suffix}"] = current[name]
+            terms[f"economic_cashflow_delta_{suffix}"] = delta[name]
+            terms[f"raw_{suffix}_cost"] = -delta[name]
         return reward, terms

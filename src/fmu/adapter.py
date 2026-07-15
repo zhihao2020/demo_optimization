@@ -15,7 +15,7 @@ class FmuAdapter:
         self.registry = registry
         self._session = FmuSession(
             fmu_path, step_size=communication_step_seconds,
-            outputs=tuple(spec.fmu_name for spec in registry.outputs.values()),
+            outputs=tuple(spec.fmu_name for spec in registry.read_outputs.values()),
         )
 
     @property
@@ -37,7 +37,7 @@ class FmuAdapter:
             raise FmuSolverError(f"FMU doStep/read 失败 (t={self.time}): {exc}") from exc
 
     def _map_outputs(self, raw: Mapping[str, float]) -> dict[str, float]:
-        return {name: float(raw[spec.fmu_name]) for name, spec in self.registry.outputs.items()}
+        return {name: float(raw[spec.fmu_name]) for name, spec in self.registry.read_outputs.items()}
 
     def close(self) -> None:
         self._session.close()

@@ -43,8 +43,10 @@ class SafeActionGenerator:
         propose_fn: Callable[[DynamicFeasibleActionSet], dict | HybridAction],
         *,
         deterministic: bool = False,
+        feasible_override: DynamicFeasibleActionSet | None = None,
     ) -> tuple[dict, dict[str, Any]]:
-        feasible = self.oracle.compute(outputs, previous_thermal_w)
+        # 环境可传入其已叠加 CAES 最短运行规则的可行域；否则保持原 Oracle 行为。
+        feasible = feasible_override or self.oracle.compute(outputs, previous_thermal_w)
         if self.oracle.is_feasible_set_empty(feasible):
             raise FeasibleSetEmpty("DynamicFeasibleActionSet 为空：无法生成合法动作")
         physical_dist, safe_dist = self.oracle.distances_to_bounds(outputs)

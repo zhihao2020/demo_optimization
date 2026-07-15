@@ -28,7 +28,7 @@ from .validate import validate_inputs, validate_outputs
 # 调度输入：无量纲指令，直接对应 Modelica RealInput。
 ACTION_NAMES = ("u_tp", "u_battery", "u_caes")
 
-# 顶层物理输出（与 PowerSystem_8760h RealOutput 一一对应；全部必需）。
+# 顶层物理及累计经济输出（与 PowerSystem_8760h RealOutput 一一对应；全部必需）。
 # 功率单位 W；压力 Pa；温度 K；SOC ∈ [0,1]。
 # 符号约定：发电为负、用电/充电为正（与电气接口一致）。
 DEFAULT_OUTPUTS = (
@@ -57,6 +57,15 @@ DEFAULT_OUTPUTS = (
     "caes_gas_temperature",
     "caes_hot_temperature",
     "caes_cold_temperature",
+    # Modelica 累计现金流：正=收益、负=成本，Python 只做差分/审计。
+    "economic_cashflow_total",
+    "economic_cashflow_wind",
+    "economic_cashflow_pv",
+    "economic_cashflow_thermal",
+    "economic_cashflow_battery",
+    "economic_cashflow_caes",
+    "economic_cashflow_load",
+    "economic_cashflow_grid",
 )
 
 # 与模型 start 一致的默认初值（须落在允许输入集合内）
