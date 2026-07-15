@@ -7,6 +7,7 @@ import pytest
 
 from actions import CaesMode, FeasibilityOracle, HybridAction
 from envs.power_system_env import PowerSystemEnv
+from envs.forecast_provider import BASE_OBSERVATION_DIM, DEFAULT_OBSERVATION_DIM
 from replay import HybridGiveSafeReplayBuffer
 from safety import (
     ConstraintRewardCalculator,
@@ -69,7 +70,7 @@ def test_rejection_does_not_call_main_fmu():
 
 def test_givesafe_self_loop_sample():
     buf = HybridGiveSafeReplayBuffer()
-    obs = np.zeros(19, dtype=np.float32)
+    obs = np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32)
     tr = Transition(
         observation=obs,
         hybrid_action={"u_tp": 1.0, "u_battery": 0.0, "caes_mode": 2, "caes_magnitude": 1.0},
@@ -150,6 +151,7 @@ def test_max_attempts_no_safe_action():
     )
     collector = GiveSafeTransitionCollector(buf, ctrl)
     t0 = adapter.time
+    obs_before = env.build_observation()
 
     def always_bad():
         return _charge_near_full()
@@ -162,6 +164,7 @@ def test_max_attempts_no_safe_action():
     assert buf.physical_size == 0
     assert buf.givesafe_size == 5
     assert collector.stats["no_safe_action_found_count"] == 1
+    assert np.array_equal(obs[BASE_OBSERVATION_DIM:], obs_before[BASE_OBSERVATION_DIM:])
     env.close()
 
 
@@ -202,7 +205,7 @@ def test_shadow_rejection_no_main_fmu():
 
 def test_mixed_replay_sampling_fractions():
     buf = HybridGiveSafeReplayBuffer(physical_fraction=0.7, givesafe_fraction=0.3)
-    obs = np.zeros(19, dtype=np.float32)
+    obs = np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32)
     bounds = {"u_tp_low": 1 / 3, "u_tp_high": 1.0, "u_battery_low": -1.0, "u_battery_high": 1.0}
     mask = np.ones(3, dtype=bool)
     for i in range(70):

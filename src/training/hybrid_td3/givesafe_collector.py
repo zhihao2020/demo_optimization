@@ -127,7 +127,7 @@ class GiveSafeTransitionCollector:
         """propose_fn 无环境步副作用地采样候选动作。"""
         if env.last_outputs is None:
             raise RuntimeError("环境未 reset")
-        obs_before = env.observation_builder.build(env.last_outputs)
+        obs_before = env.build_observation()
         sim_time_before = float(getattr(env.adapter, "time", 0.0))
         valid_steps_before = int(env.valid_episode_steps)
 

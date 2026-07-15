@@ -9,8 +9,19 @@ from typing import Any
 import numpy as np
 
 
-def evaluate_policy(env, policy: Any, output_csv: Path | None = None, gamma: float = 0.99) -> dict[str, Any]:
-    obs, info0 = env.reset()
+def evaluate_policy(
+    env,
+    policy: Any,
+    output_csv: Path | None = None,
+    gamma: float = 0.99,
+    *,
+    reset_options: dict[str, Any] | None = None,
+    max_steps: int | None = None,
+) -> dict[str, Any]:
+    """评估单个窗口；``max_steps`` 允许年度最后不足一周的尾窗。"""
+    if max_steps is not None and max_steps <= 0:
+        raise ValueError("max_steps 必须为正数")
+    obs, info0 = env.reset(options=reset_options)
     if hasattr(policy, "on_episode_reset"):
         policy.on_episode_reset(info0)
     rows: list[dict[str, Any]] = []
@@ -100,6 +111,8 @@ def evaluate_policy(env, policy: Any, output_csv: Path | None = None, gamma: flo
             previous_thermal = float(current["p_thermal"])
         if terminated or truncated:
             break
+        if max_steps is not None and len(rows) >= max_steps:
+            break
     if output_csv and rows:
         output_csv.parent.mkdir(parents=True, exist_ok=True)
         with output_csv.open("w", newline="", encoding="utf-8") as handle:
@@ -125,4 +138,56 @@ def evaluate_policy(env, policy: Any, output_csv: Path | None = None, gamma: flo
         "invalid_transition_count": invalid_transition,
         "action_violation_count": forbidden,
         "gamma": gamma,
+    }
+
+
+def evaluate_annual_policy(
+    env,
+    policy: Any,
+    *,
+    annual_horizon_hours: int,
+    gamma: float = 0.99,
+    output_dir: Path | None = None,
+) -> dict[str, Any]:
+    """按训练一致的周窗口覆盖全年；最后窗口只执行剩余小时，不跨年度。"""
+    if annual_horizon_hours <= 0:
+        raise ValueError("annual_horizon_hours 必须为正数")
+    step_hours = float(env.config["fmu"]["decision_interval_seconds"]) / 3600.0
+    if step_hours <= 0 or not step_hours.is_integer():
+        raise ValueError("年度评估要求整数小时决策间隔")
+    episode_hours = int(env.episode_steps * step_hours)
+    if episode_hours <= 0:
+        raise ValueError("episode_steps 必须为正数")
+
+    windows: list[dict[str, Any]] = []
+    for start_hour in range(0, annual_horizon_hours, episode_hours):
+        hours = min(episode_hours, annual_horizon_hours - start_hour)
+        output_csv = None
+        if output_dir is not None:
+            output_csv = output_dir / f"window_{start_hour:04d}h.csv"
+        windows.append(
+            evaluate_policy(
+                env,
+                policy,
+                output_csv=output_csv,
+                gamma=gamma,
+                reset_options={"start_time": float(start_hour * 3600)},
+                max_steps=hours,
+            )
+        )
+
+    metric_names = tuple(windows[0]["metrics"]) if windows else ()
+    return {
+        "annual_horizon_hours": annual_horizon_hours,
+        "windows": len(windows),
+        "steps": sum(int(item["steps"]) for item in windows),
+        "valid_steps": sum(int(item["valid_steps"]) for item in windows),
+        "annual_raw_total_cost": sum(float(item["weekly_raw_total_cost"]) for item in windows),
+        "annual_episode_reward": sum(float(item["weekly_episode_reward"]) for item in windows),
+        "window_discounted_return_sum": sum(float(item["weekly_discounted_return"]) for item in windows),
+        "metrics": {name: sum(float(item["metrics"][name]) for item in windows) for name in metric_names},
+        "fmu_failure_count": sum(int(item["fmu_failure_count"]) for item in windows),
+        "forbidden_action_count": sum(int(item["forbidden_action_count"]) for item in windows),
+        "invalid_transition_count": sum(int(item["invalid_transition_count"]) for item in windows),
+        "terminal_soc_satisfied_windows": sum(bool(item["terminal_soc_satisfied"]) for item in windows),
     }

@@ -37,7 +37,7 @@ def test_rule_controller_outputs_hybrid_dict():
     env = PowerSystemEnv(adapter=FakeAdapter())
     env.reset(seed=1)
     ctrl = RuleBasedController(env)
-    action = ctrl.predict(env.observation_builder.build(env.last_outputs))
+    action = ctrl.predict(env.build_observation())
     assert set(action) >= {"u_tp", "u_battery", "caes_mode", "caes_magnitude"}
     assert action["caes_mode"] == int(CaesMode.IDLE)
     _, _, _, _, info = env.step(action)

@@ -1,6 +1,8 @@
 """Phase D.5：细粒度失败分类、残差、SafetyClassifier、空可行集、BoundaryStress。"""
 from __future__ import annotations
 import numpy as np
+
+from envs.forecast_provider import DEFAULT_OBSERVATION_DIM
 import pytest
 from actions import (
     BoundaryStressTester,
@@ -124,11 +126,11 @@ def test_thermal_bounds_use_actual_previous_p_thermal():
 def test_economic_buffer_rejects_poison_reward_and_invalid():
     buf = EconomicReplayBuffer(capacity=10)
     t = Transition(
-        observation=np.zeros(19, dtype=np.float32),
+        observation=np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32),
         hybrid_action={"u_tp": 1.0, "u_battery": 0.0, "caes_mode": 1, "caes_magnitude": 0.0},
         decoded_fmu_action={"u_tp": 1.0, "u_battery": 0.0, "u_caes": 0.0},
         reward=-1e9,
-        next_observation=np.zeros(19, dtype=np.float32),
+        next_observation=np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32),
         terminated=False,
         valid_mode_mask=np.array([True, True, True]),
         dynamic_action_bounds={"u_tp_low": 1 / 3, "u_tp_high": 1.0, "u_battery_low": -1.0, "u_battery_high": 1.0},

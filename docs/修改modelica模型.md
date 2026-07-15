@@ -13,7 +13,7 @@
 | `4b083d8` — `modelida模型` | 2026-07-13 23:24:32 | 新增 14 个 Modelica 源/包文件；整个提交共 15 个文件、55,257 行新增 | 导入完整模型库及其包结构，建立 FMU 的物理侧基线。 |
 | `ef25cdc` — `修改modelica模型` | 2026-07-13 23:25:15 | 仅修改 2 个 Modelica 文件：94 行新增、67 行删除 | 重构 FMU 的输出接口和经济计算职责，以支撑 Python/RL。 |
 
-第二次提交只涉及：
+第三次提交只涉及：
 
 - [`PowerSystem_8760h.mo`](../resources/Example/TypicalScene/PowerSystem_8760h.mo)：78 行新增、33 行删除；
 - [`TypicalScenarios.mo`](../resources/TypicalScenarios.mo)：16 行新增、34 行删除。
@@ -32,15 +32,56 @@
 
 ### 新增的物理量输出
 
-| 类别 | 输出 |
-| --- | --- |
-| 电力平衡 | `p_curtailment = max(-bus.P_res, 0)`（弃电）、`p_unserved = max(bus.P_res, 0)`（缺供） |
-| 储能状态 | `battery_soc`、`caes_gas_soc`、`caes_hot_soc`、`caes_cold_soc` |
-| 设备实际功率 | `p_thermal`、`p_battery`、`p_caes`、`p_grid` |
-| 风光与负荷 | `p_wind_available`、`p_wind_actual`、`p_pv_available`、`p_pv_actual`、`p_load_actual` |
-| CAES 热力状态 | `caes_gas_pressure`、`caes_gas_temperature`、`caes_hot_temperature`、`caes_cold_temperature` |
+以下是 `ef25cdc` 新增到顶层 FMU 的全部 19 个输出。右列给出其在 `PowerSystem_8760h.mo` 中的直接赋值来源；功率的符号统一为“发电负、用电/充电正”。
+
+| 类别 | FMU 变量 | 代码来源 / 定义 | 含义与单位 |
+| --- | --- | --- | --- |
+| 电力平衡 | `p_curtailment` | `max(-bus.P_res, 0)` | 未被消纳的富余发电功率（弃电），W，非负。 |
+| 电力平衡 | `p_unserved` | `max(bus.P_res, 0)` | 经可下调负荷后仍未满足的负荷缺口，W，非负。 |
+| 储能状态 | `battery_soc` | `battery.SOC` | 电池荷电状态，0～1，无量纲。 |
+| 储能状态 | `caes_gas_soc` | `gastank.SOC = gastank.p / p_norm` | CAES 储气罐压力相对于额定压力的状态，0～1，无量纲。 |
+| 储能状态 | `caes_hot_soc` | `hottank.SOC = level / (V0 / A)` | CAES 热罐液位相对于额定液位的状态，0～1，无量纲。 |
+| 储能状态 | `caes_cold_soc` | `coldtank.SOC = level / (V0 / A)` | CAES 冷罐液位相对于额定液位的状态，0～1，无量纲。 |
+| 设备实际功率 | `p_thermal` | `thermalPower.positivePlug.P_act` | 火电实际出力，W；负值表示发电。当前模型中 `P_act = P_plan = -u_tp * P_cap`。 |
+| 设备实际功率 | `p_battery` | `battery.PBS.P_act` | 电池实际功率，W；正值充电、负值放电。当前模型中 `P_act = P_plan = u_battery * P_cap`。 |
+| 设备实际功率 | `p_caes` | `compressedAirEnergyStorage.PBS.P_act` | CAES 实际电功率，W；正值压缩/充电、负值膨胀/放电。当前模型中 `P_act = P_plan = u_caes * P_cap`。 |
+| 设备实际功率 | `p_grid` | `grid.Power.P_act` | 与外部电网的实际交换功率，W；正值购电、负值售电。它是按联络线限额截断后的值。 |
+| 风资源 | `p_wind_available` | `wind.P_WT.P_plan` | 给定风速和风机功率曲线计算的可用风电功率，W；负值表示可发电。 |
+| 风资源 | `p_wind_actual` | `wind.P_WT.P_act` | 母线弃电策略之后实际并网的风电功率，W；负值表示实际发电。 |
+| 光伏资源 | `p_pv_available` | `pV_e.P_PV.P_plan` | 由辐照、环境温度、风速及组件参数计算的可用光伏功率，W；负值表示可发电。 |
+| 光伏资源 | `p_pv_actual` | `pV_e.P_PV.P_act` | 母线弃电策略之后实际并网的光伏功率，W；负值表示实际发电。 |
+| 负荷 | `p_load_actual` | `eLoad.ELoad.P_act` | 实际被供给的负荷功率，W；正值表示用电。发生缺供时它可低于计划负荷。 |
+| CAES 热力状态 | `caes_gas_pressure` | `gastank.p` | CAES 储气罐气体压力，Pa。 |
+| CAES 热力状态 | `caes_gas_temperature` | `gastank.T` | CAES 储气罐气体温度，K。 |
+| CAES 热力状态 | `caes_hot_temperature` | `hottank.T` | CAES 热罐温度，K。 |
+| CAES 热力状态 | `caes_cold_temperature` | `coldtank.T` | CAES 冷罐温度，K。 |
 
 新接口把原来混合在 `P_res` 中的两种运行结果拆成两个非负量，也暴露了策略构造 observation、计算约束违规和诊断 CAES 边界所需的原始状态。
+
+### 可用功率、实际功率与弃电的关系
+
+是的，二者的联系不是 Python 的推断，而是 `TypicalScenarios.mo` 的 `Bus` 方程直接规定的。`P_plan` 是资源或调度计划值，`P_act` 是母线平衡和弃电/降负荷逻辑完成后真正进入系统的值；顶层仅将这两个内部量分别导出为 `*_available` 和 `*_actual`。
+
+光伏可用功率首先由 `PV_e` 模型计算：
+
+```modelica
+P_PV.P_plan = -max(Pn * G_in / Gstc
+  * (1 - KT * (T_pv - T_stc)) * eta, 0);
+```
+
+因此 `p_pv_available` 是在当前辐照 `G_in`、组件表面温度 `T_pv`、装机 `Pn`、温度系数 `KT` 和光电效率 `eta` 下本可发出的功率。负号只来自本模型“发电为负”的符号约定，并不表示负的发电量。
+
+随后 `Bus` 处理功率平衡。在富余发电分支 `P_res1 < 0` 中，先弃风、再弃光伏：
+
+```modelica
+Power_WT.P_act = max(Power_WT.P_plan + P_res1, 0);
+Power_PV.P_act = max(Power_PV.P_plan + P_res2, 0);
+P_res = -Power_PV.P_act + P_res2 + Power_PV.P_plan;
+```
+
+这里 `P_res2` 是风电已处理后的剩余富余量。于是弃电时 `p_pv_actual` 的数值会从负的 `p_pv_available` 向 0 靠近，`0` 表示该时刻光伏已全部弃掉；不需要弃电时，代码直接令 `Power_PV.P_act = Power_PV.P_plan`，两者相等。风电变量同理，但由于策略“先弃风电”，风电实际功率通常先于光伏被削减。缺供分支不弃风光，而是令二者实际功率等于计划/可用功率，再下调负荷。
+
+`p_curtailment` 不是“某一台光伏的弃电量”，而是风、光依次削减后仍残留的总富余功率；`p_unserved` 也不是计划负荷，而是最多下调至计划负荷 20% 后仍无法满足的剩余缺口。这两个量共同替代了原来含义混合的带符号 `P_res`。
 
 ### 输入与符号约定
 
@@ -65,6 +106,21 @@
 
 `Bus.OPT_goal` 仍作为内部累计现金流保留，但顶层模型不再导出它。
 
+### 原惩罚项的作用，以及为何去掉
+
+旧代码的目的不是改变设备的物理状态方程，而是在经济现金流中叠加一个随越界或功率失衡增大的软成本，以驱动优化器远离不可行工况：
+
+| 位置 | 原罚函数（按旧代码转写） | 原本想约束的对象 | 删除后的变化 |
+| --- | --- | --- | --- |
+| `ThermalPower` | `C_penality = k * P_cap * (e ^ max(P_act + P_min, 0) - 1) + k * (e ^ (-min(P_max + P_act, 0)) - 1)` | 火电实际功率越过最小/最大出力边界。 | `positivePlug.C` 只保留燃料/电价现金流；火电出力约束的评价迁到 Python。 |
+| `Battery` | `k * E_cap * (e ^ (-min(SOC - SOC_min, 0)) - 1) + k * (e ^ (-min(SOC_max - SOC, 0)) - 1)` | 电池 SOC 低于下限或高于上限。 | 充、放电分支仅按实际功率结算买/售价；Python 由 `battery_soc` 判断并施加策略所需的约束或罚分。 |
+| `CompressedAirEnergyStorage` | 对 `gastank.SOC`、`hottank.SOC`、`coldtank.SOC` 分别使用与电池相同形式的指数罚函数，三项相加。 | CAES 气、热、冷三类储罐的 SOC 上下界。 | CAES 仅保留买/售电现金流；Python 使用三项 CAES SOC 及压力/温度输出诊断和评价。 |
+| `Bus` | `C_penality = (k * P_res)^2`，且 `der(Income) = ΣC - C_penality`。 | 弃电（`P_res < 0`）和缺供（`P_res > 0`）。 | `der(Income) = ΣC`；Python 从互不混淆的 `p_curtailment` 和 `p_unserved` 单独定价或惩罚。 |
+
+去掉它们的原因有三层。第一，罚函数是优化目标的一部分而非设备物理规律，放在 FMU 内会把奖励权重和约束表达式固化，无法按实验调整。第二，火电公式把以 W 表示的 `P_act`、`P_min`、`P_max` 直接放入指数的自变量；只要出现正的 W 量级越界，`e^x` 就很容易溢出为 `Inf`，继而使现金流、奖励或仿真出现 `NaN`。第三，旧的 `P_res` 同时承载弃电和缺供，单个平方罚项无法让 Python 对两种后果采用不同系数；拆分输出后，可以显式采用例如 `λ_curtail * p_curtailment + λ_unserved * p_unserved`，并使缺供的权重远大于弃电。
+
+这并不表示物理边界被删除：例如 CAES 气罐仍保留 `assert(SOC <= SOC_max)` 与 `assert(SOC > SOC_min)`，储罐模型的状态演化也未因本提交而改写。被移除的是进入现金流/目标函数的软经济罚项及其顶层导出；Python 侧须重新、明确地定义奖励和违规处理。
+
 ## 为什么这样修改
 
 1. **数值稳定性**：旧罚函数包含 `e^x`。特别是火电公式直接以 W 量级的功率参与指数运算，容易产生 `Inf`/`NaN`，不适合作为 FMU 仿真和训练的稳定奖励来源。
@@ -77,43 +133,3 @@
 - 输入 `u_tp`、`u_battery`、`u_caes` 及设备间的物理连接未在本次差异中改变；改动重点是输出接口和经济计算位置，而非设备物理过程。
 - 本说明基于 Git 源码对比。未在此对比范围内重新导出 FMU 或运行仿真，因此不能将其视为新 FMU 的运行验证结果；导出后需同步核对 Python 的输出名映射和相关测试。
 
-## 逐行改动记录
-
-以下行号来自 `git diff --unified=0 4b083d8..ef25cdc`。`—` 表示该侧没有对应源码行；记录覆盖两个文件的全部 Git 变更块，不展开未改动的长时序表或查表数据。
-
-### `PowerSystem_8760h.mo`
-
-| 基线行 → 修改后行 | 删除 / 新增内容 | 行为影响 |
-| --- | --- | --- |
-| `2` → `3–5` | 新增 FMU 职责边界、Python 结算边界及功率/物理量单位注释。 | 明确模型只输出物理状态，避免将 reward/罚分误认为 Modelica 的职责。 |
-| `6` → `9` | `u_tp` 注释补充“无量纲，约 `[0,1]`”。 | 不改变输入值或连接，仅明确火电调度输入的含义。 |
-| `8` → `11` | `u_battery` 注释补充“正充电、负放电”。 | 固化电池功率方向约定。 |
-| `10` → `13` | `u_caes` 注释补充“正充电、负放电”。 | 固化 CAES 功率方向约定。 |
-| `13–29` → `16–59` | 删除 `OPT_goal`、`P_res`、5 个 `*_penalty` 顶层输出；新增弃电/缺供、四个 SOC、设备实际功率、风光/负荷功率和 CAES 热力状态输出。 | FMU 输出由“固定优化目标”改为“Python 可自由组合的原始物理观测”。 |
-| `227–228` → `257` | 火电实例删除 `k = 1`。 | 对应 `ThermalPower.k` 已删除，实例不再传入火电罚函数权重。 |
-| `321` → `—` | 电池实例删除 `k = 0.0001`。 | 对应 `Battery.k` 已删除，SOC 罚分不再由 Modelica 计算。 |
-| `328` → `356` | 母线实例从 `Bus bus(k = 1e6)` 改为无参数实例。 | 对应 `Bus.k` 已删除，功率残差惩罚权重迁出。 |
-| `671` → `699` | CAES 长参数行删除 `k = 1`，其余时序表和储罐参数不变。 | 对应 CAES 的 SOC 罚函数权重删除；不改变该行携带的查表数据。 |
-| `744–751` → `772–777` | 移除旧聚合输出赋值；新增 `p_curtailment`、`p_unserved` 及 `battery_soc` 赋值。 | 将带符号 `bus.P_res` 拆为两个非负指标，保留电池 SOC 但改用新的导出接口。 |
-| `—` → `778–797` | 新增 CAES SOC、设备实际功率、风光可用/实际、负荷实际功率和 CAES 压力/温度赋值。 | 使 Python 可直接获得状态、真实执行功率和边界诊断所需量。 |
-
-### `TypicalScenarios.mo`
-
-| 基线行 → 修改后行 | 删除 / 新增内容 | 行为影响 |
-| --- | --- | --- |
-| `358–360` → `358` | `ThermalPower` 删除 `k` 与 `C_penality`，改为迁出说明注释。 | 火电模型不再持有经济罚函数状态。 |
-| `396–399` → `394–395` | 删除火电出力边界罚函数及 `C_penality` 方程；`positivePlug.C` 仅保留燃料/电价现金流。 | 避免指数罚函数造成 `Inf/NaN`；火电约束惩罚交给 Python。 |
-| `587` → `583` | `Battery.k` 改为说明注释。 | 电池 SOC 罚函数权重从 Modelica 接口移除。 |
-| `590` → `—` | 删除 `Battery.C_penality`。 | 电池不再保存独立罚函数值。 |
-| `—` → `603` | 新增电池 SOC 指数罚函数已迁出的注释。 | 说明后续充/放电分支只计算现金流。 |
-| `609–612` → `605` | 充电分支删除 SOC 罚函数和 `C_penality` 累加；保留 `PBS.C = -PBS.P_act * PBS.c1 / 3.6e6`。 | 正功率（充电）仅按购电成本结算。 |
-| `615–617` → `608` | 放电分支删除 SOC 罚函数和 `C_penality` 累加；保留 `PBS.C = -PBS.P_act * PBS.c2 / 3.6e6`。 | 负功率（放电）仅按售电价格结算。 |
-| `677` → `668` | `Bus.k` 改为说明注释。 | 母线不再接受功率失衡罚分系数。 |
-| `680` → `671` | 补充 `P_res` 的符号语义：负为弃电、正为缺供，并指出顶层拆分输出。 | `P_res` 仍是内部功率平衡量，但其对外语义更明确。 |
-| `683–684` → `674` | 删除 `Bus.C_penality`；将 `OPT_goal` 说明改为“内部累计现金流”。 | `OPT_goal` 保留内部记账，不再代表可直接导出的优化目标。 |
-| `753–754` → `743–744` | 删除 `der(Income)` 中的 `- C_penality` 和 `(k * P_res)^2` 方程；仅累加设备现金流。 | 失衡成本不再硬编码在 Modelica，需由 Python 基于弃电/缺供输出计算。 |
-| `766` → `756` | CAES 的 `k` 改为说明注释。 | 移除气、热、冷罐 SOC 罚函数权重。 |
-| `776–778` → `—` | 删除 `C_GasTank_penality`、`C_HotTank_penality`、`C_ColdTank_penality`。 | CAES 不再对外或内部累加三类储罐罚函数。 |
-| `—` → `1020` | 新增 CAES 罚函数迁出的注释。 | 明确下方充/放电分支的现金流计算边界。 |
-| `1034–1037` → `1022` | CAES 正功率分支删除三类 SOC 指数罚函数；保留买电现金流方程。 | CAES 充电成本不再附加储罐 SOC 罚分。 |
-| `1039–1042` → `1024` | CAES 负功率分支删除三类 SOC 指数罚函数；保留售电现金流方程。 | CAES 放电收益不再附加储罐 SOC 罚分。 |

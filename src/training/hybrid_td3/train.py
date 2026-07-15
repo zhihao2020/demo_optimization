@@ -18,7 +18,7 @@ from envs.reward_calculator import IncompleteRewardConfigError
 from fmu import FmuAdapter
 from replay import HybridGiveSafeReplayBuffer
 from safety import GiveSafeController, ShadowFmuValidator, load_givesafe_config
-from training.evaluate_td3 import evaluate_policy
+from training.evaluate_td3 import evaluate_annual_policy, evaluate_policy
 from controllers.rule_based_controller import RuleBasedController
 
 from .algorithm import HybridTD3
@@ -185,6 +185,8 @@ def run_hybrid_training(
     batch_size: int = 128,
     formal: bool = False,
     enable_shadow: bool | None = None,
+    forecast_enabled: bool | None = None,
+    annual_evaluation: bool = False,
 ) -> dict[str, Any]:
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -211,7 +213,7 @@ def run_hybrid_training(
 
     np.random.seed(seed)
     try:
-        env = PowerSystemEnv(require_complete_reward=formal, run_id=run_dir.name)
+        env = PowerSystemEnv(require_complete_reward=formal, run_id=run_dir.name, forecast_enabled=forecast_enabled)
     except IncompleteRewardConfigError as exc:
         return {"status": "blocked_incomplete_reward", "error": str(exc)}
 
@@ -275,6 +277,9 @@ def run_hybrid_training(
         "oracle_version": env.oracle.oracle_version,
         "annual_horizon_hours": env.config["fmu"].get("annual_horizon_hours"),
         "episode_start_schedule": "annual_cycling_windows",
+        "forecast_enabled": env.forecast_enabled,
+        "forecast_horizon_hours": env.forecast_provider.horizon_hours if env.forecast_provider else 0,
+        "observation_dim": int(np.prod(env.observation_space.shape)),
     }
 
     try:
@@ -320,11 +325,11 @@ def run_hybrid_training(
         safety_dataset.save(run_dir / "train" / "safety_dataset.json")
 
         # 规则仅作独立基准，不参与 GiveSafe
-        rule_env = PowerSystemEnv(run_id=f"{run_dir.name}_rule")
+        rule_env = PowerSystemEnv(run_id=f"{run_dir.name}_rule", forecast_enabled=forecast_enabled)
         rule_result = evaluate_policy(rule_env, RuleBasedController(rule_env), run_dir / "trajectories" / "rule.csv")
         rule_env.close()
 
-        eval_env = PowerSystemEnv(run_id=f"{run_dir.name}_eval")
+        eval_env = PowerSystemEnv(run_id=f"{run_dir.name}_eval", forecast_enabled=forecast_enabled)
         eval_shadow = None
         if use_shadow:
             fmu_path = eval_env.root / eval_env.config["fmu"]["path"]
@@ -349,6 +354,36 @@ def run_hybrid_training(
             eval_shadow.close() if eval_shadow is not None else None
             eval_env.close()
 
+        annual_eval_result = None
+        if annual_evaluation:
+            annual_env = PowerSystemEnv(run_id=f"{run_dir.name}_annual_eval", forecast_enabled=forecast_enabled)
+            annual_shadow = None
+            if use_shadow:
+                fmu_path = annual_env.root / annual_env.config["fmu"]["path"]
+                step = float(annual_env.config["fmu"]["communication_step_seconds"])
+
+                def afactory():
+                    return FmuAdapter(fmu_path, step, annual_env.registry)
+
+                annual_shadow = ShadowFmuValidator(
+                    factory=afactory,
+                    oracle=annual_env.oracle,
+                    enabled=True,
+                    mode=str(shadow_cfg.get("mode", "always")),
+                )
+            annual_ctrl = GiveSafeController(oracle=annual_env.oracle, shadow=annual_shadow, config=gs_cfg)
+            annual_policy = HybridPolicyWrapper(agent, annual_env, annual_ctrl, deterministic=True)
+            try:
+                annual_eval_result = evaluate_annual_policy(
+                    annual_env,
+                    annual_policy,
+                    annual_horizon_hours=int(annual_env.config["fmu"]["annual_horizon_hours"]),
+                    output_dir=run_dir / "trajectories" / "annual_eval",
+                )
+            finally:
+                annual_shadow.close() if annual_shadow is not None else None
+                annual_env.close()
+
         attempts = max(collector.stats["policy_attempt_count"], 1)
         rej = collector.stats["givesafe_rejection_count"]
         main_exec = max(collector.stats["main_fmu_execution_count"], 1)
@@ -363,6 +398,7 @@ def run_hybrid_training(
                 / max(collector.stats["main_fmu_execution_count"], 1),
                 "main_fmu_execution_safety_rate": 1.0 - post / main_exec,
                 "eval": eval_result,
+                "annual_eval": annual_eval_result,
                 "rule": rule_result,
                 "last_metrics": agent.last_metrics,
                 "episodes": episode,

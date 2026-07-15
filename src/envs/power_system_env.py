@@ -34,6 +34,7 @@ from envs.failures import (
 )
 from fmu import FmuAdapter, FmuSolverError, build_registry
 from .observation_builder import ObservationBuilder
+from .forecast_provider import ForecastProvider
 from .reward_calculator import RewardCalculator
 from .termination_checker import TerminationChecker
 
@@ -63,6 +64,7 @@ class PowerSystemEnv(gym.Env):
         adapter: Any | None = None,
         require_complete_reward: bool = False,
         run_id: str = "default",
+        forecast_enabled: bool | None = None,
     ):
         super().__init__()
         self.root = Path(__file__).resolve().parents[2]
@@ -76,9 +78,21 @@ class PowerSystemEnv(gym.Env):
         reward_config["episode_steps"] = int(self.config["fmu"]["episode_steps"])
         self.registry = build_registry(self.root / self.config["fmu"]["path"], self.config)
         self.observation_builder = ObservationBuilder(self.registry)
+        forecast_cfg = self.config.get("forecast") or {}
+        self.forecast_enabled = bool(forecast_cfg.get("enabled", True)) if forecast_enabled is None else bool(forecast_enabled)
+        self.forecast_provider: ForecastProvider | None = None
+        if self.forecast_enabled:
+            self.forecast_provider = ForecastProvider(
+                self.root,
+                forecast_cfg,
+                annual_horizon_hours=int(self.config["fmu"]["annual_horizon_hours"]),
+                step_seconds=float(self.config["fmu"]["decision_interval_seconds"]),
+            )
+        forecast_low = self.forecast_provider.feature_low if self.forecast_provider is not None else np.empty(0, dtype=np.float32)
+        forecast_high = self.forecast_provider.feature_high if self.forecast_provider is not None else np.empty(0, dtype=np.float32)
         self.observation_space = Box(
-            low=self.observation_builder.low,
-            high=self.observation_builder.high,
+            low=np.concatenate((self.observation_builder.low, forecast_low)),
+            high=np.concatenate((self.observation_builder.high, forecast_high)),
             dtype=np.float32,
         )
         self.action_space = HybridDictSpace(
@@ -123,6 +137,16 @@ class PowerSystemEnv(gym.Env):
         self.last_step_diagnostics: dict[str, Any] = {}
         self._pending_action_meta: dict[str, Any] = {}
 
+    def build_observation(self) -> np.ndarray:
+        """当前 FMU 物理输出 + 可选只读日前 forecast 的唯一 observation 构造入口。"""
+        if self.last_outputs is None:
+            raise RuntimeError("环境未 reset")
+        physical = self.observation_builder.build(self.last_outputs)
+        if self.forecast_provider is None:
+            return physical
+        forecast = self.forecast_provider.at_time(float(self.adapter.time))
+        return np.concatenate((physical, forecast)).astype(np.float32, copy=False)
+
     def _resolve(self, path: str | Path) -> Path:
         p = Path(path)
         return p if p.is_absolute() else self.root / p
@@ -161,7 +185,7 @@ class PowerSystemEnv(gym.Env):
         }
         self._current_feasible = self.oracle.compute(self.last_outputs, self.previous_thermal)
         self._pending_action_meta = {}
-        observation = self.observation_builder.build(self.last_outputs)
+        observation = self.build_observation()
         info = {
             "time": self.adapter.time,
             "initial_outputs": dict(self.last_outputs),
@@ -186,7 +210,7 @@ class PowerSystemEnv(gym.Env):
             self.episode_failed = True
             info = self._reject_info(None, feasible, exc, action_meta=action_meta)
             self._record_failure(info, hybrid=None, physical=None, actual=None, predicted=None)
-            return self.observation_builder.build(self.last_outputs), 0.0, False, True, info
+            return self.build_observation(), 0.0, False, True, info
 
         hybrid: HybridAction | None = None
         try:
@@ -201,7 +225,7 @@ class PowerSystemEnv(gym.Env):
             self._count(exc.failure_type)
             info = self._reject_info(hybrid if hybrid is not None else action, feasible, exc, action_meta=action_meta)
             # 不调用 FMU、不算经济 reward、不产生有效转移
-            obs = self.observation_builder.build(self.last_outputs)
+            obs = self.build_observation()
             return obs, 0.0, False, True, info
 
         physical = self.decoder.decode(hybrid)
@@ -241,7 +265,7 @@ class PowerSystemEnv(gym.Env):
                 physical_dist=physical_dist, safe_dist=safe_dist,
             )
             self._record_failure(info, hybrid=hybrid, physical=physical, actual=outputs, predicted=predicted)
-            return self.observation_builder.build(self.last_outputs), 0.0, False, True, info
+            return self.build_observation(), 0.0, False, True, info
         except FmuSolverError as exc:
             # 分类：生命周期 vs 数值
             msg = str(exc).lower()
@@ -257,7 +281,7 @@ class PowerSystemEnv(gym.Env):
                 physical_dist=physical_dist, safe_dist=safe_dist,
             )
             self._record_failure(info, hybrid=hybrid, physical=physical, actual=outputs, predicted=predicted)
-            return self.observation_builder.build(self.last_outputs), 0.0, False, True, info
+            return self.build_observation(), 0.0, False, True, info
 
         residuals = self.oracle.residual(predicted, outputs)
         dang = self.oracle.dangerous_residual(
@@ -282,7 +306,7 @@ class PowerSystemEnv(gym.Env):
         self.previous_thermal = float(outputs["p_thermal"])
         self.last_outputs = outputs
         self._current_feasible = self.oracle.compute(outputs, self.previous_thermal)
-        observation = self.observation_builder.build(outputs)
+        observation = self.build_observation()
         info = {
             "time": self.adapter.time,
             "step": self.step_index,

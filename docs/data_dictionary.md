@@ -24,9 +24,13 @@ CSV 两列：`time(s), value`（可带 `time,value` 表头）。
 - **time**: 仿真时间（秒），步长 3600s
 - **value**: 用电负荷功率幅值 (W，正数)
 
-> 由 FMU 内嵌 `eLoad.table` 导出（`scripts/export_load_csv.py`）。仿真仍读 FMU 内嵌表；CSV 用于边界校验、可视化与 RL 负荷预报观测。母线侧 `bus.Power_Eload.P_act` 为负号（用电约定），与 CSV 正数幅值相差一个符号。
+> 由 FMU 内嵌 `eLoad.table` 导出（`scripts/export_load_csv.py`）。仿真仍读 FMU 内嵌表；CSV 用于边界校验、可视化与 RL 前瞻观测。母线侧 `bus.Power_Eload.P_act` 为负号（用电约定），与 CSV 正数幅值相差一个符号。
 
-> Demo 阶段风光环境数据亦内嵌于 FMU；CSV 用于校验与可视化对比。
+> 风光环境数据亦内嵌于 FMU。Python 会从四份同源 CSV 读取 `t+1..t+24` 的已知日前值，按每小时 `wind, irradiance, ambient_temperature, planned_load` 的顺序附加到 19 维物理 observation 后；FMU 仍是唯一物理边界和真值来源。年末越界预测使用年度末最后一个值填充。
+
+> `scripts/train_hybrid_td3.py --no-forecast` 仅用于与前瞻模型进行同种子基线对比，恢复原 19 维 observation；它不修改 FMU 边界、奖励或 GiveSafe。
+
+> 在比较训练完成后加 `--annual-eval`，会按 52 个完整周窗口和 1 个 24 小时尾窗覆盖全年，输出全年原始成本、缺供/弃电、储能吞吐、失败数与有效步数；它不把跨周重置的储能状态伪装成连续年度状态。
 
 ## FMU 变量映射
 

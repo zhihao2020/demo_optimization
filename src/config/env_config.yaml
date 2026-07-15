@@ -7,6 +7,17 @@ fmu:
   # 正式训练按 168 h 周 episode 覆盖该 FMU 的全年时间轴；尾段由最后一个窗口覆盖。
   annual_horizon_hours: 8760
 
+# 仅供策略使用的已知日前时序；FMU 仍使用其内嵌的同源表作为物理边界。
+# 每小时特征顺序：wind, irradiance, ambient_temperature, planned_load。
+forecast:
+  enabled: true
+  horizon_hours: 24
+  sources:
+    - {name: wind, path: data/winds.csv, offset: 0.0, scale: 15.0}
+    - {name: irradiance, path: data/Gstc.csv, offset: 0.0, scale: 1000.0}
+    - {name: ambient_temperature, path: data/environment.csv, offset: 273.15, scale: 40.0}
+    - {name: planned_load, path: data/load.csv, offset: 0.0, scale: 3.0e8}
+
 # FMU modelDescription 没有为 input 给出 min/max；以下边界来自同一实例的 Modelica 参数和设备启机约束。
 # 三个值均为 FMU 原生无量纲调度指令，绝非 Python 侧的归一化或 W 到标幺的转换。
 actions:

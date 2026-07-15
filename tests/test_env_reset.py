@@ -1,6 +1,7 @@
 import numpy as np
 
 from actions import CaesMode
+from envs.forecast_provider import BASE_OBSERVATION_DIM, DEFAULT_OBSERVATION_DIM
 from envs.power_system_env import PowerSystemEnv
 
 
@@ -47,8 +48,18 @@ def test_reset_is_repeatable_and_releases_adapter():
     adapter = FakeAdapter()
     env = PowerSystemEnv(adapter=adapter)
     first, _ = env.reset(seed=7)
+    assert first.shape == (DEFAULT_OBSERVATION_DIM,)
+    assert np.allclose(first[BASE_OBSERVATION_DIM:BASE_OBSERVATION_DIM + 4], [1.33 / 15.0, 0.0, (262.45 - 273.15) / 40.0, 203661340.2 / 3.0e8])
     env.step(_action())
     second, _ = env.reset(seed=7)
     assert np.array_equal(first, second)
     env.close()
     assert adapter.closed
+
+
+def test_forecast_can_be_disabled_for_same_seed_baseline():
+    env = PowerSystemEnv(adapter=FakeAdapter(), forecast_enabled=False)
+    observation, _ = env.reset(seed=7)
+    assert observation.shape == (BASE_OBSERVATION_DIM,)
+    assert env.observation_space.contains(observation)
+    env.close()

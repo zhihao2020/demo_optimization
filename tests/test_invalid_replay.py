@@ -2,6 +2,8 @@
 
 import numpy as np
 
+from envs.forecast_provider import DEFAULT_OBSERVATION_DIM
+
 from actions import CaesMode
 from envs.failures import (
     FmiLifecycleFailure,
@@ -18,11 +20,11 @@ from test_env_reset import FakeAdapter
 
 def _valid_transition(**kwargs):
     base = Transition(
-        observation=np.zeros(19, dtype=np.float32),
+        observation=np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32),
         hybrid_action={"u_tp": 1.0, "u_battery": 0.0, "caes_mode": 1, "caes_magnitude": 0.0},
         decoded_fmu_action={"u_tp": 1.0, "u_battery": 0.0, "u_caes": 0.0},
         reward=-0.1,
-        next_observation=np.zeros(19, dtype=np.float32),
+        next_observation=np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32),
         terminated=False,
         valid_mode_mask=np.array([True, True, True]),
         dynamic_action_bounds={"u_tp_low": 1 / 3, "u_tp_high": 1.0, "u_battery_low": -1.0, "u_battery_high": 1.0},

@@ -26,7 +26,7 @@ class ValidTransitionCollector:
             "fine_failure_counts": {},
         }
     def step_and_store(self, env, policy_action: dict | HybridAction) -> tuple[Any, ...]:
-        obs_before = env.observation_builder.build(env.last_outputs)
+        obs_before = env.build_observation()
         prev_outputs = dict(env.last_outputs) if env.last_outputs else {}
         try:
             feasible = env.get_feasible_action_spec()
