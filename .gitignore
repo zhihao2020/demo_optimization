@@ -14,5 +14,7 @@ build/
 reference_modelica_code/
 *.assets/
 outputs/
+# 训练、评估和检查点均为本地运行产物；源代码与配置仍应提交。
+runs/
 
 *.log
