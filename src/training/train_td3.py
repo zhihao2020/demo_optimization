@@ -22,13 +22,13 @@ def _assert_not_nonconvex_caes_formal(allow_legacy_smoke: bool = False) -> None:
 
 
 def run_smoke(*_args, allow_legacy_smoke: bool = False, **_kwargs) -> dict:
-    """保留入口但默认 fail-fast；仅显式 allow_legacy_smoke=True 时提示已禁用。"""
-    _assert_not_nonconvex_caes_formal(allow_legacy_smoke=allow_legacy_smoke)
-    # 即便允许 smoke 标记，也因动作空间已改为 Dict 而无法启动 SB3 TD3
+    """保留入口但始终返回 blocked 状态，不启动 SB3 Box TD3。"""
+    # 即便 allow_legacy_smoke=True，Dict 混合动作空间也无法启动 SB3 TD3
     result = {
         "status": "blocked_legacy_box_td3",
         "error": LEGACY_ERROR,
         "note": "PowerSystemEnv.action_space 现为 Dict 混合动作；正式算法见 training.hybrid_td3",
+        "allow_legacy_smoke": bool(allow_legacy_smoke),
     }
     run_dir = Path(_kwargs.get("run_dir", "runs/td3_smoke_legacy"))
     run_dir.mkdir(parents=True, exist_ok=True)

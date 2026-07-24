@@ -1,9 +1,9 @@
 # 风光火储综合能源系统 · FMU + RL 优化 Demo
 
-基于 **Modelica/FMU 物理仿真** 与 **Hybrid-GiveSafe-TD3** 的电力系统调度强化学习示例仓库。  
+基于 **Modelica/FMU 物理仿真** 与 **Hybrid-GiveSafe-{TD3,PPO,SAC}** 的电力系统调度强化学习示例仓库。  
 FMU 负责火电、电池、CAES（压缩空气储能）与风光荷的一小时步物理演化；Python 侧负责混合动作空间、动态可行域、GiveSafe 安全过滤与经济奖励。
 
-> CAES 合法指令是非凸集合（放电 / 待机 / 充电三段），普通连续 Box + 标准 SB3 TD3 **不能**作为正式训练路径；正式算法见 `src/training/hybrid_td3/`。
+> CAES 合法指令是非凸集合（放电 / 待机 / 充电三段），普通连续 Box + 标准 SB3 PPO/SAC/TD3 **不能**作为正式训练路径；正式算法见 `src/training/hybrid_td3/`、`hybrid_ppo/`、`hybrid_sac/`。
 
 ---
 
@@ -12,7 +12,8 @@ FMU 负责火电、电池、CAES（压缩空气储能）与风光荷的一小时
 - **物理层**：FMI 3.0 Co-Simulation（`fmpy`），固定步长默认 3600 s
 - **环境**：Gymnasium，`PowerSystemEnv`，Dict 混合动作 + 可选 24 h 日前 forecast 观测
 - **安全**：GiveSafe（一级 FeasibilityOracle + 可选 Shadow FMU），禁止规则 fallback
-- **训练**：Hybrid-TD3，Physical / GiveSafe 分区 replay 混合采样
+- **训练**：Hybrid-TD3 / Hybrid-PPO / Hybrid-SAC（同一混合动作 + GiveSafe）
+- **报告**：训练后自动生成 `report/report.md`（收益元、动作摘要、对比图）
 - **基线**：规则控制器（高火电 + 储能 IDLE）与随机可行采样
 
 ---
@@ -32,7 +33,7 @@ demo_optimization/
 │   ├── fmu/                   # FMI 会话、校验、变量注册
 │   ├── replay/                # Physical + GiveSafe 分区 buffer
 │   ├── safety/                # GiveSafe 控制器与 Shadow FMU
-│   └── training/              # Hybrid-TD3、评估（legacy Box TD3 已禁用）
+│   └── training/              # Hybrid-TD3/PPO/SAC、评估报告（legacy Box TD3 已禁用）
 ├── tests/                     # pytest
 ├── requirements.txt
 └── README.md
@@ -101,26 +102,52 @@ python scripts/rollout_rule_controller.py
 python scripts/evaluate_baselines.py
 ```
 
-### 5. Hybrid-GiveSafe-TD3 训练
+### 5. compare 开环方案 → FMU 回放
+
+将 `compare/output1.py` / `output2.py` 生成的全年调度序列映射为 FMU 输入并开环回放。  
+电池/CAES 会按符号约定取反后写入；若落在 CAES 禁区等非法区间，**接入校验阶段直接报错**（不投影）。
 
 ```bash
-# smoke：短跑通路径（默认约 5k valid steps）
-python scripts/train_hybrid_td3.py --mode smoke
-
-# short / formal：加长训练；可选全年评估（较慢）
-python scripts/train_hybrid_td3.py --mode short --seed 0
-python scripts/train_hybrid_td3.py --mode formal --annual-eval
-
-# 关闭 Shadow FMU（仅保留 Oracle 一级检查）
-python scripts/train_hybrid_td3.py --mode smoke --no-shadow
-
-# 关闭 CSV 前瞻观测（便于消融）
-python scripts/train_hybrid_td3.py --mode smoke --no-forecast
+python scripts/rollout_compare.py --scheme both --hours 168
+# 全年：
+python scripts/rollout_compare.py --scheme both --hours 8760
 ```
 
-常用参数：`--steps`、`--run-dir`、`--seed`。结果默认在 `runs/`。
+轨迹与摘要写入 `runs/compare/`。
 
-### 6. 测试
+### 6. Hybrid-GiveSafe 训练（TD3 / PPO / SAC）
+
+三种算法共用混合动作空间与 GiveSafe；CLI 参数一致（`--mode smoke|short|formal`、`--steps`、`--seed`、`--run-dir`、`--no-shadow`、`--no-forecast`、`--annual-eval`）。
+
+```bash
+# TD3（离线 + 目标策略平滑）
+python scripts/train_hybrid_td3.py --mode smoke
+
+# SAC（离线 + 最大熵）
+python scripts/train_hybrid_sac.py --mode smoke
+
+# PPO（在线 GAE；GiveSafe 拒绝不进入 PPO batch）
+python scripts/train_hybrid_ppo.py --mode smoke --rollout-steps 512
+
+# short / formal；可选全年评估（较慢）
+python scripts/train_hybrid_td3.py --mode short --seed 0
+python scripts/train_hybrid_sac.py --mode formal --annual-eval
+```
+
+训练结束后默认阅读入口：
+
+```text
+runs/<run_name>/report/report.md
+```
+
+内含策略 vs 规则的 **累计现金流（元）**、动作行为摘要，以及 `actions.png` / `cashflow.png` / `soc.png`。  
+对已有 run 可补生成：
+
+```bash
+python scripts/generate_policy_report.py --run-dir runs/givesafe_td3_smoke
+```
+
+### 7. 测试
 
 ```bash
 $env:PYTHONPATH = "src"
@@ -189,7 +216,7 @@ flowchart LR
 
 - **FMU 路径**：默认 `data/TypicalScensrio_Example_TypicalScene_PowerSystem_8760h.fmu`（文件名拼写沿用现有产物）。更换模型需同步 `env_config` 变量名与边界文档。
 - **Windows**：需 FMU 内含 Windows 二进制；解压目录由 `fmpy.extract` 管理，`close()` 时清理。
-- **遗留 TD3**：`src/training/train_td3.py` 故意 fail-fast，勿再接入正式流程。
+- **遗留 Box TD3**：`src/training/train_td3.py` 故意 fail-fast，勿再接入正式流程；请用 `train_hybrid_*.py`。
 - **时长**：`episode_steps: 168`（一周）；`--annual-eval` 覆盖 8760 h，耗时显著增加。
 - **标定脚本**：`scripts/calibrate_reward*.py`、`calibrate_feasibility_margins.py` 会改写配置或生成报告，正式训练前请确认 `reward_config` 中 `cost_reference` / `terminal_soc` 已就绪。
 

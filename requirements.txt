@@ -1,10 +1,13 @@
-# 核心：FMU 会话 + Gymnasium 环境 + Hybrid-TD3
+# 核心：FMU 会话 + Gymnasium 环境 + Hybrid-TD3/PPO/SAC
 fmpy>=0.3.20
 gymnasium>=1.0.0
 numpy>=1.24
 PyYAML>=6.0
 torch>=2.0
 stable-baselines3>=2.0
+pandas>=2.0
+matplotlib>=3.7
+tqdm>=4.66
 
 # 测试
 pytest>=7.0

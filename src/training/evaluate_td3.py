@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from tqdm import tqdm
 
 
 def evaluate_policy(
@@ -182,7 +183,8 @@ def evaluate_annual_policy(
         raise ValueError("episode_steps 必须为正数")
 
     windows: list[dict[str, Any]] = []
-    for start_hour in range(0, annual_horizon_hours, episode_hours):
+    starts = list(range(0, annual_horizon_hours, episode_hours))
+    for start_hour in tqdm(starts, desc="AnnualEval", unit="win", dynamic_ncols=True):
         hours = min(episode_hours, annual_horizon_hours - start_hour)
         output_csv = None
         if output_dir is not None:

@@ -1,0 +1,186 @@
+"""训练后规则/策略评估、summary 落盘与可读报告。"""
+
+from __future__ import annotations
+
+import json
+import logging
+import shutil
+from pathlib import Path
+from typing import Any, Callable
+
+from controllers.rule_based_controller import RuleBasedController
+from envs.power_system_env import PowerSystemEnv
+from fmu import FmuAdapter
+from safety import GiveSafeController, ShadowFmuValidator
+from training.evaluate_td3 import evaluate_annual_policy, evaluate_policy
+
+from .policy_wrapper import HybridGiveSafePolicyWrapper
+
+logger = logging.getLogger(__name__)
+
+
+def prepare_run_dir(run_dir: Path, root: Path) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("config", "train", "checkpoints", "trajectories"):
+        (run_dir / name).mkdir(exist_ok=True)
+    for cfg_name in (
+        "env_config.yaml",
+        "reward_config.yaml",
+        "device_params.yaml",
+        "feasibility_margins.yaml",
+        "givesafe_config.yaml",
+    ):
+        src = root / "src/config" / cfg_name
+        if src.exists():
+            shutil.copy2(src, run_dir / "config" / cfg_name)
+
+
+def finalize_training_run(
+    *,
+    run_dir: Path,
+    agent: Any,
+    checkpoint_name: str,
+    gs_cfg: dict,
+    use_shadow: bool,
+    forecast_enabled: bool | None,
+    annual_evaluation: bool,
+    result: dict[str, Any],
+    step_log: list[dict],
+    collector_stats: dict[str, Any] | None = None,
+    extra_result: dict[str, Any] | None = None,
+    make_shadow: Callable[..., ShadowFmuValidator] | None = None,
+) -> dict[str, Any]:
+    """规则评估 + GiveSafe 策略评估 + 写 summary + 生成可读报告。"""
+    run_dir = Path(run_dir)
+    agent.save(run_dir / "checkpoints" / checkpoint_name)
+
+    rule_env = PowerSystemEnv(run_id=f"{run_dir.name}_rule", forecast_enabled=forecast_enabled)
+    rule_result = evaluate_policy(
+        rule_env, RuleBasedController(rule_env), run_dir / "trajectories" / "rule.csv"
+    )
+    rule_env.close()
+
+    eval_env = PowerSystemEnv(run_id=f"{run_dir.name}_eval", forecast_enabled=forecast_enabled)
+    eval_shadow = None
+    if use_shadow:
+        fmu_path = eval_env.root / eval_env.config["fmu"]["path"]
+        step = float(eval_env.config["fmu"]["communication_step_seconds"])
+
+        def efactory():
+            return FmuAdapter(fmu_path, step, eval_env.registry)
+
+        if make_shadow is not None:
+            eval_shadow = make_shadow(eval_env, efactory)
+        else:
+            shadow_cfg = (gs_cfg.get("givesafe") or {}).get("shadow_validation") or {}
+            eval_shadow = ShadowFmuValidator(
+                factory=efactory,
+                oracle=eval_env.oracle,
+                enabled=True,
+                mode=str(shadow_cfg.get("mode", "always")),
+            )
+    eval_ctrl = GiveSafeController(oracle=eval_env.oracle, shadow=eval_shadow, config=gs_cfg)
+    eval_policy = HybridGiveSafePolicyWrapper(agent, eval_env, eval_ctrl, deterministic=True)
+    try:
+        eval_result = evaluate_policy(eval_env, eval_policy, run_dir / "trajectories" / "eval.csv")
+    finally:
+        if eval_shadow is not None:
+            eval_shadow.close()
+        eval_env.close()
+
+    annual_eval_result = None
+    if annual_evaluation:
+        annual_env = PowerSystemEnv(
+            run_id=f"{run_dir.name}_annual_eval", forecast_enabled=forecast_enabled
+        )
+        annual_shadow = None
+        if use_shadow:
+            fmu_path = annual_env.root / annual_env.config["fmu"]["path"]
+            step = float(annual_env.config["fmu"]["communication_step_seconds"])
+
+            def afactory():
+                return FmuAdapter(fmu_path, step, annual_env.registry)
+
+            shadow_cfg = (gs_cfg.get("givesafe") or {}).get("shadow_validation") or {}
+            annual_shadow = ShadowFmuValidator(
+                factory=afactory,
+                oracle=annual_env.oracle,
+                enabled=True,
+                mode=str(shadow_cfg.get("mode", "always")),
+            )
+        annual_ctrl = GiveSafeController(
+            oracle=annual_env.oracle, shadow=annual_shadow, config=gs_cfg
+        )
+        annual_policy = HybridGiveSafePolicyWrapper(
+            agent, annual_env, annual_ctrl, deterministic=True
+        )
+        try:
+            annual_eval_result = evaluate_annual_policy(
+                annual_env,
+                annual_policy,
+                annual_horizon_hours=int(annual_env.config["fmu"]["annual_horizon_hours"]),
+                output_dir=run_dir / "trajectories" / "annual_eval",
+            )
+        finally:
+            if annual_shadow is not None:
+                annual_shadow.close()
+            annual_env.close()
+
+    result = dict(result)
+    result.update(
+        {
+            "eval": eval_result,
+            "annual_eval": annual_eval_result,
+            "rule": rule_result,
+            "last_metrics": getattr(agent, "last_metrics", {}),
+        }
+    )
+    if collector_stats is not None:
+        attempts = max(collector_stats.get("policy_attempt_count", 1), 1)
+        rej = collector_stats.get("givesafe_rejection_count", 0)
+        main_exec = max(collector_stats.get("main_fmu_execution_count", 1), 1)
+        post = collector_stats.get("post_step_hard_constraint_violation_count", 0)
+        result.update(
+            {
+                "stats": collector_stats,
+                "proposal_rejection_rate": rej / attempts,
+                "false_safe_rate": collector_stats.get("givesafe_false_safe_count", 0) / main_exec,
+                "main_fmu_execution_safety_rate": 1.0 - post / main_exec,
+            }
+        )
+    if extra_result:
+        result.update(extra_result)
+
+    (run_dir / "train" / "step_log.json").write_text(
+        json.dumps(step_log[-500:], ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (run_dir / "summary.json").write_text(
+        json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
+    return result
+
+
+def write_summary_and_report(
+    run_dir: Path, result: dict[str, Any], step_log: list[dict] | None = None
+) -> dict[str, Any]:
+    """最终 summary 落盘并生成可读报告。"""
+    run_dir = Path(run_dir)
+    if step_log is not None:
+        (run_dir / "train" / "step_log.json").write_text(
+            json.dumps(step_log[-500:], ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    (run_dir / "summary.json").write_text(
+        json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
+    try:
+        from training.report_policy_run import generate_policy_report
+
+        report_path = generate_policy_report(run_dir)
+        result["report_path"] = str(Path(report_path).as_posix())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("策略报告生成失败: %s", exc)
+        result["report_error"] = str(exc)
+    (run_dir / "summary.json").write_text(
+        json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
+    return result

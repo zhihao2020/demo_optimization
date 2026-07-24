@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 import yaml
+from tqdm import tqdm
 
 from actions import CaesMode, FeasibilityOracle
 from envs.failures import FeasibleSetEmpty
@@ -283,6 +284,7 @@ def run_hybrid_training(
     }
 
     try:
+        pbar = tqdm(total=total_valid_steps, desc="Hybrid-TD3", unit="step", dynamic_ncols=True)
         while valid_steps < total_valid_steps:
             try:
                 feasible = env.get_feasible_action_spec()
@@ -315,11 +317,19 @@ def run_hybrid_training(
                         **metrics,
                     }
                 )
+                pbar.update(1)
+                pbar.set_postfix(
+                    ep=episode,
+                    r=f"{float(reward):.3f}",
+                    rej=info.get("givesafe_rejected_attempts", 0),
+                    refresh=False,
+                )
             if terminated or truncated:
                 episode += 1
                 obs, info0 = reset_training_episode(episode)
         else:
             result.update(status="completed", valid_steps=valid_steps)
+        pbar.close()
 
         agent.save(run_dir / "checkpoints" / "hybrid_givesafe_td3.pt")
         safety_dataset.save(run_dir / "train" / "safety_dataset.json")
@@ -418,9 +428,23 @@ def run_hybrid_training(
     (run_dir / "train" / "step_log.json").write_text(
         json.dumps(step_log[-500:], ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    result.setdefault("algo", "hybrid_givesafe_td3")
     (run_dir / "summary.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
     )
+    try:
+        from training.report_policy_run import generate_policy_report
+
+        report_path = generate_policy_report(run_dir)
+        result["report_path"] = str(Path(report_path).as_posix())
+        (run_dir / "summary.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+        )
+    except Exception as exc:  # noqa: BLE001
+        result["report_error"] = str(exc)
+        (run_dir / "summary.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+        )
     return result
 
 
