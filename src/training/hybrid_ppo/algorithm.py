@@ -1,4 +1,4 @@
-"""Hybrid-PPO：随机混合 Actor + V(s) + clipped surrogate。"""
+"""混合近端策略优化(Hybrid-PPO)：随机混合 Actor + V(s) + clipped surrogate。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,15 @@ from .rollout import RolloutBuffer
 
 
 class ValueNet(nn.Module):
+    """状态价值网络(ValueNet)：输出 V(s) 标量。"""
+
     def __init__(self, obs_dim: int, hidden: int = 256):
+        """初始化三层 MLP 价值头。
+
+        Args:
+            obs_dim: 观测维度。
+            hidden: 隐层宽度。
+        """
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(obs_dim, hidden),
@@ -25,10 +33,20 @@ class ValueNet(nn.Module):
         )
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
+        """前向计算 V(s)。
+
+        Args:
+            obs: 形状 (B, obs_dim) 的观测。
+
+        Returns:
+            形状 (B,) 的价值张量。
+        """
         return self.net(obs).squeeze(-1)
 
 
 class HybridPPO:
+    """混合 PPO(HybridPPO)：仅物理有效步进 rollout，GiveSafe 拒绝不参与策略梯度。"""
+
     def __init__(
         self,
         obs_dim: int,
@@ -43,6 +61,20 @@ class HybridPPO:
         minibatch_size: int = 64,
         device: str | None = None,
     ):
+        """初始化 Actor、Critic 与联合优化器。
+
+        Args:
+            obs_dim: 观测维度。
+            gamma: 折扣因子。
+            gae_lambda: GAE λ。
+            clip_eps: PPO clip 范围 ε。
+            ent_coef: 熵 bonus 系数。
+            vf_coef: 价值损失权重。
+            lr: Adam 学习率。
+            update_epochs: 每批 rollout 的优化轮数。
+            minibatch_size: 小批大小。
+            device: PyTorch 设备。
+        """
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.gamma = gamma
         self.gae_lambda = gae_lambda
@@ -68,6 +100,16 @@ class HybridPPO:
         self.last_metrics: dict[str, float] = {}
 
     def select_action(self, obs, feasible, deterministic: bool = False) -> dict:
+        """采样混合动作（不含 log_prob，供 GiveSafe propose 用）。
+
+        Args:
+            obs: 环境观测。
+            feasible: 可行动作规格。
+            deterministic: 是否确定性。
+
+        Returns:
+            混合动作字典。
+        """
         out = self.actor.act_numpy(obs, feasible, deterministic=deterministic, device=self.device)
         return {
             "u_tp": out["u_tp"],
@@ -76,41 +118,29 @@ class HybridPPO:
             "caes_magnitude": out["caes_magnitude"],
         }
 
-    def select_action_with_stats(self, obs, feasible, deterministic: bool = False) -> dict:
-        """训练采集：附带 log_prob 与 V(s)。"""
-        self.actor.eval()
-        self.critic.eval()
-        with torch.no_grad():
-            o = torch.as_tensor(obs, dtype=torch.float32, device=self.device).view(1, -1)
-            mask = torch.as_tensor(
-                feasible.mode_mask.as_bool_array(), dtype=torch.bool, device=self.device
-            ).view(1, 3)
-            act = self.actor.forward_action(
-                o,
-                torch.tensor([feasible.u_tp_low], device=self.device),
-                torch.tensor([feasible.u_tp_high], device=self.device),
-                torch.tensor([feasible.u_battery_low], device=self.device),
-                torch.tensor([feasible.u_battery_high], device=self.device),
-                mask,
-                deterministic=deterministic,
-            )
-            value = float(self.critic(o)[0].cpu())
-        return {
-            "u_tp": np.asarray([float(act["u_tp"][0].cpu())], dtype=np.float32),
-            "u_battery": np.asarray([float(act["u_battery"][0].cpu())], dtype=np.float32),
-            "caes_mode": int(act["caes_mode"][0].cpu()),
-            "caes_magnitude": np.asarray([float(act["caes_magnitude"][0].cpu())], dtype=np.float32),
-            "log_prob": float(act["log_prob"][0].cpu()),
-            "value": value,
-        }
-
     def value_numpy(self, obs) -> float:
+        """计算单步 V(s) 标量。
+
+        Args:
+            obs: 一维观测数组。
+
+        Returns:
+            状态价值浮点数。
+        """
         self.critic.eval()
         with torch.no_grad():
             o = torch.as_tensor(obs, dtype=torch.float32, device=self.device).view(1, -1)
             return float(self.critic(o)[0].cpu())
 
     def update(self, buffer: RolloutBuffer) -> dict[str, float]:
+        """对 rollout 缓冲执行 PPO 多 epoch 更新。
+
+        Args:
+            buffer: 已计算 GAE 的 RolloutBuffer。
+
+        Returns:
+            平均 policy_loss、value_loss、entropy、approx_kl；空 buffer 时返回空字典。
+        """
         if len(buffer) == 0:
             return {}
         self.total_it += 1
@@ -182,6 +212,14 @@ class HybridPPO:
         return metrics
 
     def save(self, path: str | Path) -> None:
+        """保存 Actor 与 Critic 权重。
+
+        Args:
+            path: 检查点路径。
+
+        Returns:
+            无。
+        """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(
@@ -194,6 +232,14 @@ class HybridPPO:
         )
 
     def load(self, path: str | Path) -> None:
+        """加载检查点。
+
+        Args:
+            path: 检查点路径。
+
+        Returns:
+            无。
+        """
         data = torch.load(path, map_location=self.device)
         self.actor.load_state_dict(data["actor"])
         self.critic.load_state_dict(data["critic"])

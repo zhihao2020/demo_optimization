@@ -21,6 +21,11 @@ from fmu.types import DispatchPlan, SimulationResult
 
 
 def _parse_args() -> argparse.Namespace:
+    """解析命令行参数。
+
+    Returns:
+        含 scheme、hours、run_dir、config 的命名空间。
+    """
     parser = argparse.ArgumentParser(description="compare 开环调度 → FMU rollout")
     parser.add_argument(
         "--scheme",
@@ -50,6 +55,14 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _load_fmu_settings(config_path: Path) -> tuple[Path, float]:
+    """从 env_config 读取 FMU 路径与通信步长。
+
+    Args:
+        config_path: env_config.yaml 路径。
+
+    Returns:
+        (fmu_path, step_seconds) 元组。
+    """
     cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     fmu_cfg = cfg["fmu"]
     fmu_path = Path(fmu_cfg["path"])
@@ -64,6 +77,13 @@ def _write_trajectory(
     plan: DispatchPlan,
     result: SimulationResult,
 ) -> None:
+    """将 rollout 轨迹写入 CSV（含时间与动作列）。
+
+    Args:
+        path: 输出 CSV 路径。
+        plan: 开环调度计划(DispatchPlan)。
+        result: FMU 仿真结果(SimulationResult)。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     var_names = list(result.variables.keys())
     hours_done = int(result.metadata.get("hours_done", 0))
@@ -100,6 +120,17 @@ def _scheme_summary(
     result: SimulationResult,
     traj_path: Path,
 ) -> dict:
+    """汇总单方案 rollout 元数据与经济终值。
+
+    Args:
+        scheme: 方案名(scheme)。
+        plan: 调度计划。
+        result: 仿真结果。
+        traj_path: 轨迹 CSV 路径。
+
+    Returns:
+        可 JSON 序列化的摘要字典。
+    """
     meta = dict(result.metadata)
     summary: dict = {
         "scheme": scheme,
@@ -118,6 +149,11 @@ def _scheme_summary(
 
 
 def main() -> int:
+    """执行 compare 开环方案 FMU rollout 并写 summary.json。
+
+    Returns:
+        0 成功；1 仿真或校验失败；2 参数/路径错误。
+    """
     args = _parse_args()
     if args.hours <= 0:
         print(f"错误: --hours 必须为正，得到 {args.hours}", file=sys.stderr)

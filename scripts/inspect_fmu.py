@@ -1,3 +1,5 @@
+"""检查本地 FMU 模型描述：打印 FMI 版本、默认步长及输入输出变量列表。"""
+
 from __future__ import annotations
 
 from pathlib import Path

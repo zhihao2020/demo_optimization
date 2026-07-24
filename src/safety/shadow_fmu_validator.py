@@ -1,6 +1,7 @@
-"""Shadow FMU 二级验证。当前 FMU canGetAndSetFMUstate=False，采用同步独立实例。
+"""影子仿真校验器(ShadowFmuValidator) 二级验证。
 
-Shadow 只作执行前验证，绝不是 fallback，也不推进主 FMU。
+当前 FMU canGetAndSetFMUstate=False，采用同步独立实例。
+Shadow 仅作执行前验证，绝不是 fallback，也不推进主 FMU。
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from .safety_result import SafetyCheckResult
 
 
 class ShadowFmuValidator:
-    """同步 Shadow：正常路径与主 FMU 并行推进，失步后才 reset+重放恢复。"""
+    """同步影子仿真(Shadow)：正常路径与主 FMU 并行推进，失步后 reset 并重放历史恢复。"""
 
     def __init__(
         self,
@@ -28,6 +29,21 @@ class ShadowFmuValidator:
         mode: str = "always",
         near_boundary_fraction: float = 0.15,
     ):
+        """配置影子 FMU 工厂、神谕与触发模式。
+
+        Args:
+            factory: 无参工厂，每次创建独立 Shadow FMU 实例。
+            oracle: 可行性神谕(FeasibilityOracle)；为 None 时使用默认实例。
+            enabled: 是否启用二级 Shadow 校验。
+            mode: 触发模式：always | near_boundary | disabled。
+            near_boundary_fraction: near_boundary 模式下判定近边界的相对距离阈值。
+
+        Returns:
+            无。
+
+        Raises:
+            无。
+        """
         self.factory = factory
         self.oracle = oracle or FeasibilityOracle.from_root()
         self.enabled = enabled
@@ -46,12 +62,34 @@ class ShadowFmuValidator:
         }
 
     def on_episode_reset(self, start_time: float) -> None:
+        """新 episode 开始时重置 Shadow 状态与已确认动作历史。
+
+        Args:
+            start_time: episode 起始仿真时间。
+
+        Returns:
+            无。
+
+        Raises:
+            无。
+        """
         self._dispose_shadow()
         self.episode_start_time = float(start_time)
         self.physical_action_history = []
         self._pending_action = None
 
     def on_physical_success(self, physical_action: Mapping[str, float]) -> None:
+        """主 FMU 成功执行物理动作后同步 Shadow 跟踪状态。
+
+        Args:
+            physical_action: 主 FMU 已确认执行的物理动作字典。
+
+        Returns:
+            无。
+
+        Raises:
+            无。
+        """
         physical = self._physical_action(physical_action)
         self.physical_action_history.append(physical)
         # 已经由 Shadow 执行并被主 FMU确认的候选，保留同步实例，不再重放历史。
@@ -63,6 +101,17 @@ class ShadowFmuValidator:
 
     @staticmethod
     def _physical_action(physical_action: Mapping[str, float]) -> dict[str, float]:
+        """提取并规范化物理动作三元组 (u_tp, u_battery, u_caes)。
+
+        Args:
+            physical_action: 含控制量的动作映射。
+
+        Returns:
+            仅含 u_tp、u_battery、u_caes 的 float 字典。
+
+        Raises:
+            KeyError: 缺少必需控制键时。
+        """
         return {
             "u_tp": float(physical_action["u_tp"]),
             "u_battery": float(physical_action["u_battery"]),
@@ -70,6 +119,17 @@ class ShadowFmuValidator:
         }
 
     def _dispose_shadow(self) -> None:
+        """关闭并释放当前 Shadow FMU 实例。
+
+        Args:
+            无。
+
+        Returns:
+            无。
+
+        Raises:
+            无：关闭失败时静默忽略。
+        """
         if self._shadow is not None:
             try:
                 self._shadow.close()
@@ -79,7 +139,17 @@ class ShadowFmuValidator:
         self._pending_action = None
 
     def _synchronized_shadow(self):
-        """取得与已确认主 FMU历史一致的 Shadow；仅在失步/拒绝后重放。"""
+        """取得与已确认主 FMU 历史一致的 Shadow 实例；仅在失步或拒绝后重放。
+
+        Args:
+            无。
+
+        Returns:
+            已与 physical_action_history 对齐的 Shadow FMU 实例。
+
+        Raises:
+            由 factory 或 shadow.reset/step 抛出的 FMU 相关异常。
+        """
         if self._shadow is None:
             shadow = self.factory()
             shadow.reset(self.episode_start_time)
@@ -89,6 +159,17 @@ class ShadowFmuValidator:
         return self._shadow
 
     def should_validate(self, level1: SafetyCheckResult) -> bool:
+        """根据配置与一级结果判断本步是否执行 Shadow 校验。
+
+        Args:
+            level1: 一级 Oracle 安全检查已通过的结果。
+
+        Returns:
+            True 表示需要执行 Shadow validate。
+
+        Raises:
+            无。
+        """
         if not self.enabled or self.mode == "disabled" or self.factory is None:
             return False
         if self.mode == "always":
@@ -107,6 +188,18 @@ class ShadowFmuValidator:
         action: dict | HybridAction,
         level1: SafetyCheckResult,
     ) -> SafetyCheckResult:
+        """在 Shadow FMU 上试探性执行候选动作并做硬约束后验检查。
+
+        Args:
+            action: 候选混合动作（dict 或 HybridAction）。
+            level1: 一级 Oracle 已通过的安全检查结果（将被 deepcopy 扩展）。
+
+        Returns:
+            更新 shadow_* 字段后的 SafetyCheckResult；跳过时返回未启用 Shadow 的拷贝。
+
+        Raises:
+            无：FMU 异常转为 safe=False 的结果返回。
+        """
         if not self.should_validate(level1):
             result = deepcopy(level1)
             result.shadow_validation_used = False
@@ -157,7 +250,29 @@ class ShadowFmuValidator:
             return result
 
     def close(self) -> None:
+        """释放 Shadow FMU 资源，供环境 teardown 调用。
+
+        Args:
+            无。
+
+        Returns:
+            无。
+
+        Raises:
+            无。
+        """
         self._dispose_shadow()
 
     def capabilities(self) -> dict[str, Any]:
+        """返回 Shadow 策略与 FMU 能力声明的只读拷贝。
+
+        Args:
+            无。
+
+        Returns:
+            含 canGetAndSetFMUstate、strategy 等键的能力字典。
+
+        Raises:
+            无。
+        """
         return dict(self._capabilities)

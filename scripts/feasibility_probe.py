@@ -1,4 +1,4 @@
-"""Phase D.5 focused probe：收集 FailureRecord + residual，写入 runs/feasibility_probe/。"""
+"""Phase D.5 可行性探针：收集 FailureRecord、残差统计并写入 runs/feasibility_probe/。"""
 from __future__ import annotations
 import json
 import sys
@@ -12,7 +12,18 @@ from envs.power_system_env import PowerSystemEnv
 from training.hybrid_td3.buffer import FilteredReplayBuffer, SafetyDataset
 from training.hybrid_td3.collector import ValidTransitionCollector
 from training.hybrid_td3.train import RandomFeasiblePolicy
+
+
 def residual_stats(residuals: list[dict], key: str) -> dict:
+    """计算单字段残差的分位数摘要。
+
+    Args:
+        residuals: 含残差字段的行列表。
+        key: 残差字段名(key)。
+
+    Returns:
+        含 n、mean、median、p90/p95/p99、max、min 的字典；无样本时 {"n": 0}。
+    """
     vals = [float(r[key]) for r in residuals if key in r and np.isfinite(r[key])]
     if not vals:
         return {"n": 0}
@@ -27,7 +38,19 @@ def residual_stats(residuals: list[dict], key: str) -> dict:
         "max": float(np.max(arr)),
         "min": float(np.min(arr)),
     }
+
+
 def main(n_valid: int = 1000, seed: int = 0, run_dir: str = "runs/feasibility_probe") -> dict:
+    """运行随机可行策略收集有效转移、失败记录与残差摘要。
+
+    Args:
+        n_valid: 目标有效转移数(n_valid)。
+        seed: 初始 reset 种子。
+        run_dir: 输出目录相对路径。
+
+    Returns:
+        含 residual_summary、suggested_margins 等的 summary 字典。
+    """
     out = ROOT / run_dir
     out.mkdir(parents=True, exist_ok=True)
     (out / "train").mkdir(exist_ok=True)
@@ -114,6 +137,8 @@ def main(n_valid: int = 1000, seed: int = 0, run_dir: str = "runs/feasibility_pr
     env.close()
     print(yaml.safe_dump(summary, allow_unicode=True, sort_keys=False))
     return summary
+
+
 if __name__ == "__main__":
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 1000
     main(n_valid=n)

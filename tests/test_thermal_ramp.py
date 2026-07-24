@@ -1,9 +1,17 @@
-"""火电动态爬坡范围随上一时刻出力变化。"""
+"""火电动态爬坡测试：u_tp 上下界随 previous_thermal_w 变化。"""
 
 from actions import FeasibilityOracle
 
 
 def _out(p_thermal: float):
+    """构造指定 p_thermal 的输出快照。
+
+    Args:
+        p_thermal: 当前火电功率(W)。
+
+    Returns:
+        outputs 字典。
+    """
     return {
         "battery_soc": 0.5,
         "caes_gas_soc": 0.85,
@@ -28,6 +36,7 @@ def _out(p_thermal: float):
 
 
 def test_thermal_ramp_depends_on_previous_output():
+    """验证满发与最小稳燃时 u_tp 爬坡界不同，且随上一功率平移。"""
     oracle = FeasibilityOracle.from_root()
     # u = -p / P_cap; p=-150e6 => u=1; p=-50e6 => u=1/3
     at_max = oracle.compute(_out(-150e6), previous_thermal_w=-150e6)

@@ -1,11 +1,10 @@
-"""Phase D.5：细粒度失败分类、残差、SafetyClassifier、空可行集、BoundaryStress。"""
+"""Phase D.5：细粒度失败分类、残差、安全分类器、空可行集与边界应力测试。"""
 from __future__ import annotations
 import numpy as np
 
 from envs.forecast_provider import DEFAULT_OBSERVATION_DIM
 import pytest
 from actions import (
-    BoundaryStressTester,
     CaesMode,
     FeasibilityOracle,
     SafeActionGenerator,
@@ -13,11 +12,15 @@ from actions import (
 )
 from actions.failure_taxonomy import classify_failure
 from actions.feasibility_oracle import PREDICTED_STATE_KEYS
+from boundary_stress import BoundaryStressTester
 from envs.failures import FeasibleSetEmpty, FailureRecord, PostStepHardConstraintViolation
 from envs.power_system_env import PowerSystemEnv
 from training.hybrid_td3.buffer import EconomicReplayBuffer, FilteredReplayBuffer, SafetyDataset, Transition
 from test_env_reset import FakeAdapter
+
+
 def test_classify_battery_soc_high_low():
+    """验证电池 SOC 越上/下界时失败细分类正确。"""
     fine, trig = classify_failure(
         failure_type="PostStepHardConstraintViolation",
         reason="battery_soc=0.95 越物理界 [0.1, 0.9]",
@@ -29,6 +32,7 @@ def test_classify_battery_soc_high_low():
     )
     assert fine2 == "battery_soc_low"
 def test_classify_caes_and_nonfinite():
+    """验证压空 SOC 越界与非有限输出的细分类。"""
     fine, _ = classify_failure(
         failure_type="PostStepHardConstraintViolation",
         reason="caes_gas_soc=0.55 越 assert 界",
@@ -39,6 +43,7 @@ def test_classify_caes_and_nonfinite():
     fine_nf, _ = classify_failure(failure_type="NonFiniteOutputFailure", reason="battery_soc 非有限")
     assert fine_nf == "nonfinite_output"
 def test_failure_record_roundtrip():
+    """验证失败记录 FailureRecord 序列化往返一致。"""
     rec = FailureRecord(
         run_id="t",
         episode=1,
@@ -53,6 +58,7 @@ def test_failure_record_roundtrip():
     rec2 = FailureRecord.from_dict(d)
     assert rec2.fine_failure_type == "battery_soc_high"
 def test_oracle_predict_residual_and_version():
+    """验证可行性神谕预测、残差与版本号。"""
     oracle = FeasibilityOracle.from_root()
     assert oracle.oracle_version.startswith("d5")
     outputs = {
@@ -82,6 +88,7 @@ def test_oracle_predict_residual_and_version():
     dang = oracle.dangerous_residual(res, mode=CaesMode.IDLE, u_battery=0.5)
     assert "battery_soc_high" in dang
 def test_caes_mode_specific_mask_not_gas_alone():
+    """验证压空模式掩码由气/热/冷联合约束，非仅气库。"""
     oracle = FeasibilityOracle.from_root()
     # hot 已近上限：即使 gas 仍有空间，charge 也应被联合约束压住
     outputs = {
@@ -103,6 +110,7 @@ def test_caes_mode_specific_mask_not_gas_alone():
     # charge 在 hot 近界时应为 False（联合约束）
     assert feas.mode_mask.charge is False
 def test_thermal_bounds_use_actual_previous_p_thermal():
+    """验证火电动态界基于上一时刻实际火电功率。"""
     oracle = FeasibilityOracle.from_root()
     outputs = {
         "battery_soc": 0.5,
@@ -124,6 +132,7 @@ def test_thermal_bounds_use_actual_previous_p_thermal():
     # 应从 u≈0.5 的爬坡界出发，而非从 1.0
     assert feas.u_tp_high < 0.9
 def test_economic_buffer_rejects_poison_reward_and_invalid():
+    """验证经济回放缓冲拒绝异常奖励样本。"""
     buf = EconomicReplayBuffer(capacity=10)
     t = Transition(
         observation=np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32),
@@ -140,6 +149,7 @@ def test_economic_buffer_rejects_poison_reward_and_invalid():
     assert buf.add(t) is False
     assert len(buf) == 0
 def test_safety_dataset_separate_from_economic():
+    """验证安全数据集与经济缓冲相互独立。"""
     ds = SafetyDataset()
     ds.add_from_failure_record(
         {
@@ -152,6 +162,7 @@ def test_safety_dataset_separate_from_economic():
     assert len(ds) == 1
     assert len(buf) == 0
 def test_safety_classifier_false_safe_metric():
+    """验证安全分类器输出 false_safe_rate 与 unsafe_recall。"""
     clf = SafetyClassifier(threshold=0.5, model_version="test")
     # 构造可分特征：battery_soc 高 + 充电 => unsafe
     X = []
@@ -171,10 +182,23 @@ def test_safety_classifier_false_safe_metric():
     assert "false_safe_rate" in metrics.to_dict()
     assert metrics.unsafe_recall >= 0.5
 def test_empty_feasible_set_raises():
+    """验证可行集为空时安全动作生成器抛 FeasibleSetEmpty。"""
     oracle = FeasibilityOracle.from_root()
     gen = SafeActionGenerator(oracle, classifier=None, max_resamples=2)
+
     class EmptyOracle(FeasibilityOracle):
+        """始终返回空可行集的测试用可行性神谕(EmptyOracle)。"""
+
         def compute(self, outputs, previous_thermal_w=None):
+            """返回刻意为空的动态可行动作集。
+
+            Args:
+                outputs: 观测字典（忽略）。
+                previous_thermal_w: 上一火电功率（忽略）。
+
+            Returns:
+                空的动态可行动作集(DynamicFeasibleActionSet)。
+            """
             from actions import DynamicFeasibleActionSet, ModeMask
             return DynamicFeasibleActionSet(
                 u_tp_low=1.0,
@@ -184,8 +208,18 @@ def test_empty_feasible_set_raises():
                 mode_mask=ModeMask(False, False, False),
                 metadata={"feasible_set_empty": True},
             )
+
         def is_feasible_set_empty(self, feasible):
+            """始终判定可行集为空。
+
+            Args:
+                feasible: 动态可行动作集（忽略）。
+
+            Returns:
+                恒为真。
+            """
             return True
+
     gen.oracle = EmptyOracle(params=oracle.params, margins=oracle.margins)
     with pytest.raises(FeasibleSetEmpty):
         gen.generate(
@@ -197,6 +231,7 @@ def test_empty_feasible_set_raises():
             lambda feas: {"u_tp": np.asarray([1.0]), "u_battery": np.asarray([0.0]), "caes_mode": 1, "caes_magnitude": np.asarray([0.0])},
         )
 def test_boundary_stress_tester_unit_sampling():
+    """验证边界应力测试器能采样出合法场景与动作字段。"""
     oracle = FeasibilityOracle.from_root()
     tester = BoundaryStressTester(oracle=oracle, seed=1)
     outputs = {
@@ -217,6 +252,7 @@ def test_boundary_stress_tester_unit_sampling():
     assert scenario in BoundaryStressTester.SCENARIOS
     assert "u_tp" in action
 def test_env_logs_predicted_next_state_on_success():
+    """验证成功步进后 info 含神谕预测下一状态与残差。"""
     env = PowerSystemEnv(adapter=FakeAdapter())
     env.reset(seed=0)
     action = {
@@ -232,12 +268,14 @@ def test_env_logs_predicted_next_state_on_success():
     assert info.get("residuals") is not None
     env.close()
 def test_formal_gates_are_enabled_by_default():
+    """验证 Phase E 正式门控默认未阻断训练。"""
     from training.hybrid_td3.train import load_phase_e_gates
     gates = load_phase_e_gates(__import__("pathlib").Path(__file__).resolve().parents[1])
     assert gates.get("formal_default_blocked", True) is False
 
 
 def test_annual_episode_starts_cover_the_final_fmu_window():
+    """验证年评估 episode 起点覆盖末段 FMU 窗口。"""
     from training.hybrid_td3.train import annual_episode_start_seconds
 
     fmu = {"start_time_seconds": 0, "decision_interval_seconds": 3600, "annual_horizon_hours": 8760}

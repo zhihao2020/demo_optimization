@@ -1,4 +1,5 @@
-"""对比规则与混合随机可行策略（不再启动普通 Box TD3）。"""
+"""基线策略对比：规则控制器、随机可行策略与遗留 Box TD3 阻塞状态。"""
+
 from __future__ import annotations
 
 import json
@@ -13,7 +14,6 @@ from envs.power_system_env import PowerSystemEnv
 from training.evaluate_td3 import evaluate_policy
 from training.hybrid_td3.train import RandomFeasiblePolicy
 from training.train_td3 import LEGACY_ERROR, run_smoke as legacy_td3_smoke
-
 
 run_dir = Path("runs/baseline_comparison")
 (run_dir / "trajectories").mkdir(parents=True, exist_ok=True)

@@ -1,3 +1,5 @@
+"""ForecastProvider 测试：T+1 前瞻特征、年末 clamp 与 CSV 校验。"""
+
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _provider() -> ForecastProvider:
+    """从 env_config 构造 ForecastProvider 实例。
+
+    Returns:
+        绑定仓库根目录与配置的 ForecastProvider。
+    """
     config = yaml.safe_load((ROOT / "src/config/env_config.yaml").read_text(encoding="utf-8"))
     return ForecastProvider(
         ROOT,
@@ -21,6 +28,7 @@ def _provider() -> ForecastProvider:
 
 
 def test_forecast_is_t_plus_1_horizon_major_and_scaled():
+    """验证 at_time(0) 返回 T+1 四特征且按配置缩放。"""
     provider = _provider()
     features = provider.at_time(0.0)
     assert features.shape == (FORECAST_FEATURE_DIM,)
@@ -35,6 +43,7 @@ def test_forecast_is_t_plus_1_horizon_major_and_scaled():
 
 
 def test_forecast_clamps_at_annual_end_and_rejects_off_grid_time():
+    """验证年末时刻重复末行特征，非小时网格时刻抛 ForecastDataError。"""
     provider = _provider()
     features = provider.at_time(8760 * 3600.0).reshape(24, 4)
     assert np.allclose(features, np.repeat(features[:1], 24, axis=0))
@@ -43,6 +52,7 @@ def test_forecast_clamps_at_annual_end_and_rejects_off_grid_time():
 
 
 def test_forecast_csv_header_and_annual_grid_fail_fast(tmp_path):
+    """验证 CSV 表头错误或行数非 8761 时 _read_source 快速失败。"""
     provider = _provider()
     bad = tmp_path / "bad.csv"
     bad.write_text("timestamp,value\n0,1\n", encoding="utf-8")

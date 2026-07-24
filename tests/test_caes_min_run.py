@@ -1,3 +1,5 @@
+"""CAES 最小运行时长测试：锁定方向、尾段禁止与 env 拒绝逻辑。"""
+
 from actions import CaesMinimumRunController, CaesMode, ModeMask
 import numpy as np
 
@@ -6,6 +8,7 @@ from test_env_reset import FakeAdapter
 
 
 def test_charge_locks_direction_for_four_successful_steps_with_variable_magnitude():
+    """验证 CHARGE 成功后连续 4 步锁定方向且幅值可变。"""
     ctrl = CaesMinimumRunController()
     mask, state = ctrl.constrain(ModeMask(), steps_remaining=8, step=0)
     assert mask.charge and state["caes_locked_mode"] is None
@@ -20,6 +23,7 @@ def test_charge_locks_direction_for_four_successful_steps_with_variable_magnitud
 
 
 def test_discharge_tail_cannot_start_and_unsafe_lock_is_interrupted():
+    """验证尾段禁止新放电启动，且锁定模式变不安全时中断并计数。"""
     ctrl = CaesMinimumRunController()
     tail, _ = ctrl.constrain(ModeMask(), steps_remaining=3, step=0)
     assert tail.idle and not tail.charge and not tail.discharge
@@ -31,6 +35,15 @@ def test_discharge_tail_cannot_start_and_unsafe_lock_is_interrupted():
 
 
 def _action(mode, magnitude=0.0):
+    """构造混合动作字典。
+
+    Args:
+        mode: CAES 模式(CaesMode)。
+        magnitude: CAES 幅值。
+
+    Returns:
+        env.step 接受的动作字典。
+    """
     return {
         "u_tp": np.asarray([1.0], dtype=np.float32),
         "u_battery": np.asarray([0.0], dtype=np.float32),
@@ -40,6 +53,7 @@ def _action(mode, magnitude=0.0):
 
 
 def test_environment_rejects_idle_during_locked_run_without_fmu_step():
+    """验证锁定运行中 IDLE 被拒绝且不调用 FMU。"""
     adapter = FakeAdapter()
     env = PowerSystemEnv(adapter=adapter)
     env.episode_steps = 4
@@ -55,6 +69,7 @@ def test_environment_rejects_idle_during_locked_run_without_fmu_step():
 
 
 def test_environment_forbids_new_start_in_tail():
+    """验证 episode 尾段禁止新启动 CAES 放电且不步进 FMU。"""
     adapter = FakeAdapter()
     env = PowerSystemEnv(adapter=adapter)
     env.episode_steps = 3

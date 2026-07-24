@@ -1,9 +1,17 @@
-"""电池动态边界随 SOC 收窄。"""
+"""电池动态边界测试：SOC 近界时充放电指令区间收窄。"""
 
 from actions import FeasibilityOracle
 
 
 def _out(soc: float):
+    """构造指定 battery_soc 的输出快照。
+
+    Args:
+        soc: 电池 SOC。
+
+    Returns:
+        含完整物理字段的 outputs 字典。
+    """
     return {
         "battery_soc": soc,
         "caes_gas_soc": 0.85,
@@ -28,6 +36,7 @@ def _out(soc: float):
 
 
 def test_near_max_soc_shrinks_charge():
+    """验证 SOC 近上限时 u_battery_high 显著低于中等 SOC。"""
     oracle = FeasibilityOracle.from_root()
     mid = oracle.compute(_out(0.5))
     high = oracle.compute(_out(0.87))
@@ -36,6 +45,7 @@ def test_near_max_soc_shrinks_charge():
 
 
 def test_near_min_soc_shrinks_discharge():
+    """验证 SOC 近下限时 u_battery_low 显著高于中等 SOC。"""
     oracle = FeasibilityOracle.from_root()
     mid = oracle.compute(_out(0.5))
     low = oracle.compute(_out(0.13))

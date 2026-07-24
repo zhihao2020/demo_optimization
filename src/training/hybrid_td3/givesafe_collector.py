@@ -15,6 +15,8 @@ from .buffer import SafetyDataset, Transition
 
 
 class GiveSafeTransitionCollector:
+    """GiveSafe 转移收集器(GiveSafeTransitionCollector)：拒绝自环写入 GiveSafeReplay；安全动作才执行主 FMU。"""
+
     def __init__(
         self,
         buffer: HybridGiveSafeReplayBuffer,
@@ -22,6 +24,14 @@ class GiveSafeTransitionCollector:
         shadow: ShadowFmuValidator | None = None,
         safety_dataset: SafetyDataset | None = None,
     ):
+        """绑定 GiveSafe replay、控制器与影子 FMU。
+
+        Args:
+            buffer: 混合 GiveSafe 分区 replay。
+            controller: GiveSafe 安全控制器。
+            shadow: 可选影子 FMU 校验器。
+            safety_dataset: 安全样本集；None 时自动创建。
+        """
         self.buffer = buffer
         self.controller = controller
         self.shadow = shadow
@@ -46,6 +56,14 @@ class GiveSafeTransitionCollector:
         }
 
     def on_episode_reset(self, start_time: float = 0.0) -> None:
+        """回合重置时通知影子 FMU。
+
+        Args:
+            start_time: 仿真起始时间（秒）。
+
+        Returns:
+            无。
+        """
         if self.shadow is not None:
             self.shadow.on_episode_reset(start_time)
 
@@ -57,6 +75,18 @@ class GiveSafeTransitionCollector:
         safety: SafetyCheckResult,
         terms: dict[str, float],
     ) -> None:
+        """将 GiveSafe 拒绝样本以自环转移写入 givesafe replay。
+
+        Args:
+            env: 当前环境，用于查询可行域。
+            obs: 步前观测。
+            action: 被拒绝的混合动作。
+            safety: GiveSafe 检查结果。
+            terms: 约束奖励分项。
+
+        Returns:
+            无。
+        """
         hybrid = hybrid_from_dict(action)
         physical = self.decoder.decode(hybrid)
         bounds = {
@@ -124,7 +154,19 @@ class GiveSafeTransitionCollector:
         *,
         deterministic: bool = False,
     ) -> tuple[Any, ...]:
-        """propose_fn 无环境步副作用地采样候选动作。"""
+        """经 GiveSafe 环执行一步：拒绝不推进主 FMU，成功才写入 physical replay。
+
+        Args:
+            env: 电力系统环境，需已 reset。
+            propose_fn: 无环境副作用的候选动作采样 callable。
+            deterministic: 是否确定性 GiveSafe 搜索。
+
+        Returns:
+            (obs, reward, terminated, truncated, info) 元组。
+
+        Raises:
+            RuntimeError: 环境未 reset 时抛出。
+        """
         if env.last_outputs is None:
             raise RuntimeError("环境未 reset")
         obs_before = env.build_observation()
@@ -133,6 +175,7 @@ class GiveSafeTransitionCollector:
         feasible = env.get_feasible_action_spec()
 
         def on_rejection(action, safety, terms):
+            """记录一次被安全给予拒绝的策略尝试。"""
             self.stats["policy_attempt_count"] += 1
             self._store_rejection(env, obs_before, action, safety, terms)
 

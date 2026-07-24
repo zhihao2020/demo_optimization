@@ -13,6 +13,11 @@ from training.report_policy_run import generate_policy_report
 
 
 def main() -> int:
+    """从训练 run 目录生成策略评估报告。
+
+    Returns:
+        进程退出码(exit code)，成功为 0。
+    """
     p = argparse.ArgumentParser(description="生成策略评估报告 (report.md + 图)")
     p.add_argument("--run-dir", type=Path, required=True, help="如 runs/givesafe_td3_smoke")
     args = p.parse_args()

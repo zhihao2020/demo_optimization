@@ -1,10 +1,12 @@
-"""SafetyClassifier / FeasibilityCalibrator：与经济 Critic 分离，优化 unsafe recall。"""
+"""安全性分类器(SafetyClassifier)与可行性校准器(FeasibilityCalibrator)：与经济 Critic 分离，优化 unsafe recall。"""
 from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 import numpy as np
+
+# 安全分类器特征键(FEATURE_KEYS)：featurize 输出向量的列顺序。
 FEATURE_KEYS = (
     "battery_soc",
     "caes_gas_soc",
@@ -23,8 +25,12 @@ FEATURE_KEYS = (
     "dist_gas_min",
     "dist_gas_max",
 )
+
+
 @dataclass
 class SafetyMetrics:
+    """安全分类评估指标(SafetyMetrics)：以 false_safe_rate 为门控指标。"""
+
     unsafe_recall: float
     unsafe_precision: float
     false_safe_rate: float
@@ -34,7 +40,19 @@ class SafetyMetrics:
     n_unsafe: int
     threshold: float
     model_version: str
+
     def to_dict(self) -> dict[str, Any]:
+        """序列化为可 JSON 化的指标字典。
+
+        Args:
+            无。
+
+        Returns:
+            含 unsafe_recall、false_safe_rate、gate_metric 等键的字典。
+
+        Raises:
+            无。
+        """
         return {
             "unsafe_recall": self.unsafe_recall,
             "unsafe_precision": self.unsafe_precision,
@@ -47,11 +65,15 @@ class SafetyMetrics:
             "model_version": self.model_version,
             "gate_metric": "false_safe_rate",
         }
+
+
 class SafetyClassifier:
-    """逻辑回归风格安全分类器：P(safe | s,a)。
-    标签：1=post-step 成功（safe），0=post-step 硬失败（unsafe）。
+    """安全性分类器(SafetyClassifier)：逻辑回归风格 P(safe | s,a)。
+
+    标签：1=步进后成功(safe)，0=步进后硬失败(unsafe)。
     门控指标：false_safe_rate = FN_unsafe / n_unsafe（把危险判成安全）。
     """
+
     def __init__(
         self,
         *,
@@ -60,17 +82,45 @@ class SafetyClassifier:
         weights: np.ndarray | None = None,
         bias: float = 0.0,
     ):
+        """初始化安全分类器。
+
+        Args:
+            threshold: 判 safe 的概率阈值。
+            model_version: 模型版本标识字符串。
+            weights: 可选，特征权重向量；None 则零初始化。
+            bias: 逻辑回归偏置项。
+
+        Returns:
+            无（构造器）。
+
+        Raises:
+            无。
+        """
         self.threshold = float(threshold)
         self.model_version = model_version
         self.weights = weights if weights is not None else np.zeros(len(FEATURE_KEYS), dtype=np.float64)
         self.bias = float(bias)
         self._fitted = weights is not None
+
     def featurize(
         self,
         outputs: Mapping[str, float],
         action: Mapping[str, Any],
         distances: Mapping[str, float] | None = None,
     ) -> np.ndarray:
+        """从观测、动作与到界距离构造特征向量。
+
+        Args:
+            outputs: 当前 FMU 输出字典。
+            action: 混合动作 dict（含 u_tp、u_battery、caes_mode、caes_magnitude）。
+            distances: 可选，到物理界的距离字典；缺省时用 outputs 近似。
+
+        Returns:
+            长度为 len(FEATURE_KEYS) 的 float64 特征向量。
+
+        Raises:
+            无。
+        """
         mode = int(action.get("caes_mode", 1))
         u_tp = float(action["u_tp"][0] if hasattr(action.get("u_tp"), "__len__") else action.get("u_tp", 1.0))
         u_bat = float(action["u_battery"][0] if hasattr(action.get("u_battery"), "__len__") else action.get("u_battery", 0.0))
@@ -102,17 +152,49 @@ class SafetyClassifier:
             dtype=np.float64,
         )
         return feats
+
     def predict_proba(self, features: np.ndarray) -> float:
+        """预测 P(safe | features)。
+
+        Args:
+            features: featurize 输出的特征向量。
+
+        Returns:
+            属于 safe 类的概率，范围 [0, 1]。
+
+        Raises:
+            无。
+        """
         z = float(np.dot(self.weights, features) + self.bias)
-        # stable sigmoid
+        # 数值稳定的 sigmoid
         if z >= 0:
             ez = np.exp(-z)
             return float(1.0 / (1.0 + ez))
         ez = np.exp(z)
         return float(ez / (1.0 + ez))
-    def is_safe(self, outputs: Mapping[str, float], action: Mapping[str, Any], distances: Mapping[str, float] | None = None) -> tuple[bool, float]:
+
+    def is_safe(
+        self,
+        outputs: Mapping[str, float],
+        action: Mapping[str, Any],
+        distances: Mapping[str, float] | None = None,
+    ) -> tuple[bool, float]:
+        """判定动作在当前状态下是否 safe。
+
+        Args:
+            outputs: 当前 FMU 输出字典。
+            action: 混合动作 dict。
+            distances: 可选，到物理界的距离字典。
+
+        Returns:
+            (is_safe, probability)：是否达到 threshold，以及 P(safe)。
+
+        Raises:
+            无。
+        """
         p = self.predict_proba(self.featurize(outputs, action, distances))
         return p >= self.threshold, p
+
     def fit(
         self,
         X: np.ndarray,
@@ -123,7 +205,22 @@ class SafetyClassifier:
         l2: float = 1e-3,
         class_weight_unsafe: float = 5.0,
     ) -> "SafetyClassifier":
-        """y: 1=safe, 0=unsafe。加重 unsafe 权重以提高 recall。"""
+        """用加权逻辑回归拟合；加重 unsafe 样本以提高 recall。
+
+        Args:
+            X: 特征矩阵，形状 (n, d)。
+            y: 标签向量，1=safe，0=unsafe。
+            lr: 学习率。
+            epochs: 训练轮数。
+            l2: L2 正则系数。
+            class_weight_unsafe: unsafe 样本的损失权重。
+
+        Returns:
+            self，便于链式调用。
+
+        Raises:
+            无。
+        """
         X = np.asarray(X, dtype=np.float64)
         y = np.asarray(y, dtype=np.float64)
         n, d = X.shape
@@ -143,6 +240,7 @@ class SafetyClassifier:
         self.bias = b
         self._fitted = True
         return self
+
     def evaluate(
         self,
         X: np.ndarray,
@@ -150,6 +248,20 @@ class SafetyClassifier:
         failure_types: Sequence[str] | None = None,
         threshold: float | None = None,
     ) -> SafetyMetrics:
+        """在 hold-out 集上计算门控与 per-type recall。
+
+        Args:
+            X: 特征矩阵。
+            y: 标签向量，1=safe，0=unsafe。
+            failure_types: 可选，与 X 行对齐的细粒度失败类型，用于 per_failure_type_recall。
+            threshold: 可选，覆盖 self.threshold 的判定阈值。
+
+        Returns:
+            安全指标(SafetyMetrics) dataclass。
+
+        Raises:
+            无。
+        """
         thr = float(self.threshold if threshold is None else threshold)
         probs = np.asarray([self.predict_proba(x) for x in X], dtype=np.float64)
         pred_safe = probs >= thr
@@ -157,7 +269,7 @@ class SafetyClassifier:
         # safe=1, unsafe=0
         unsafe = y < 0.5
         safe = ~unsafe
-        # predicted safe among unsafe = false safe
+        # 预测 safe 但实际 unsafe = false safe
         false_safe = pred_safe & unsafe
         false_unsafe = (~pred_safe) & safe
         true_unsafe = (~pred_safe) & unsafe
@@ -177,7 +289,7 @@ class SafetyClassifier:
                 idx = np.asarray([i for i, t in enumerate(ft) if t == name], dtype=int)
                 if len(idx) == 0:
                     continue
-                # among this failure type (all unsafe), recall of flagging unsafe
+                # 该失败类型子集上「判 unsafe」的比例即 recall
                 per_type[str(name)] = float(np.mean(~pred_safe[idx]))
         return SafetyMetrics(
             unsafe_recall=unsafe_recall,
@@ -190,7 +302,19 @@ class SafetyClassifier:
             threshold=thr,
             model_version=self.model_version,
         )
+
     def save(self, path: str | Path) -> None:
+        """将模型权重与元数据写入 JSON 文件。
+
+        Args:
+            path: 目标文件路径。
+
+        Returns:
+            无。
+
+        Raises:
+            无。
+        """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -201,8 +325,20 @@ class SafetyClassifier:
             "feature_keys": list(FEATURE_KEYS),
         }
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
     @classmethod
     def load(cls, path: str | Path) -> "SafetyClassifier":
+        """从 JSON 文件加载已保存的分类器。
+
+        Args:
+            path: 模型 JSON 文件路径。
+
+        Returns:
+            已加载权重的 SafetyClassifier 实例。
+
+        Raises:
+            无。
+        """
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         return cls(
             threshold=float(data.get("threshold", 0.99)),
@@ -210,16 +346,44 @@ class SafetyClassifier:
             weights=np.asarray(data["weights"], dtype=np.float64),
             bias=float(data.get("bias", 0.0)),
         )
+
+
 class FeasibilityCalibrator:
-    """从 SafetyDataset 训练 SafetyClassifier。"""
+    """可行性校准器(FeasibilityCalibrator)：从 SafetyDataset 记录训练 SafetyClassifier。"""
+
     def __init__(self, classifier: SafetyClassifier | None = None):
+        """初始化校准器。
+
+        Args:
+            classifier: 可选，已有分类器；None 则新建默认 SafetyClassifier。
+
+        Returns:
+            无（构造器）。
+
+        Raises:
+            无。
+        """
         self.classifier = classifier or SafetyClassifier()
+
     def fit_from_records(
         self,
         safe_records: Sequence[Mapping[str, Any]],
         fail_records: Sequence[Mapping[str, Any]],
         **fit_kwargs,
     ) -> SafetyClassifier:
+        """从成功/失败轨迹记录构造特征并拟合分类器。
+
+        Args:
+            safe_records: 步进成功的样本记录序列。
+            fail_records: 步进硬失败的样本记录序列。
+            **fit_kwargs: 传递给 SafetyClassifier.fit 的超参（lr、epochs 等）。
+
+        Returns:
+            拟合后的 SafetyClassifier（即 self.classifier）。
+
+        Raises:
+            ValueError: safe_records 与 fail_records 均为空，无样本可训练。
+        """
         X_list = []
         y_list = []
         for rec in safe_records:

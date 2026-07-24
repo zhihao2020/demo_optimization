@@ -42,9 +42,20 @@ from .termination_checker import TerminationChecker
 
 
 class HybridDictSpace(Dict):
-    """Dict 混合动作空间。sample() 返回保守合法点，供 check_env/基线使用；不修正策略输出。"""
+    """混合 Dict 动作空间(HybridDictSpace)。
+
+    ``sample()`` 返回保守合法点，供 ``check_env``/基线使用；不修正策略输出。
+    """
 
     def sample(self, mask: Any = None) -> dict:
+        """采样保守合法混合动作（满火电、储能待机、CAES 空闲）。
+
+        Args:
+            mask: Gymnasium 掩码（本实现忽略）。
+
+        Returns:
+            含 ``u_tp``、``u_battery``、``caes_mode``、``caes_magnitude`` 的字典。
+        """
         # 固定合法：满火电、储能待机。策略/随机探索必须经 FeasibilityOracle。
         return {
             "u_tp": np.asarray([1.0], dtype=np.float32),
@@ -55,6 +66,11 @@ class HybridDictSpace(Dict):
 
 
 class PowerSystemEnv(gym.Env):
+    """电力系统 Gymnasium 环境(PowerSystemEnv)。
+
+    混合 Dict 动作 + 动态可行域 Oracle 预检 + FMU 物理步进；失败不伪造转移。
+    """
+
     metadata = {"render_modes": []}
 
     def __init__(
@@ -67,7 +83,22 @@ class PowerSystemEnv(gym.Env):
         require_complete_reward: bool = False,
         run_id: str = "default",
         forecast_enabled: bool | None = None,
-    ):
+    ) -> None:
+        """加载配置、构建观测/动作空间并初始化 FMU 与 Oracle 组件。
+
+        Args:
+            config_path: 环境配置 YAML 路径。
+            reward_config_path: 奖励配置 YAML 路径。
+            device_params_path: 设备参数 YAML（Oracle 用）。
+            margins_path: 可行域安全裕度 YAML。
+            adapter: 可选 FMU 适配器(FmuAdapter)；为 ``None`` 时自动构造。
+            require_complete_reward: 是否要求完整经济 reward 配置。
+            run_id: 运行标识，写入 FailureRecord。
+            forecast_enabled: 覆盖配置中的前瞻开关；``None`` 读 YAML。
+
+        Raises:
+            ValueError: 决策步长与通信步长之比非正整数。
+        """
         super().__init__()
         self.root = Path(__file__).resolve().parents[2]
         self.config_path = self._resolve(config_path)
@@ -76,15 +107,22 @@ class PowerSystemEnv(gym.Env):
         reward_path = self._resolve(reward_config_path)
         with reward_path.open(encoding="utf-8") as stream:
             reward_config = yaml.safe_load(stream)
-        reward_config["decision_interval_seconds"] = self.config["fmu"]["decision_interval_seconds"]
+        reward_config["decision_interval_seconds"] = self.config["fmu"][
+            "decision_interval_seconds"
+        ]
         reward_config["episode_steps"] = int(self.config["fmu"]["episode_steps"])
         self.registry = build_registry(
-            self.root / self.config["fmu"]["path"], self.config,
+            self.root / self.config["fmu"]["path"],
+            self.config,
             verify_metadata=adapter is None,
         )
         self.observation_builder = ObservationBuilder(self.registry)
         forecast_cfg = self.config.get("forecast") or {}
-        self.forecast_enabled = bool(forecast_cfg.get("enabled", True)) if forecast_enabled is None else bool(forecast_enabled)
+        self.forecast_enabled = (
+            bool(forecast_cfg.get("enabled", True))
+            if forecast_enabled is None
+            else bool(forecast_enabled)
+        )
         self.forecast_provider: ForecastProvider | None = None
         if self.forecast_enabled:
             self.forecast_provider = ForecastProvider(
@@ -93,8 +131,16 @@ class PowerSystemEnv(gym.Env):
                 annual_horizon_hours=int(self.config["fmu"]["annual_horizon_hours"]),
                 step_seconds=float(self.config["fmu"]["decision_interval_seconds"]),
             )
-        forecast_low = self.forecast_provider.feature_low if self.forecast_provider is not None else np.empty(0, dtype=np.float32)
-        forecast_high = self.forecast_provider.feature_high if self.forecast_provider is not None else np.empty(0, dtype=np.float32)
+        forecast_low = (
+            self.forecast_provider.feature_low
+            if self.forecast_provider is not None
+            else np.empty(0, dtype=np.float32)
+        )
+        forecast_high = (
+            self.forecast_provider.feature_high
+            if self.forecast_provider is not None
+            else np.empty(0, dtype=np.float32)
+        )
         self.observation_space = Box(
             low=np.concatenate((self.observation_builder.low, forecast_low)),
             high=np.concatenate((self.observation_builder.high, forecast_high)),
@@ -102,10 +148,22 @@ class PowerSystemEnv(gym.Env):
         )
         self.action_space = HybridDictSpace(
             {
-                "u_tp": Box(low=np.array([1.0 / 3.0], dtype=np.float32), high=np.array([1.0], dtype=np.float32), dtype=np.float32),
-                "u_battery": Box(low=np.array([-1.0], dtype=np.float32), high=np.array([1.0], dtype=np.float32), dtype=np.float32),
+                "u_tp": Box(
+                    low=np.array([1.0 / 3.0], dtype=np.float32),
+                    high=np.array([1.0], dtype=np.float32),
+                    dtype=np.float32,
+                ),
+                "u_battery": Box(
+                    low=np.array([-1.0], dtype=np.float32),
+                    high=np.array([1.0], dtype=np.float32),
+                    dtype=np.float32,
+                ),
                 "caes_mode": Discrete(3),
-                "caes_magnitude": Box(low=np.array([0.0], dtype=np.float32), high=np.array([1.0], dtype=np.float32), dtype=np.float32),
+                "caes_magnitude": Box(
+                    low=np.array([0.0], dtype=np.float32),
+                    high=np.array([1.0], dtype=np.float32),
+                    dtype=np.float32,
+                ),
             }
         )
         self.decoder = HybridActionDecoder()
@@ -119,21 +177,25 @@ class PowerSystemEnv(gym.Env):
             float(self.config["fmu"]["communication_step_seconds"]),
             self.registry,
         )
-        self.reward_calculator = RewardCalculator(reward_config, require_complete=require_complete_reward)
+        self.reward_calculator = RewardCalculator(
+            reward_config, require_complete=require_complete_reward
+        )
         self.termination_checker = TerminationChecker()
         ratio = float(self.config["fmu"]["decision_interval_seconds"]) / float(
             self.config["fmu"]["communication_step_seconds"]
         )
         if ratio <= 0 or not ratio.is_integer():
-            raise ValueError("decision_interval_seconds / communication_step_seconds 必须是正整数")
+            raise ValueError(
+                "decision_interval_seconds / communication_step_seconds 必须是正整数"
+            )
         self.n_substeps = int(ratio)
         self.episode_steps = int(self.config["fmu"]["episode_steps"])
-        self.step_index = 0
-        self.valid_episode_steps = 0
+        self.step_index = 0  # 当前步数
+        self.valid_episode_steps = 0  # 有效步数
         self.episode_index = 0
         self.run_id = run_id
-        self.last_outputs: dict[str, float] | None = None
-        self.previous_thermal = 0.0
+        self.last_outputs: dict[str, float] | None = None  # 上一时刻FMU的输出值
+        self.previous_thermal = 0.0  # 上一时刻火电功率
         self.initial_soc: dict[str, float] | None = None
         self.episode_failed = False
         self._current_feasible: DynamicFeasibleActionSet | None = None
@@ -144,7 +206,14 @@ class PowerSystemEnv(gym.Env):
         self.caes_min_run = CaesMinimumRunController()
 
     def build_observation(self) -> np.ndarray:
-        """当前 FMU 物理输出 + 可选只读日前 forecast 的唯一 observation 构造入口。"""
+        """构造当前观测：FMU 物理输出 + 可选只读日前 forecast。
+
+        Returns:
+            ``float32`` 观测向量。
+
+        Raises:
+            RuntimeError: 环境未 ``reset``（``last_outputs`` 为 ``None``）。
+        """
         if self.last_outputs is None:
             raise RuntimeError("环境未 reset")
         physical = self.observation_builder.build(self.last_outputs)
@@ -154,10 +223,27 @@ class PowerSystemEnv(gym.Env):
         return np.concatenate((physical, forecast)).astype(np.float32, copy=False)
 
     def _resolve(self, path: str | Path) -> Path:
+        """将相对路径解析为基于项目根的绝对路径。
+
+        Args:
+            path: 配置中的文件路径。
+
+        Returns:
+            绝对 ``Path``。
+        """
         p = Path(path)
         return p if p.is_absolute() else self.root / p
 
     def get_feasible_action_spec(self) -> DynamicFeasibleActionSet:
+        """计算当前状态下的动态可行动作集（含 CAES 最短运行约束）。
+
+        Returns:
+            动态可行动作集(DynamicFeasibleActionSet)。
+
+        Raises:
+            RuntimeError: 环境未 ``reset``。
+            FeasibleSetEmpty: Oracle 可行集为空。
+        """
         if self.last_outputs is None:
             raise RuntimeError("环境未 reset")
         self._current_feasible = self._constrain_caes_min_run(
@@ -167,8 +253,17 @@ class PowerSystemEnv(gym.Env):
             raise FeasibleSetEmpty("当前状态动态可行集为空")
         return self._current_feasible
 
-    def _constrain_caes_min_run(self, feasible: DynamicFeasibleActionSet) -> DynamicFeasibleActionSet:
-        """交集：Oracle 物理安全域 ∩ CAES 最短连续运行规则。"""
+    def _constrain_caes_min_run(
+        self, feasible: DynamicFeasibleActionSet
+    ) -> DynamicFeasibleActionSet:
+        """交集：Oracle 物理安全域 ∩ CAES 最短连续运行规则。
+
+        Args:
+            feasible: Oracle 原始动态可行集。
+
+        Returns:
+            施加 CAES 最短运行约束后的可行集副本。
+        """
         mask, state = self.caes_min_run.constrain(
             feasible.mode_mask,
             steps_remaining=self.episode_steps - self.step_index,
@@ -182,18 +277,27 @@ class PowerSystemEnv(gym.Env):
         )
         return replace(feasible, mode_mask=mask, metadata=metadata)
 
-    def decode_action(self, action: dict | HybridAction) -> PhysicalFmuAction:
-        hybrid = action if isinstance(action, HybridAction) else hybrid_from_dict(action)
-        return self.decoder.decode(hybrid)
-
-    def set_action_meta(self, meta: dict[str, Any] | None) -> None:
-        """由 SafeActionGenerator 注入 safety/oracle 诊断，供 step 日志使用。"""
-        self._pending_action_meta = dict(meta or {})
-
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
+        """重置 FMU 与 episode 状态，返回初始观测。
+
+        Args:
+            seed: Gymnasium 随机种子。
+            options: 可选 ``start_time``（秒）覆盖默认起始时刻。
+
+        Returns:
+            ``(observation, info)`` 元组。
+
+        Raises:
+            FmiLifecycleFailure: FMU reset 失败。
+        """
         super().reset(seed=seed)
-        start = float((options or {}).get("start_time", self.config["fmu"].get("start_time_seconds", 0.0)))
+        start = float(
+            (options or {}).get(
+                "start_time", self.config["fmu"].get("start_time_seconds", 0.0)
+            )
+        )
         try:
+            # FMU的初始输出值
             self.last_outputs = self.adapter.reset(start)
         except FmuSolverError as exc:
             raise FmiLifecycleFailure(str(exc)) from exc
@@ -224,6 +328,18 @@ class PowerSystemEnv(gym.Env):
         return observation, info
 
     def step(self, action: dict | HybridAction):
+        """执行一步：预检 → FMU 子步 → 后验硬约束 → 奖励。
+
+        Args:
+            action: 混合动作(HybridAction)或 Gymnasium Dict。
+
+        Returns:
+            Gymnasium 五元组 ``(obs, reward, terminated, truncated, info)``。
+            预检失败或 FMU 失败时 reward=0、truncated=True、不更新物理状态。
+
+        Raises:
+            RuntimeError: 未先 ``reset``。
+        """
         if self.last_outputs is None:
             raise RuntimeError("必须先 reset")
         action_meta = dict(self._pending_action_meta)
@@ -237,28 +353,45 @@ class PowerSystemEnv(gym.Env):
             self._count(exc.failure_type)
             self.episode_failed = True
             info = self._reject_info(None, feasible, exc, action_meta=action_meta)
-            self._record_failure(info, hybrid=None, physical=None, actual=None, predicted=None)
+            self._record_failure(
+                info, hybrid=None, physical=None, actual=None, predicted=None
+            )
             return self.build_observation(), 0.0, False, True, info
 
         hybrid: HybridAction | None = None
         try:
-            hybrid = action if isinstance(action, HybridAction) else hybrid_from_dict(action)
+            hybrid = (
+                action if isinstance(action, HybridAction) else hybrid_from_dict(action)
+            )
             self.hybrid_validator.validate(hybrid, feasible)
-            ok, reason = self.oracle.check_action_executable(hybrid, self.last_outputs, feasible, self.previous_thermal)
+            ok, reason = self.oracle.check_action_executable(
+                hybrid, self.last_outputs, feasible, self.previous_thermal
+            )
             if not ok:
                 raise DynamicStateConstraintViolation(reason or "预检失败")
         except (ConstraintFailure, ValueError, TypeError, KeyError) as exc:
             if not isinstance(exc, ConstraintFailure):
                 exc = StaticActionViolation(str(exc))
             self._count(exc.failure_type)
-            info = self._reject_info(hybrid if hybrid is not None else action, feasible, exc, action_meta=action_meta)
+            info = self._reject_info(
+                hybrid if hybrid is not None else action,
+                feasible,
+                exc,
+                action_meta=action_meta,
+            )
             # 不调用 FMU、不算经济 reward、不产生有效转移
             obs = self.build_observation()
             return obs, 0.0, False, True, info
 
         physical = self.decoder.decode(hybrid)
-        mag_logged = 0.0 if hybrid.caes_mode == CaesMode.IDLE else float(hybrid.caes_magnitude)
-        predicted = self.oracle.predict_next_state(self.last_outputs, hybrid, self.previous_thermal)
+        mag_logged = (
+            0.0 if hybrid.caes_mode == CaesMode.IDLE else float(hybrid.caes_magnitude)
+        )
+        #
+        predicted = self.oracle.predict_next_state(
+            self.last_outputs, hybrid, self.previous_thermal
+        )
+
         physical_dist, safe_dist = self.oracle.distances_to_bounds(self.last_outputs)
         outputs: dict[str, float] | None = None
         try:
@@ -285,32 +418,68 @@ class PowerSystemEnv(gym.Env):
                     triggering_constraint=trig,
                 )
         except ConstraintFailure as exc:
-            self.caes_min_run.interrupt("fmu_or_post_step_failure", step=self.step_index)
+            self.caes_min_run.interrupt(
+                "fmu_or_post_step_failure", step=self.step_index
+            )
             self._count(exc.failure_type)
             self.episode_failed = True
             info = self._failure_info(
-                hybrid, physical, mag_logged, feasible, exc, applied=None,
-                predicted=predicted, actual=outputs, action_meta=action_meta,
-                physical_dist=physical_dist, safe_dist=safe_dist,
+                hybrid,
+                physical,
+                mag_logged,
+                feasible,
+                exc,
+                applied=None,
+                predicted=predicted,
+                actual=outputs,
+                action_meta=action_meta,
+                physical_dist=physical_dist,
+                safe_dist=safe_dist,
             )
-            self._record_failure(info, hybrid=hybrid, physical=physical, actual=outputs, predicted=predicted)
+            self._record_failure(
+                info,
+                hybrid=hybrid,
+                physical=physical,
+                actual=outputs,
+                predicted=predicted,
+            )
             return self.build_observation(), 0.0, False, True, info
         except FmuSolverError as exc:
             # 分类：生命周期 vs 数值
             msg = str(exc).lower()
             if "reset" in msg or "instantiate" in msg or "lifecycle" in msg:
-                fail = FmiLifecycleFailure(str(exc), fine_type="nonlinear_solver_failure")
+                fail = FmiLifecycleFailure(
+                    str(exc), fine_type="nonlinear_solver_failure"
+                )
             else:
-                fail = FmuNumericalFailure(str(exc), fine_type="nonlinear_solver_failure")
+                fail = FmuNumericalFailure(
+                    str(exc), fine_type="nonlinear_solver_failure"
+                )
             self._count(fail.failure_type)
             self.episode_failed = True
-            self.caes_min_run.interrupt("fmu_or_post_step_failure", step=self.step_index)
-            info = self._failure_info(
-                hybrid, physical, mag_logged, feasible, fail, applied=None,
-                predicted=predicted, actual=outputs, action_meta=action_meta,
-                physical_dist=physical_dist, safe_dist=safe_dist,
+            self.caes_min_run.interrupt(
+                "fmu_or_post_step_failure", step=self.step_index
             )
-            self._record_failure(info, hybrid=hybrid, physical=physical, actual=outputs, predicted=predicted)
+            info = self._failure_info(
+                hybrid,
+                physical,
+                mag_logged,
+                feasible,
+                fail,
+                applied=None,
+                predicted=predicted,
+                actual=outputs,
+                action_meta=action_meta,
+                physical_dist=physical_dist,
+                safe_dist=safe_dist,
+            )
+            self._record_failure(
+                info,
+                hybrid=hybrid,
+                physical=physical,
+                actual=outputs,
+                predicted=predicted,
+            )
             return self.build_observation(), 0.0, False, True, info
 
         residuals = self.oracle.residual(predicted, outputs)
@@ -323,10 +492,14 @@ class PowerSystemEnv(gym.Env):
         is_final = truncated or terminated
         episode_completed = truncated and not self.episode_failed
         self.valid_episode_steps += 1
-        completed_segment = self.caes_min_run.record_success(hybrid.caes_mode, step=next_step)
+        completed_segment = self.caes_min_run.record_success(
+            hybrid.caes_mode, step=next_step
+        )
         final_min_run_event = None
         if is_final and self.caes_min_run.active_mode is not None:
-            final_min_run_event = self.caes_min_run.interrupt("episode_ended_before_min_run", step=next_step)
+            final_min_run_event = self.caes_min_run.interrupt(
+                "episode_ended_before_min_run", step=next_step
+            )
         reward, terms = self.reward_calculator.calculate(
             outputs,
             self.previous_thermal,
@@ -371,7 +544,11 @@ class PowerSystemEnv(gym.Env):
             "failure_reason": None,
             "stored_in_replay": True,
             "oracle_version": self.oracle.oracle_version,
-            "oracle_predicted_next_state": {k: float(predicted[k]) for k in predicted if k not in ("caes_mode", "caes_magnitude")},
+            "oracle_predicted_next_state": {
+                k: float(predicted[k])
+                for k in predicted
+                if k not in ("caes_mode", "caes_magnitude")
+            },
             "residuals": residuals,
             "dangerous_residual": dang,
             "distance_to_physical_boundary": physical_dist,
@@ -385,39 +562,25 @@ class PowerSystemEnv(gym.Env):
             "caes_min_run_completed_segment": completed_segment,
             "caes_min_run_final_event": final_min_run_event,
             **self.caes_min_run.status(),
-            }
+        }
         self.last_step_diagnostics = info
         if is_final and self.initial_soc:
             info.update(self._episode_summary(outputs, terms, episode_completed))
         return observation, float(reward), terminated, truncated, info
 
-    def step_physical_for_test(self, action: dict[str, float] | PhysicalFmuAction | np.ndarray):
-        """仅用于单元测试与规则辅助；不是正式策略接口。"""
-        if isinstance(action, PhysicalFmuAction):
-            physical = action
-        elif isinstance(action, np.ndarray):
-            physical = PhysicalFmuAction(float(action[0]), float(action[1]), float(action[2]))
-        else:
-            physical = PhysicalFmuAction(float(action["u_tp"]), float(action["u_battery"]), float(action["u_caes"]))
-        self.hybrid_validator.validate_physical_static(physical)
-        # 将物理动作反解为最近 HybridAction 再走正式 step 路径
-        hybrid = self._physical_to_hybrid(physical)
-        return self.step(hybrid)
+    def _episode_summary(
+        self, outputs: dict[str, float], terms: dict[str, float], completed: bool
+    ) -> dict[str, Any]:
+        """汇总 episode 级 SOC 变化与终端奖励诊断。
 
-    def _physical_to_hybrid(self, physical: PhysicalFmuAction) -> HybridAction:
-        u = physical.u_caes
-        if abs(u) <= 1e-9:
-            mode, mag = CaesMode.IDLE, 0.0
-        elif u < 0:
-            mode = CaesMode.DISCHARGE
-            mag = (u - (-1.0)) / (-0.33 - (-1.0))
-        else:
-            mode = CaesMode.CHARGE
-            mag = (u - 0.86) / (1.0 - 0.86)
-        mag = float(np.clip(mag, 0.0, 1.0))
-        return HybridAction(physical.u_tp, physical.u_battery, mode, mag)
+        Args:
+            outputs: 最后一步 FMU 输出。
+            terms: ``RewardCalculator.calculate`` 返回的分项字典。
+            completed: episode 是否正常完成。
 
-    def _episode_summary(self, outputs: dict[str, float], terms: dict[str, float], completed: bool) -> dict[str, Any]:
+        Returns:
+            写入 ``info`` 的 episode 摘要字典。
+        """
         assert self.initial_soc is not None
         summary: dict[str, Any] = {
             "episode_period_hours": self.episode_steps,
@@ -425,7 +588,6 @@ class PowerSystemEnv(gym.Env):
             "episode_completed": completed,
         }
         for key in ("battery_soc", "caes_gas_soc", "caes_hot_soc", "caes_cold_soc"):
-            short = key.replace("_soc", "")
             summary[f"initial_{key}"] = self.initial_soc[key]
             summary[f"final_{key}"] = float(outputs[key])
             summary[f"{key}_delta"] = float(outputs[key]) - self.initial_soc[key]
@@ -443,6 +605,17 @@ class PowerSystemEnv(gym.Env):
         exc: ConstraintFailure,
         action_meta: dict | None = None,
     ) -> dict[str, Any]:
+        """构造预检拒绝时的 ``info``（未调用 FMU）。
+
+        Args:
+            action: 原始动作或 HybridAction。
+            feasible: 当前动态可行集。
+            exc: 约束失败异常(ConstraintFailure)。
+            action_meta: 可选 safety 元数据。
+
+        Returns:
+            含 ``transition_valid=False`` 与失败分类的 info 字典。
+        """
         hybrid = action if isinstance(action, HybridAction) else None
         fine, trig = classify_failure(
             failure_type=exc.failure_type,
@@ -454,7 +627,9 @@ class PowerSystemEnv(gym.Env):
             trig = exc.triggering_constraint or fine
         meta = action_meta or {}
         physical_dist, safe_dist = (
-            self.oracle.distances_to_bounds(self.last_outputs) if self.last_outputs else ({}, {})
+            self.oracle.distances_to_bounds(self.last_outputs)
+            if self.last_outputs
+            else ({}, {})
         )
         return {
             "time": self.adapter.time,
@@ -476,7 +651,9 @@ class PowerSystemEnv(gym.Env):
             "safety_probability": meta.get("safety_probability"),
             "safety_threshold": meta.get("safety_threshold"),
             "safety_model_version": meta.get("safety_model_version"),
-            "last_valid_outputs": dict(self.last_outputs) if self.last_outputs else None,
+            "last_valid_outputs": (
+                dict(self.last_outputs) if self.last_outputs else None
+            ),
             **feasible.as_dict(),
             "requested_caes_mode": int(hybrid.caes_mode) if hybrid else None,
             "requested_u_tp": hybrid.u_tp if hybrid else None,
@@ -499,6 +676,24 @@ class PowerSystemEnv(gym.Env):
         physical_dist: dict | None = None,
         safe_dist: dict | None = None,
     ) -> dict[str, Any]:
+        """构造 FMU/后验失败时的 ``info``。
+
+        Args:
+            hybrid: 已解码的混合动作。
+            physical: 物理 FMU 动作。
+            mag_logged: 日志用 CAES 幅度（IDLE 时为 0）。
+            feasible: 当前可行集。
+            exc: 失败异常。
+            applied: 已施加动作（失败时通常为 ``None``）。
+            predicted: Oracle 预测下一状态。
+            actual: 实际 FMU 输出（可能部分可用）。
+            action_meta: safety 元数据。
+            physical_dist: 到物理边界的距离。
+            safe_dist: 到安全边界的距离。
+
+        Returns:
+            含残差、预测/实际对比与失败分类的 info 字典。
+        """
         fine = getattr(exc, "fine_type", None) or "unknown"
         trig = getattr(exc, "triggering_constraint", None) or fine
         if fine == "unknown":
@@ -512,7 +707,9 @@ class PowerSystemEnv(gym.Env):
         dang = None
         if predicted is not None and actual is not None:
             residuals = self.oracle.residual(predicted, actual)
-            dang = self.oracle.dangerous_residual(residuals, mode=hybrid.caes_mode, u_battery=hybrid.u_battery)
+            dang = self.oracle.dangerous_residual(
+                residuals, mode=hybrid.caes_mode, u_battery=hybrid.u_battery
+            )
         meta = action_meta or {}
         return {
             "time": self.adapter.time,
@@ -544,7 +741,9 @@ class PowerSystemEnv(gym.Env):
             "fmu_error": exc.reason,
             "modelica_assert_message": exc.reason,
             "reward_terms": {},
-            "last_valid_outputs": dict(self.last_outputs) if self.last_outputs else None,
+            "last_valid_outputs": (
+                dict(self.last_outputs) if self.last_outputs else None
+            ),
             "oracle_predicted_next_state": predicted,
             "actual_fmu_outputs": actual,
             "residuals": residuals,
@@ -567,6 +766,18 @@ class PowerSystemEnv(gym.Env):
         actual: dict | None,
         predicted: dict | None,
     ) -> FailureRecord:
+        """追加结构化失败记录并写回 ``info['failure_record']``。
+
+        Args:
+            info: 当前步 info 字典（会被就地更新）。
+            hybrid: 混合动作；可为 ``None``。
+            physical: 物理动作；可为 ``None``。
+            actual: 实际 FMU 输出。
+            predicted: Oracle 预测状态。
+
+        Returns:
+            新建的 FailureRecord 实例。
+        """
         rec = FailureRecord(
             run_id=self.run_id,
             episode=int(info.get("episode") or 0),
@@ -587,7 +798,9 @@ class PowerSystemEnv(gym.Env):
                 if hybrid
                 else None
             ),
-            decoded_fmu_action=physical.as_dict() if physical else info.get("decoded_fmu_action"),
+            decoded_fmu_action=(
+                physical.as_dict() if physical else info.get("decoded_fmu_action")
+            ),
             oracle_dynamic_bounds={
                 "u_tp_low": float(info.get("u_tp_dynamic_low", 0.0) or 0.0),
                 "u_tp_high": float(info.get("u_tp_dynamic_high", 0.0) or 0.0),
@@ -599,7 +812,8 @@ class PowerSystemEnv(gym.Env):
                 "idle": bool(info.get("caes_idle_allowed")),
                 "charge": bool(info.get("caes_charge_allowed")),
             },
-            oracle_predicted_next_state=predicted or info.get("oracle_predicted_next_state"),
+            oracle_predicted_next_state=predicted
+            or info.get("oracle_predicted_next_state"),
             actual_fmu_outputs=actual or info.get("actual_fmu_outputs"),
             last_valid_state=dict(self.last_outputs) if self.last_outputs else None,
             distance_to_physical_boundary=info.get("distance_to_physical_boundary"),
@@ -607,7 +821,8 @@ class PowerSystemEnv(gym.Env):
             residuals=info.get("residuals"),
             dangerous_residual=info.get("dangerous_residual"),
             fmu_status=info.get("fmu_status"),
-            modelica_assert_message=info.get("modelica_assert_message") or info.get("failure_reason"),
+            modelica_assert_message=info.get("modelica_assert_message")
+            or info.get("failure_reason"),
             oracle_version=self.oracle.oracle_version,
             safety_probability=info.get("safety_probability"),
             safety_threshold=info.get("safety_threshold"),
@@ -618,13 +833,25 @@ class PowerSystemEnv(gym.Env):
         return rec
 
     def _count(self, failure_type: str) -> None:
+        """递增按 ``failure_type`` 聚合的失败计数。
+
+        Args:
+            failure_type: 粗粒度失败类型字符串。
+        """
         self.failure_counts[failure_type] = self.failure_counts.get(failure_type, 0) + 1
 
     def close(self) -> None:
+        """释放 FMU 适配器资源。"""
         self.adapter.close()
 
-    def __enter__(self):
+    def __enter__(self) -> "PowerSystemEnv":
+        """上下文管理器入口。
+
+        Returns:
+            自身实例。
+        """
         return self
 
     def __exit__(self, *_args) -> None:
+        """上下文管理器退出时关闭 FMU。"""
         self.close()

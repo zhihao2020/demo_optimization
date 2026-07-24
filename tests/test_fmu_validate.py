@@ -14,13 +14,28 @@ from fmu.validate import validate_inputs, validate_outputs
 
 
 def _ok_action(**overrides: float) -> dict[str, float]:
+    """构造名义合法的 FMU 输入快照。
+
+    Args:
+        **overrides: 覆盖 u_tp / u_battery / u_caes。
+
+    Returns:
+        调度输入字典。
+    """
     base = {"u_tp": 1.0, "u_battery": 0.0, "u_caes": 0.0}
     base.update(overrides)
     return base
 
 
 def _ok_outputs(**overrides: float) -> dict[str, float]:
-    """构造一组物理上合理的输出快照。"""
+    """构造一组物理上合理的输出快照。
+
+    Args:
+        **overrides: 覆盖任意输出字段。
+
+    Returns:
+        FMU 输出字典。
+    """
     base = {
         "p_curtailment": 0.0,
         "p_unserved": 0.0,

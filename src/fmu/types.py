@@ -13,11 +13,13 @@ import numpy as np
 
 @dataclass
 class DispatchPlan:
-    """按时序排列的调度指令。
+    """调度计划(DispatchPlan)：按时序排列的 FMU 输入指令。
 
     Attributes:
-        time: 通信点时间戳，单位 s；长度通常为 horizon+1。
-        u_tp / u_battery / u_caes: 各小时动作，长度通常为 horizon。
+        time: 通信点时间戳（秒）；长度通常为 horizon+1。
+        u_tp: 火电负荷率序列，长度通常为 horizon。
+        u_battery: 电池功率指令序列（归一化）。
+        u_caes: CAES 功率指令序列（归一化）。
     """
 
     time: np.ndarray
@@ -28,10 +30,10 @@ class DispatchPlan:
 
 @dataclass
 class SimulationResult:
-    """一次 rollout / 仿真的输出轨迹。
+    """仿真结果(SimulationResult)：一次 rollout 的输出轨迹。
 
     Attributes:
-        time: 各采样时刻，单位 s。
+        time: 各采样时刻（秒）。
         variables: 物理输出名 -> 与 time 对齐的一维数组。
         metadata: 执行信息（是否失败、错误信息、完成小时数等）。
     """
@@ -41,5 +43,12 @@ class SimulationResult:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def get(self, name: str) -> np.ndarray | None:
-        """按 FMU 顶层输出名取值；不存在则返回 None。"""
+        """按 FMU 顶层输出名取值。
+
+        Args:
+            name: FMU 变量名。
+
+        Returns:
+            与 ``time`` 对齐的一维数组；不存在则 ``None``。
+        """
         return self.variables.get(name)

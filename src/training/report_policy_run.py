@@ -10,7 +10,11 @@ import numpy as np
 
 
 def _setup_matplotlib_font() -> None:
-    """尽量选用系统中文字体，避免图中方框。"""
+    """尽量选用系统中文字体，避免图中方框。
+
+    Returns:
+        无。
+    """
     import matplotlib
 
     matplotlib.rcParams["axes.unicode_minus"] = False
@@ -23,6 +27,17 @@ def _setup_matplotlib_font() -> None:
 
 
 def _load_summary(run_dir: Path) -> dict[str, Any]:
+    """从运行目录读取 summary.json。
+
+    Args:
+        run_dir: 训练运行根目录。
+
+    Returns:
+        解析后的 summary 字典。
+
+    Raises:
+        FileNotFoundError: 缺少 summary.json 时抛出。
+    """
     path = run_dir / "summary.json"
     if not path.is_file():
         raise FileNotFoundError(f"缺少 summary.json: {path}")
@@ -30,6 +45,14 @@ def _load_summary(run_dir: Path) -> dict[str, Any]:
 
 
 def _load_csv(path: Path):
+    """加载轨迹 CSV 为 DataFrame；文件不存在时返回 None。
+
+    Args:
+        path: CSV 文件路径。
+
+    Returns:
+        pandas DataFrame 或 None。
+    """
     import pandas as pd
 
     if not path.is_file():
@@ -38,6 +61,14 @@ def _load_csv(path: Path):
 
 
 def _cashflow_from_block(block: dict[str, Any] | None) -> float | None:
+    """从评估块提取累计现金流。
+
+    Args:
+        block: summary 中的 eval/rule 子字典。
+
+    Returns:
+        累计现金流（元），无法提取时返回 None。
+    """
     if not block:
         return None
     if block.get("economic_cashflow_total") is not None:
@@ -49,6 +80,14 @@ def _cashflow_from_block(block: dict[str, Any] | None) -> float | None:
 
 
 def _cashflow_from_csv(df) -> float | None:
+    """从轨迹 DataFrame 推断累计现金流。
+
+    Args:
+        df: 评估或规则轨迹 DataFrame。
+
+    Returns:
+        累计现金流（元），无相关列时返回 None。
+    """
     if df is None or df.empty:
         return None
     for col in ("rt_economic_cashflow_total", "economic_cashflow_total"):
@@ -61,6 +100,14 @@ def _cashflow_from_csv(df) -> float | None:
 
 
 def _action_stats(df) -> dict[str, Any]:
+    """统计解码后动作的小时分布与火电负荷率。
+
+    Args:
+        df: 评估轨迹 DataFrame。
+
+    Returns:
+        含 ``u_tp_mean``、充放电小时数等键的字典；空表时返回空字典。
+    """
     if df is None or df.empty:
         return {}
     stats: dict[str, Any] = {}
@@ -88,6 +135,14 @@ def _action_stats(df) -> dict[str, Any]:
 
 
 def _components(block: dict[str, Any] | None) -> dict[str, float]:
+    """提取经济现金流分项（风/光/火电/储能等）。
+
+    Args:
+        block: eval 或 rule 评估块。
+
+    Returns:
+        分项名到金额（元）的映射。
+    """
     if not block:
         return {}
     comps = block.get("economic_cashflow_components") or {}
@@ -103,6 +158,16 @@ def _components(block: dict[str, Any] | None) -> dict[str, float]:
 
 
 def _plot_actions(eval_df, rule_df, out_path: Path) -> None:
+    """绘制策略与规则基线的调度指令时序图。
+
+    Args:
+        eval_df: 策略评估轨迹。
+        rule_df: 规则基线轨迹。
+        out_path: PNG 输出路径。
+
+    Returns:
+        无。
+    """
     import matplotlib.pyplot as plt
 
     _setup_matplotlib_font()
@@ -135,6 +200,16 @@ def _plot_actions(eval_df, rule_df, out_path: Path) -> None:
 
 
 def _plot_cashflow(eval_df, rule_df, out_path: Path) -> None:
+    """绘制累计经济现金流对比图。
+
+    Args:
+        eval_df: 策略评估轨迹。
+        rule_df: 规则基线轨迹。
+        out_path: PNG 输出路径。
+
+    Returns:
+        无。
+    """
     import matplotlib.pyplot as plt
 
     _setup_matplotlib_font()
@@ -161,6 +236,15 @@ def _plot_cashflow(eval_df, rule_df, out_path: Path) -> None:
 
 
 def _plot_soc(eval_df, out_path: Path) -> None:
+    """绘制电池与 CAES 各罐 SOC 时序图。
+
+    Args:
+        eval_df: 策略评估轨迹。
+        out_path: PNG 输出路径。
+
+    Returns:
+        无。
+    """
     import matplotlib.pyplot as plt
 
     _setup_matplotlib_font()
@@ -189,13 +273,28 @@ def _plot_soc(eval_df, out_path: Path) -> None:
 
 
 def _fmt_money(x: float | None) -> str:
+    """格式化金额为千分位字符串。
+
+    Args:
+        x: 金额；None 时显示 N/A。
+
+    Returns:
+        格式化后的字符串。
+    """
     if x is None:
         return "N/A"
     return f"{x:,.2f}"
 
 
 def generate_policy_report(run_dir: str | Path) -> Path:
-    """生成 ``run_dir/report/report.md`` 与三张 PNG，返回报告路径。"""
+    """生成 ``run_dir/report/report.md`` 与三张 PNG，返回报告路径。
+
+    Args:
+        run_dir: 训练运行目录，需含 summary.json 与 trajectories。
+
+    Returns:
+        生成的 report.md 路径。
+    """
     run_dir = Path(run_dir)
     summary = _load_summary(run_dir)
     eval_df = _load_csv(run_dir / "trajectories" / "eval.csv")
@@ -259,6 +358,15 @@ def generate_policy_report(run_dir: str | Path) -> Path:
         lines += ["（summary 中无分项字段；详见轨迹 CSV 的 `rt_economic_cashflow_*` 列。）", ""]
 
     def _metric(block: dict, key: str):
+        """从评估块或 metrics 子字典读取指标。
+
+        Args:
+            block: eval 或 rule 块。
+            key: 指标键名。
+
+        Returns:
+            指标值或 'N/A'。
+        """
         if key in block:
             return block.get(key)
         return (block.get("metrics") or {}).get(key, "N/A")

@@ -11,6 +11,19 @@ from fmpy import read_model_description
 
 @dataclass(frozen=True)
 class VariableSpec:
+    """变量规格(VariableSpec)：Python 名与 FMU 名的映射及边界元数据。
+
+    Attributes:
+        name: Python/环境侧变量名。
+        fmu_name: FMU modelDescription 中的变量名。
+        unit: 物理单位。
+        causality: ``input`` 或 ``output``。
+        low: 下界（输出可为 ``None`` 表示无界）。
+        high: 上界（输出可为 ``None`` 表示无界）。
+        bound_source: 边界来源说明（审计用）。
+        description: FMU 变量描述。
+    """
+
     name: str
     fmu_name: str
     unit: str
@@ -23,21 +36,34 @@ class VariableSpec:
 
 @dataclass(frozen=True)
 class VariableRegistry:
+    """变量注册表(VariableRegistry)：动作、观测与经济输出的统一索引。
+
+    Attributes:
+        actions: 动作变量规格元组（有序）。
+        outputs: 物理观测名 -> VariableSpec。
+        economics: 经济审计输出名 -> VariableSpec。
+    """
+
     actions: tuple[VariableSpec, ...]
     outputs: dict[str, VariableSpec]
     economics: dict[str, VariableSpec] = field(default_factory=dict)
 
     @property
     def action_names(self) -> tuple[str, ...]:
+        """Python 侧动作名元组。
+
+        Returns:
+            与 ``actions`` 顺序一致的动作名。
+        """
         return tuple(item.name for item in self.actions)
 
     @property
-    def output_names(self) -> tuple[str, ...]:
-        return tuple(self.outputs)
-
-    @property
     def read_outputs(self) -> dict[str, VariableSpec]:
-        """FMU 每步读取的物理观测与经济审计输出。"""
+        """FMU 每步读取的物理观测与经济审计输出。
+
+        Returns:
+            ``outputs`` 与 ``economics`` 的合并字典。
+        """
         return {**self.outputs, **self.economics}
 
 
@@ -51,6 +77,18 @@ def build_registry(
 
     注入测试 adapter 时可关闭 metadata 验证，使单元测试不依赖待重新导出的
     二进制；真实 FMU 路径始终保持严格验证。
+
+    Args:
+        fmu_path: ``.fmu`` 文件路径。
+        env_config: 环境 YAML 中的 ``actions``、``observations``、``economics``。
+        verify_metadata: 是否对照 modelDescription 校验变量存在与因果性。
+
+    Returns:
+        构建完成的 VariableRegistry。
+
+    Raises:
+        KeyError: FMU 中缺少配置引用的变量。
+        ValueError: 因果性错误或动作缺少显式边界。
     """
     variables = {}
     if verify_metadata:
@@ -77,6 +115,15 @@ def build_registry(
         )
 
     def parse_outputs(items: list[dict[str, Any]], kind: str) -> dict[str, VariableSpec]:
+        """解析配置中的输出变量列表为变量规格字典。
+
+        Args:
+            items: 配置项列表。
+            kind: 类别描述（如「观测」「经济」），用于报错文案。
+
+        Returns:
+            逻辑名到变量规格(VariableSpec)的映射。
+        """
         parsed: dict[str, VariableSpec] = {}
         for item in items:
             fmu_name = item.get("fmu_variable", item["name"])

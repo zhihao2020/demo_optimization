@@ -1,4 +1,4 @@
-"""状态相关动态可行动作集合。"""
+"""用于约束火电、电池与压空模式的动态可行动作集。"""
 
 from __future__ import annotations
 
@@ -9,6 +9,12 @@ from .mode_mask import ModeMask
 
 @dataclass(frozen=True)
 class DynamicFeasibleActionSet:
+    """状态相关的动态可行动作集(DynamicFeasibleActionSet)。
+
+    由可行性神谕(FeasibilityOracle)根据当前观测计算，给出火电/电池指令上下界
+    与压空模式掩码(ModeMask)。
+    """
+
     u_tp_low: float
     u_tp_high: float
     u_battery_low: float
@@ -18,6 +24,11 @@ class DynamicFeasibleActionSet:
     metadata: dict | None = None
 
     def as_dict(self) -> dict:
+        """序列化为日志/诊断用字典。
+
+        Returns:
+            含动态界、模式允许标志与元数据的字典。
+        """
         return {
             "u_tp_dynamic_low": self.u_tp_low,
             "u_tp_dynamic_high": self.u_tp_high,

@@ -10,12 +10,14 @@ from envs.action_validator import ActionValidator, ActionConstraintError as Lega
 
 
 def test_caes_forbidden_static_physical():
+    """验证 HybridActionValidator 拒绝 CAES 禁区中间带 u_caes=0.5。"""
     v = HybridActionValidator()
     with pytest.raises(StaticActionViolation):
         v.validate_physical_static(PhysicalFmuAction(1.0, 0.0, 0.5))
 
 
 def test_hybrid_decode_boundaries():
+    """验证 HybridActionDecoder 在 DISCHARGE/IDLE/CHARGE 边界解码 u_caes 正确。"""
     dec = HybridActionDecoder()
     assert abs(dec.decode(HybridAction(1.0, 0.0, CaesMode.DISCHARGE, 0.0)).u_caes - (-1.0)) < 1e-9
     assert abs(dec.decode(HybridAction(1.0, 0.0, CaesMode.DISCHARGE, 1.0)).u_caes - (-0.33)) < 1e-9
@@ -25,6 +27,7 @@ def test_hybrid_decode_boundaries():
 
 
 def test_legacy_box_validator_still_rejects_caes_band():
+    """验证遗留 ActionValidator 仍拒绝 CAES 禁区 u_caes=0.5。"""
     validator = ActionValidator(
         ("u_tp", "u_battery", "u_caes"),
         ("1", "1", "1"),

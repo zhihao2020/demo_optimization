@@ -15,7 +15,7 @@ import numpy as np
 from fmu.types import DispatchPlan
 from fmu.validate import validate_inputs
 
-SchemeName = Literal["output1", "output2"]
+SchemeName = Literal["output1", "output2"]  # compare 方案名(SchemeName)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCHEME_MODULES: dict[SchemeName, str] = {
@@ -25,6 +25,11 @@ _SCHEME_MODULES: dict[SchemeName, str] = {
 
 
 def _ensure_repo_on_path() -> None:
+    """将仓库根目录加入 sys.path，以便动态导入 compare 子模块。
+
+    Returns:
+        None。
+    """
     import sys
 
     root = str(_REPO_ROOT)
@@ -33,7 +38,18 @@ def _ensure_repo_on_path() -> None:
 
 
 def load_strategy(scheme: SchemeName, steps: int = 8760) -> dict[str, list[float]]:
-    """加载 compare 方案，返回 {caes_seq, battery_seq, tp_seq}。"""
+    """加载 compare 方案并返回三条时序序列。
+
+    Args:
+        scheme: compare 方案名(scheme)，可选 output1 或 output2。
+        steps: 生成步数(steps)，默认 8760（全年小时）。
+
+    Returns:
+        含 caes_seq、battery_seq、tp_seq 键的字典，值为浮点列表。
+
+    Raises:
+        ValueError: scheme 不在已知方案集合中。
+    """
     if scheme not in _SCHEME_MODULES:
         raise ValueError(f"未知 scheme={scheme!r}，可选: {sorted(_SCHEME_MODULES)}")
     _ensure_repo_on_path()
@@ -53,7 +69,22 @@ def to_fmu_actions(
     *,
     scheme: str | None = None,
 ) -> dict[str, np.ndarray]:
-    """符号翻转后逐小时 validate_inputs；非法则 ValueError。"""
+    """将 compare 符号约定翻转后逐小时校验，并返回 FMU 动作数组。
+
+    compare 约定负充正放；FMU 约定正充负放，故对 battery_seq、caes_seq 取反。
+
+    Args:
+        caes_seq: CAES 功率时序(caes_seq)，compare 符号。
+        battery_seq: 电池功率时序(battery_seq)，compare 符号。
+        tp_seq: 火电功率时序(tp_seq)。
+        scheme: 可选方案标签(scheme)，仅用于错误信息前缀。
+
+    Returns:
+        含 u_tp、u_battery、u_caes 键的字典，值为长度 n 的 float 数组。
+
+    Raises:
+        ValueError: 三条序列长度不一致，或任一小时映射后未通过 validate_inputs。
+    """
     n = len(tp_seq)
     if len(caes_seq) != n or len(battery_seq) != n:
         raise ValueError(
@@ -92,7 +123,20 @@ def to_dispatch_plan(
     hours: int | None = None,
     step_seconds: float = 3600.0,
 ) -> DispatchPlan:
-    """校验通过后构造 DispatchPlan；hours 可截断前缀小时数。"""
+    """校验通过后构造 FMU 调度计划(DispatchPlan)；可截断前缀小时数。
+
+    Args:
+        strategy: 含 caes_seq、battery_seq、tp_seq 的策略映射(strategy)。
+        scheme: 可选方案标签(scheme)，传给 to_fmu_actions 用于错误信息。
+        hours: 使用前若干小时(hours)；None 表示使用全长序列。
+        step_seconds: 每步时长秒数(step_seconds)，默认 3600。
+
+    Returns:
+        调度计划(DispatchPlan)，time 长度为 hours+1。
+
+    Raises:
+        ValueError: hours 非正、超过序列长度，或动作校验失败。
+    """
     caes = list(strategy["caes_seq"])
     battery = list(strategy["battery_seq"])
     tp = list(strategy["tp_seq"])
@@ -122,9 +166,21 @@ def build_plan_for_scheme(
     hours: int = 8760,
     step_seconds: float = 3600.0,
 ) -> tuple[DispatchPlan, dict[str, Any]]:
-    """一站式：加载 → 截断 → 校验 → DispatchPlan。
+    """一站式：加载 compare 方案 → 截断 → 校验 → 构造 DispatchPlan。
 
-    默认按 8760h 生成全年策略再取前缀；``hours > 8760`` 时按更长步数生成。
+    默认按 8760h 生成全年策略再取前缀；hours 大于 8760 时按更长步数生成。
+
+    Args:
+        scheme: compare 方案名(scheme)，output1 或 output2。
+        hours: 使用的调度小时数(hours)，默认 8760。
+        step_seconds: 每步时长秒数(step_seconds)，默认 3600。
+
+    Returns:
+        (调度计划(DispatchPlan), 元信息字典 meta)，meta 含 scheme、hours、
+        step_seconds、generated_steps。
+
+    Raises:
+        ValueError: 方案未知、hours 非法或动作校验失败。
     """
     hours = int(hours)
     gen_steps = max(hours, 8760)

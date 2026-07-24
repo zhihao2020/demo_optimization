@@ -1,4 +1,4 @@
-"""Hybrid-SAC：随机混合 Actor + Twin Q + 自动温度。"""
+"""混合软演员-评论家(Hybrid-SAC)：随机混合 Actor + Twin Q + 自动温度 α。"""
 
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ from training.hybrid_td3.critic import HybridCritic
 
 
 class HybridSAC:
+    """混合 SAC(HybridSAC)：最大熵 RL，连续 squashed 高斯 + 离散 Categorical 熵。"""
+
     def __init__(
         self,
         obs_dim: int,
@@ -27,6 +29,18 @@ class HybridSAC:
         target_entropy: float | None = None,
         device: str | None = None,
     ):
+        """初始化 Actor、Twin Critic、目标 Critic 与可学习 log_α。
+
+        Args:
+            obs_dim: 观测维度。
+            gamma: 折扣因子。
+            tau: 目标 Critic 软更新系数。
+            actor_lr: Actor 学习率。
+            critic_lr: Critic 学习率。
+            alpha_lr: 温度 α 学习率。
+            target_entropy: 目标熵；None 时用 -(3 + log(3)) 启发式。
+            device: PyTorch 设备。
+        """
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.gamma = gamma
         self.tau = tau
@@ -46,9 +60,24 @@ class HybridSAC:
 
     @property
     def alpha(self) -> torch.Tensor:
+        """当前温度系数 α = exp(log_alpha)。
+
+        Returns:
+            标量 α 张量。
+        """
         return self.log_alpha.exp()
 
     def select_action(self, obs, feasible, deterministic: bool = False) -> dict:
+        """采样混合动作。
+
+        Args:
+            obs: 环境观测。
+            feasible: 可行动作规格。
+            deterministic: 是否确定性。
+
+        Returns:
+            混合动作字典。
+        """
         out = self.actor.act_numpy(obs, feasible, deterministic=deterministic, device=self.device)
         return {
             "u_tp": out["u_tp"],
@@ -58,6 +87,18 @@ class HybridSAC:
         }
 
     def update(self, buffer: HybridGiveSafeReplayBuffer, batch_size: int = 256) -> dict[str, float]:
+        """从 physical replay 采样并执行 SAC 更新。
+
+        Args:
+            buffer: HybridGiveSafeReplayBuffer（仅用 physical 分区采样）。
+            batch_size: 批大小。
+
+        Returns:
+            含 critic_loss、actor_loss、alpha 等的指标字典。
+
+        Raises:
+            RuntimeError: 指标非有限时抛出。
+        """
         if len(buffer) < batch_size:
             return {}
         self.total_it += 1
@@ -141,10 +182,27 @@ class HybridSAC:
         return metrics
 
     def _soft_update(self, src: torch.nn.Module, tgt: torch.nn.Module) -> None:
+        """Polyak 软更新目标 Critic。
+
+        Args:
+            src: 源网络。
+            tgt: 目标网络。
+
+        Returns:
+            无。
+        """
         for sp, tp in zip(src.parameters(), tgt.parameters()):
             tp.data.copy_(self.tau * sp.data + (1.0 - self.tau) * tp.data)
 
     def save(self, path: str | Path) -> None:
+        """保存 Actor、Critic 与 log_alpha。
+
+        Args:
+            path: 检查点路径。
+
+        Returns:
+            无。
+        """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(
@@ -159,6 +217,14 @@ class HybridSAC:
         )
 
     def load(self, path: str | Path) -> None:
+        """加载检查点并重建 α 优化器。
+
+        Args:
+            path: 检查点路径。
+
+        Returns:
+            无。
+        """
         data = torch.load(path, map_location=self.device)
         self.actor.load_state_dict(data["actor"])
         self.critic.load_state_dict(data["critic"])

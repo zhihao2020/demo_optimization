@@ -20,6 +20,16 @@ SEASONAL_STARTS = {
     "low_wind_proxy": 210 * 24 * 3600,
 }
 def run_week(start_time: float, seed: int = 0, max_steps: int = 168) -> dict:
+    """在指定 FMU 起始时刻运行规则控制器一周。
+
+    Args:
+        start_time: episode 起始 simulation_time(秒)。
+        seed: env.reset 种子。
+        max_steps: 最大步数。
+
+    Returns:
+        含 week_raw、valid_steps、terminal_soc_l1 等的 episode 字典。
+    """
     with PowerSystemEnv() as env:
         ctrl = RuleBasedController(env)
         obs, info = env.reset(seed=seed, options={"start_time": float(start_time)})
@@ -48,6 +58,14 @@ def run_week(start_time: float, seed: int = 0, max_steps: int = 168) -> dict:
             "failure": last_info.get("failure_type"),
         }
 def main(update_config: bool = False) -> dict:
+    """跨季节周采样重标定 C_ref，可选写回 reward_config.yaml。
+
+    Args:
+        update_config: 为 True 且变化 >5% 时更新配置文件。
+
+    Returns:
+        标定摘要字典。
+    """
     episodes = []
     all_costs: list[float] = []
     for name, start in SEASONAL_STARTS.items():

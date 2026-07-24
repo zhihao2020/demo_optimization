@@ -19,11 +19,26 @@ ECONOMIC_COMPONENTS = (
 
 
 class IncompleteRewardConfigError(RuntimeError):
-    """正式经济训练所需参数缺失。"""
+    """正式经济训练所需参数缺失(IncompleteRewardConfigError)。"""
 
 
 class RewardCalculator:
-    def __init__(self, config: dict[str, Any], *, require_complete: bool = False):
+    """经济奖励计算器(RewardCalculator)。
+
+    以 FMU 累计现金流差分为步奖励，可选终端 SOC 奖励/惩罚；不做 Python 侧重算。
+    """
+
+    def __init__(self, config: dict[str, Any], *, require_complete: bool = False) -> None:
+        """加载 reward 配置并校验。
+
+        Args:
+            config: ``reward_config.yaml`` 解析后的字典。
+            require_complete: 为 ``True`` 时缺少 ``cost_reference`` 或终端 SOC 参数则抛错。
+
+        Raises:
+            IncompleteRewardConfigError: ``require_complete`` 且参数不完整。
+            ValueError: 未知 ``terminal_soc.mode``。
+        """
         self.config = config
         self.initial_soc: dict[str, float] | None = None
         self.previous_cashflow: dict[str, float] | None = None
@@ -33,6 +48,12 @@ class RewardCalculator:
         self._validate_config()
 
     def _validate_config(self) -> None:
+        """校验 cost_reference 与 terminal_soc 配置完整性。
+
+        Raises:
+            IncompleteRewardConfigError: 正式训练模式缺少必需键。
+            ValueError: 未知终端 SOC 模式。
+        """
         cref = self._nested(self.config, "cost_reference", "value")
         term = self.config.get("terminal_soc") or {}
         if self.require_complete:
@@ -54,6 +75,15 @@ class RewardCalculator:
 
     @staticmethod
     def _nested(cfg: dict, *keys: str) -> Any:
+        """按键路径嵌套取值。
+
+        Args:
+            cfg: 根配置字典。
+            *keys:  successive 键名。
+
+        Returns:
+            末级值；路径中断则 ``None``。
+        """
         cur: Any = cfg
         for key in keys:
             if not isinstance(cur, dict):
@@ -63,6 +93,17 @@ class RewardCalculator:
 
     @staticmethod
     def _cashflows(outputs: dict[str, float]) -> dict[str, float]:
+        """提取 FMU 累计经济输出。
+
+        Args:
+            outputs: FMU 输出字典。
+
+        Returns:
+            总量与各分量现金流字典。
+
+        Raises:
+            KeyError: 缺少必需经济输出键。
+        """
         required = (ECONOMIC_TOTAL, *ECONOMIC_COMPONENTS)
         missing = [name for name in required if name not in outputs]
         if missing:
@@ -70,11 +111,27 @@ class RewardCalculator:
         return {name: float(outputs[name]) for name in required}
 
     def reset(self, outputs: dict[str, float]) -> None:
+        """在 episode 起点记录初始 SOC 与累计现金流基线。
+
+        Args:
+            outputs: reset 后 FMU 输出快照。
+        """
         self.initial_soc = {key: float(outputs[key]) for key in SOC_KEYS}
         self.previous_cashflow = self._cashflows(outputs)
         self.step_in_episode = 0
 
     def terminal_soc_diagnostics(self, outputs: dict[str, float]) -> dict[str, float]:
+        """计算终端 SOC 相对初始值的 L1/L2 误差与是否满足容差。
+
+        Args:
+            outputs: 当前步 FMU 输出。
+
+        Returns:
+            含 ``terminal_soc_l1_error``、``terminal_soc_l2_error`` 等诊断键的字典。
+
+        Raises:
+            AssertionError: 未先 ``reset``（``initial_soc`` 为 ``None``）。
+        """
         term = self.config.get("terminal_soc") or {}
         weights = term.get("weights") or {key: 1.0 for key in SOC_KEYS}
         assert self.initial_soc is not None
@@ -102,7 +159,26 @@ class RewardCalculator:
         no_failure: bool,
         valid_episode_steps: int | None = None,
     ) -> tuple[float, dict[str, float]]:
-        """奖励为累计现金流的增量；``previous_thermal`` 保留仅为调用兼容。"""
+        """计算步奖励与分项审计字典。
+
+        奖励为累计现金流增量除以 ``cost_reference``，满足门控时叠加终端 SOC 项。
+        ``previous_thermal`` 保留仅为调用兼容。
+
+        Args:
+            outputs: 当前步 FMU 输出。
+            previous_thermal: 上一步火电功率（未使用，兼容旧接口）。
+            is_final_step: 是否为 episode 最后一步。
+            episode_completed: episode 是否正常跑满步数且无失败。
+            no_failure: 本 episode 是否未发生硬失败。
+            valid_episode_steps: 有效步数；默认 ``step_in_episode + 1``。
+
+        Returns:
+            ``(reward, terms)``；``terms`` 含经济增量、归一化成本与终端 SOC 诊断。
+
+        Raises:
+            RuntimeError: 未先调用 ``reset``。
+            KeyError: FMU 缺少经济输出。
+        """
         if self.previous_cashflow is None:
             raise RuntimeError("RewardCalculator 必须先 reset")
         current = self._cashflows(outputs)

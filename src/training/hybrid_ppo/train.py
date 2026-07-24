@@ -33,6 +33,17 @@ from .rollout import RolloutBuffer
 
 
 def _reeval_log_prob(agent: HybridPPO, obs, action: dict, feasible) -> float:
+    """用当前 Actor 重算已执行动作的 log_prob（PPO old policy 对齐）。
+
+    Args:
+        agent: HybridPPO 智能体。
+        obs: 步前观测。
+        action: 已执行混合动作。
+        feasible: 步前可行域规格。
+
+    Returns:
+        标量 log_prob。
+    """
     with torch.no_grad():
         o = torch.as_tensor(obs, dtype=torch.float32, device=agent.device).view(1, -1)
         mask = torch.as_tensor(
@@ -67,6 +78,21 @@ def run_hybrid_ppo_training(
     forecast_enabled: bool | None = None,
     annual_evaluation: bool = False,
 ) -> dict[str, Any]:
+    """Hybrid-GiveSafe-PPO 主训练：物理步进 rollout，GiveSafe 拒绝跳过 PPO batch。
+
+    Args:
+        total_valid_steps: 目标物理有效步数。
+        run_dir: 运行目录。
+        seed: 随机种子。
+        rollout_steps: 每次 PPO 更新的 rollout 长度。
+        formal: 是否 formal 模式。
+        enable_shadow: 影子 FMU 开关。
+        forecast_enabled: 环境预测开关。
+        annual_evaluation: 是否全年评估。
+
+    Returns:
+        训练 summary 字典。
+    """
     run_dir = Path(run_dir)
     root = Path(__file__).resolve().parents[3]
     prepare_run_dir(run_dir, root)
@@ -98,6 +124,7 @@ def run_hybrid_ppo_training(
         registry = env.registry
 
         def factory():
+            """构造影子仿真用功能模型单元适配器(FmuAdapter)。"""
             return FmuAdapter(fmu_path, step, registry)
 
         shadow = ShadowFmuValidator(
@@ -133,6 +160,14 @@ def run_hybrid_ppo_training(
     givesafe_reject_count = 0
 
     def reset_training_episode(index: int):
+        """按年度周窗口重置环境并记录起点。
+
+        Args:
+            index: episode 序号。
+
+        Returns:
+            (obs, reset_info) 元组。
+        """
         start_time = annual_episode_start_seconds(env.config["fmu"], env.episode_steps, index)
         next_obs, reset_info = env.reset(seed=seed + index, options={"start_time": start_time})
         actual_start = float(reset_info.get("time", start_time) or start_time)
@@ -174,6 +209,7 @@ def run_hybrid_ppo_training(
                 pre_feasible = feasible
 
                 def propose():
+                    """向智能体请求探索动作。"""
                     return agent.select_action(obs, env.get_feasible_action_spec(), deterministic=False)
 
                 obs, reward, terminated, truncated, info = collector.step_with_givesafe(
@@ -287,6 +323,15 @@ def run_hybrid_ppo_training(
 
 
 def run_smoke(total_valid_steps: int = 5000, **kwargs) -> dict[str, Any]:
+    """PPO 冒烟训练入口。
+
+    Args:
+        total_valid_steps: 有效步数目标。
+        **kwargs: 传给 ``run_hybrid_ppo_training`` 的参数。
+
+    Returns:
+        训练 summary 字典。
+    """
     return run_hybrid_ppo_training(
         total_valid_steps=total_valid_steps,
         run_dir=kwargs.pop("run_dir", "runs/givesafe_ppo_smoke"),
@@ -296,6 +341,15 @@ def run_smoke(total_valid_steps: int = 5000, **kwargs) -> dict[str, Any]:
 
 
 def run_short(total_valid_steps: int = 20000, **kwargs) -> dict[str, Any]:
+    """PPO 短程训练入口。
+
+    Args:
+        total_valid_steps: 有效步数目标。
+        **kwargs: 传给 ``run_hybrid_ppo_training`` 的参数。
+
+    Returns:
+        训练 summary 字典。
+    """
     return run_hybrid_ppo_training(
         total_valid_steps=total_valid_steps,
         run_dir=kwargs.pop("run_dir", "runs/givesafe_ppo_short"),
@@ -305,6 +359,15 @@ def run_short(total_valid_steps: int = 20000, **kwargs) -> dict[str, Any]:
 
 
 def run_formal(total_valid_steps: int = 100000, **kwargs) -> dict[str, Any]:
+    """PPO 正式训练入口。
+
+    Args:
+        total_valid_steps: 有效步数目标。
+        **kwargs: 传给 ``run_hybrid_ppo_training`` 的参数。
+
+    Returns:
+        训练 summary 字典。
+    """
     return run_hybrid_ppo_training(
         total_valid_steps=total_valid_steps,
         run_dir=kwargs.pop("run_dir", "runs/givesafe_ppo_formal"),

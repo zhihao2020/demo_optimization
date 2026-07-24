@@ -19,6 +19,14 @@ from test_env_reset import FakeAdapter
 
 
 def _valid_transition(**kwargs):
+    """构造默认合法 Transition，可按字段覆盖。
+
+    Args:
+        **kwargs: 覆盖 Transition 任意字段。
+
+    Returns:
+        填充默认值的 Transition 实例。
+    """
     base = Transition(
         observation=np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32),
         hybrid_action={"u_tp": 1.0, "u_battery": 0.0, "caes_mode": 1, "caes_magnitude": 0.0},
@@ -37,6 +45,7 @@ def _valid_transition(**kwargs):
 
 
 def test_forbidden_and_failures_do_not_grow_buffer():
+    """验证 physically_valid=False 的转移不会进入 replay 缓冲区。"""
     buf = FilteredReplayBuffer(capacity=10)
     assert buf.add(_valid_transition(physically_valid=False)) is False
     assert len(buf) == 0
@@ -50,11 +59,29 @@ def test_forbidden_and_failures_do_not_grow_buffer():
 
 
 class FailingAdapter(FakeAdapter):
+    """按模式注入 FMU 求解失败、NaN 或 SOC 越界的假适配器(FailingAdapter)。"""
+
     def __init__(self, mode: str):
+        """初始化失败模式适配器。
+
+        Args:
+            mode: 失败模式(mode)："solver" | "nan" | "soc"。
+        """
         super().__init__()
         self.mode = mode
 
     def step(self, action):
+        """模拟一步并按 mode 注入失败或返回默认输出。
+
+        Args:
+            action: FMU 调度输入（部分模式未使用）。
+
+        Returns:
+            正常时为 FakeAdapter 默认输出；nan/soc 模式修改 SOC。
+
+        Raises:
+            FmuSolverError: mode 为 "solver" 时。
+        """
         self.step_calls += 1
         if self.mode == "solver":
             raise FmuSolverError("nonlinear solver failure")
@@ -72,6 +99,7 @@ class FailingAdapter(FakeAdapter):
 
 
 def test_collector_rejects_post_step_and_fmu_failures():
+    """验证 collector 对求解失败、NaN 输出与后验 SOC 越界均不入库。"""
     for mode in ("solver", "nan", "soc"):
         buf = FilteredReplayBuffer()
         collector = ValidTransitionCollector(buf)

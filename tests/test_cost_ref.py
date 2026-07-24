@@ -9,6 +9,7 @@ import pytest
 
 
 def test_cost_ref_from_config_file_shape():
+    """验证 reward_config 中 cost_reference 结构与 require_complete 行为。"""
     root = Path(__file__).resolve().parents[1]
     with (root / "src/config/reward_config.yaml").open(encoding="utf-8") as f:
         cfg = yaml.safe_load(f)

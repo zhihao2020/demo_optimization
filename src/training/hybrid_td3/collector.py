@@ -1,16 +1,31 @@
 """只收集 physically_valid 转移；失败写入 SafetyDataset。"""
+
 from __future__ import annotations
+
 from typing import Any
+
 import numpy as np
+
 from actions import CaesMode, HybridAction
 from actions.validator import hybrid_from_dict
+
 from .buffer import EconomicReplayBuffer, FilteredReplayBuffer, SafetyDataset, Transition
+
+
 class ValidTransitionCollector:
+    """有效转移收集器(ValidTransitionCollector)：仅经济 replay 存物理有效步，失败进安全数据集。"""
+
     def __init__(
         self,
         buffer: FilteredReplayBuffer | EconomicReplayBuffer,
         safety_dataset: SafetyDataset | None = None,
     ):
+        """绑定经济 replay 与可选安全数据集。
+
+        Args:
+            buffer: 过滤经济 replay 缓冲区。
+            safety_dataset: 安全样本集；None 时自动创建空集。
+        """
         self.buffer = buffer
         self.safety_dataset = safety_dataset if safety_dataset is not None else SafetyDataset()
         self.stats = {
@@ -25,7 +40,18 @@ class ValidTransitionCollector:
             "caes_mode_counts": {0: 0, 1: 0, 2: 0},
             "fine_failure_counts": {},
         }
+
     def step_and_store(self, env, policy_action: dict | HybridAction) -> tuple[Any, ...]:
+        """执行 env.step 并按有效性分流到 replay / SafetyDataset。
+
+        Args:
+            env: 电力系统环境。
+            policy_action: 策略输出的混合动作。
+
+        Returns:
+            与 ``env.step`` 相同格式的 (obs, reward, terminated, truncated, info) 元组；
+            可行集为空时返回自环占位 info。
+        """
         obs_before = env.build_observation()
         prev_outputs = dict(env.last_outputs) if env.last_outputs else {}
         try:

@@ -18,6 +18,15 @@ from envs.power_system_env import PowerSystemEnv
 
 
 def run_rule_costs(seeds=(0, 1, 2), max_steps=168) -> tuple[list[float], list[float], list[dict]]:
+    """用规则控制器 rollout 收集逐步 raw 成本与 episode 摘要。
+
+    Args:
+        seeds: reset 随机种子列表。
+        max_steps: 每 episode 最大步数。
+
+    Returns:
+        (raw_costs, week_norms, episodes) 三元组。
+    """
     raw_costs: list[float] = []
     week_norms: list[float] = []
     soc_errors: list[float] = []
@@ -56,6 +65,11 @@ def run_rule_costs(seeds=(0, 1, 2), max_steps=168) -> tuple[list[float], list[fl
 
 
 def main() -> None:
+    """标定 C_ref 与终端 SOC bonus/tolerance 并写回 reward_config.yaml。
+
+    Raises:
+        SystemExit: 规则轨迹未产生任何有效成本样本。
+    """
     raw_costs, week_norms, episodes = run_rule_costs()
     if not raw_costs:
         raise SystemExit("规则轨迹未产生有效成本样本")

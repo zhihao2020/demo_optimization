@@ -1,4 +1,4 @@
-"""Hybrid-TD3 算法更新循环。"""
+"""混合双延迟深度确定性策略梯度(HybridTD3) 算法更新循环。"""
 
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ from .critic import HybridCritic
 
 
 class HybridTD3:
+    """混合 TD3(HybridTD3)：有界混合 Actor + Twin Critic + 延迟策略更新与目标平滑。"""
+
     def __init__(
         self,
         obs_dim: int,
@@ -29,6 +31,20 @@ class HybridTD3:
         noise_clip: float = 0.5,
         device: str | None = None,
     ):
+        """初始化 Actor/Critic、目标网络与优化器。
+
+        Args:
+            obs_dim: 观测维度。
+            gamma: 折扣因子。
+            tau: 目标网络软更新系数。
+            policy_delay: Actor 相对 Critic 的更新间隔（步数）。
+            actor_lr: Actor 学习率。
+            critic_lr: Critic 学习率。
+            explore_noise: 行为策略连续动作探索噪声标准差。
+            target_noise: 目标策略平滑噪声标准差。
+            noise_clip: 目标平滑噪声 clip 范围。
+            device: PyTorch 设备；None 时自动选 CUDA/CPU。
+        """
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.gamma = gamma
         self.tau = tau
@@ -46,6 +62,16 @@ class HybridTD3:
         self.last_metrics: dict[str, float] = {}
 
     def select_action(self, obs, feasible, deterministic: bool = False) -> dict:
+        """根据可行域采样混合动作。
+
+        Args:
+            obs: 环境观测。
+            feasible: 可行动作规格。
+            deterministic: 是否关闭探索噪声。
+
+        Returns:
+            混合动作字典。
+        """
         return self.actor.act_numpy(
             obs,
             feasible,
@@ -55,6 +81,18 @@ class HybridTD3:
         )
 
     def update(self, buffer: FilteredReplayBuffer, batch_size: int = 256) -> dict[str, float]:
+        """从 replay 采样一批并执行 TD3 更新。
+
+        Args:
+            buffer: 过滤经济 replay；亦兼容 HybridGiveSafeReplayBuffer 的 sample。
+            batch_size: 批大小。
+
+        Returns:
+            含 critic_loss、actor_loss、q1_mean 等的指标字典；样本不足时返回空字典。
+
+        Raises:
+            RuntimeError: 指标出现 NaN/Inf 时抛出。
+        """
         if len(buffer) < batch_size:
             return {}
         self.total_it += 1
@@ -140,10 +178,27 @@ class HybridTD3:
         return metrics
 
     def _soft_update(self, src: torch.nn.Module, tgt: torch.nn.Module) -> None:
+        """Polyak 软更新目标网络参数。
+
+        Args:
+            src: 源网络。
+            tgt: 目标网络。
+
+        Returns:
+            无。
+        """
         for sp, tp in zip(src.parameters(), tgt.parameters()):
             tp.data.copy_(self.tau * sp.data + (1.0 - self.tau) * tp.data)
 
     def save(self, path: str | Path) -> None:
+        """保存 Actor/Critic 及目标网络权重。
+
+        Args:
+            path: 检查点文件路径。
+
+        Returns:
+            无。
+        """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(
@@ -158,6 +213,14 @@ class HybridTD3:
         )
 
     def load(self, path: str | Path) -> None:
+        """从检查点加载权重。
+
+        Args:
+            path: 检查点文件路径。
+
+        Returns:
+            无。
+        """
         data = torch.load(path, map_location=self.device)
         self.actor.load_state_dict(data["actor"])
         self.critic.load_state_dict(data["critic"])

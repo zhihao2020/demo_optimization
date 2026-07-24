@@ -1,4 +1,4 @@
-"""一级快速解析安全检查（Oracle + 规范化越界量）。"""
+"""一级快速解析安全检查：可行性神谕(FeasibilityOracle) 与归一化越界量。"""
 
 from __future__ import annotations
 
@@ -11,9 +11,20 @@ from .safety_result import SafetyCheckResult
 
 
 class GiveSafeConstraintChecker:
-    """一级：静态范围 / mode mask / 动态 SOC / 压力温度 / 爬坡 / 电网。"""
+    """一级约束检查器(GiveSafeConstraintChecker)：静态范围、模式掩码、动态 SOC、压力温度、爬坡与电网。"""
 
     def __init__(self, oracle: FeasibilityOracle):
+        """绑定可行性神谕(FeasibilityOracle) 实例。
+
+        Args:
+            oracle: 用于可行性判定与状态预测的神谕。
+
+        Returns:
+            无。
+
+        Raises:
+            无。
+        """
         self.oracle = oracle
 
     def check(
@@ -22,6 +33,19 @@ class GiveSafeConstraintChecker:
         action: dict | HybridAction,
         previous_thermal_w: float,
     ) -> SafetyCheckResult:
+        """对候选动作执行一级 Oracle 安全检查并返回结构化结果。
+
+        Args:
+            observation_outputs: 当前观测输出字典。
+            action: 候选混合动作（dict 或 HybridAction）。
+            previous_thermal_w: 上一时刻热功率（W）。
+
+        Returns:
+            包含安全判定、违规类型、归一化越界量与预测下一状态的 SafetyCheckResult。
+
+        Raises:
+            无：违规以 safe=False 的结果返回，不抛异常。
+        """
         hybrid = action if isinstance(action, HybridAction) else hybrid_from_dict(action)
         feasible = self.oracle.compute(observation_outputs, previous_thermal_w)
         predicted = self.oracle.predict_next_state(observation_outputs, hybrid, previous_thermal_w)
@@ -88,6 +112,17 @@ class GiveSafeConstraintChecker:
         )
 
     def _predicted_hard_ok(self, predicted: Mapping[str, float]) -> tuple[bool, str | None]:
+        """用预测状态构造伪观测并调用神谕硬约束后验检查。
+
+        Args:
+            predicted: 神谕预测的下一状态字典。
+
+        Returns:
+            (是否通过, 失败原因或 None) 元组。
+
+        Raises:
+            无。
+        """
         # 复用 oracle 物理界检查字段
         fake = {k: float(predicted.get(k, 0.0)) for k in (
             "battery_soc", "caes_gas_soc", "caes_hot_soc", "caes_cold_soc",
@@ -107,6 +142,22 @@ class GiveSafeConstraintChecker:
         ok: bool,
         reason: str | None,
     ) -> dict[str, float]:
+        """将神谕拒绝原因映射为归一化违规量字典。
+
+        Args:
+            outputs: 当前观测输出（本方法内部分支未直接使用）。
+            hybrid: 候选混合动作。
+            predicted: 预测下一状态。
+            feasible: 动态可行动作集。
+            ok: 神谕是否判定动作可执行。
+            reason: 神谕拒绝原因字符串。
+
+        Returns:
+            约束名到归一化越界量的映射；通过时为空字典。
+
+        Raises:
+            无。
+        """
         if ok:
             return {}
         if reason and "mode" in reason.lower():
@@ -125,15 +176,28 @@ class GiveSafeConstraintChecker:
         return self._normalized_from_predicted(predicted) or {"unknown": 1.0}
 
     def _normalized_from_predicted(self, predicted: Mapping[str, float]) -> dict[str, float]:
+        """根据预测状态相对物理 SOC/压力界的越界计算归一化违规量。
+
+        Args:
+            predicted: 神谕预测的下一状态字典。
+
+        Returns:
+            各约束键到归一化越界量的映射。
+
+        Raises:
+            无。
+        """
         p = self.oracle.params
         b, c = p["battery"], p["caes"]
         out: dict[str, float] = {}
         def soc_high(name, val, lo, hi, key):
+            """记录 SOC 越上界的归一化量。"""
             span = max(float(hi) - float(lo), 1e-9)
             v = max(float(val) - float(hi), 0.0) / span
             if v > 0:
                 out[key] = v
         def soc_low(name, val, lo, hi, key):
+            """记录 SOC 越下界的归一化量。"""
             span = max(float(hi) - float(lo), 1e-9)
             v = max(float(lo) - float(val), 0.0) / span
             if v > 0:
@@ -157,6 +221,17 @@ class GiveSafeConstraintChecker:
 
     @staticmethod
     def _map_reason(reason: str) -> str:
+        """将神谕原始拒绝原因字符串映射为标准 violation_type 键。
+
+        Args:
+            reason: 神谕返回的原始拒绝原因。
+
+        Returns:
+            标准化违规类型标识字符串。
+
+        Raises:
+            无。
+        """
         r = (reason or "").lower()
         if "forbidden" in r or "mode" in r or "charge" in r or "discharge" in r:
             return "forbidden_mode"

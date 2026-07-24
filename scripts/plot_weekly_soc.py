@@ -10,6 +10,11 @@ import pandas as pd
 
 
 def main():
+    """绘制轨迹 CSV 中四类 SOC 随 step 变化图。
+
+    Raises:
+        SystemExit: CSV 路径无效或 pandas 读入失败。
+    """
     p = argparse.ArgumentParser()
     p.add_argument("csv", type=Path)
     p.add_argument("--out", type=Path, default=None)

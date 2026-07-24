@@ -28,10 +28,29 @@ from .givesafe_collector import GiveSafeTransitionCollector
 
 
 class RandomFeasiblePolicy:
+    """随机可行动作策略(RandomFeasiblePolicy)：训练早期探索用。"""
+
     def __init__(self, env: PowerSystemEnv):
+        """绑定环境。
+
+        Args:
+            env: 电力系统环境实例。
+        """
         self.env = env
 
     def predict(self, _obs, deterministic: bool = False) -> dict:
+        """在可行域内均匀随机采样混合动作。
+
+        Args:
+            _obs: 观测（未使用）。
+            deterministic: 忽略。
+
+        Returns:
+            混合动作字典。
+
+        Raises:
+            FeasibleSetEmpty: 无可选 CAES 模式时抛出。
+        """
         feasible = self.env.get_feasible_action_spec()
         modes = [
             m
@@ -59,15 +78,33 @@ class HybridPolicyWrapper:
     """评估用：经 GiveSafeController 采样；绝不调用规则 fallback。"""
 
     def __init__(self, agent: HybridTD3, env: PowerSystemEnv, controller: GiveSafeController, deterministic: bool = True):
+        """组装 TD3 评估用 GiveSafe 包装。
+
+        Args:
+            agent: HybridTD3 智能体。
+            env: 评估环境。
+            controller: GiveSafe 控制器。
+            deterministic: 默认确定性动作。
+        """
         self.agent = agent
         self.env = env
         self.controller = controller
         self.deterministic = deterministic
 
     def predict(self, obs, deterministic: bool | None = None):
+        """经 GiveSafe 选择安全动作。
+
+        Args:
+            obs: 当前观测。
+            deterministic: 覆盖默认可选。
+
+        Returns:
+            安全混合动作字典。
+        """
         det = self.deterministic if deterministic is None else deterministic
 
         def propose():
+            """按当前可行域向智能体请求动作。"""
             feasible = self.env.get_feasible_action_spec()
             return self.agent.select_action(obs, feasible, deterministic=det)
 
@@ -80,10 +117,26 @@ class HybridPolicyWrapper:
         return gs.safe_action
 
     def on_episode_reset(self, info: dict[str, Any]) -> None:
+        """回合重置时重置影子 FMU。
+
+        Args:
+            info: reset info，含 time。
+
+        Returns:
+            无。
+        """
         if self.controller.shadow is not None:
             self.controller.shadow.on_episode_reset(float(info.get("time", 0.0) or 0.0))
 
     def on_transition(self, info: dict[str, Any]) -> None:
+        """物理步成功后更新影子 FMU 状态。
+
+        Args:
+            info: step info。
+
+        Returns:
+            无。
+        """
         if self.controller.shadow is None or not info.get("transition_valid"):
             return
         self.controller.shadow.on_physical_success(
@@ -96,18 +149,41 @@ class HybridPolicyWrapper:
 
 
 def _reward_ready(cfg: dict) -> bool:
+    """检查奖励配置是否已完成 C_ref 与 terminal_soc 标定。
+
+    Args:
+        cfg: reward_config 字典。
+
+    Returns:
+        True 表示可进入 formal 训练。
+    """
     cref = (cfg.get("cost_reference") or {}).get("value")
     term = cfg.get("terminal_soc") or {}
     return cref is not None and float(cref) > 0 and term.get("bonus") is not None and term.get("tolerance") is not None
 
 
 def load_givesafe_gates(root: Path) -> dict[str, Any]:
+    """从 givesafe_config 读取 Phase E 门禁配置。
+
+    Args:
+        root: 项目根目录。
+
+    Returns:
+        phase_e_gates 字典。
+    """
     cfg = load_givesafe_config(root / "src/config/givesafe_config.yaml")
     return dict(cfg.get("phase_e_gates") or {})
 
 
 def load_phase_e_gates(root: Path) -> dict[str, Any]:
-    """兼容 Phase D.5 测试：优先 givesafe_config，回退 feasibility_margins。"""
+    """兼容 Phase D.5 测试：优先 givesafe_config，回退 feasibility_margins。
+
+    Args:
+        root: 项目根目录。
+
+    Returns:
+        phase_e_gates 字典。
+    """
     gates = load_givesafe_gates(root)
     if gates:
         return gates
@@ -120,7 +196,19 @@ def load_phase_e_gates(root: Path) -> dict[str, Any]:
 def annual_episode_start_seconds(
     fmu_config: dict[str, Any], episode_steps: int, episode_index: int
 ) -> float:
-    """返回周 episode 在 FMU 全年时序中的起点，尾窗覆盖全年最后不足一周的部分。"""
+    """返回周 episode 在 FMU 全年时序中的起点，尾窗覆盖全年最后不足一周的部分。
+
+    Args:
+        fmu_config: FMU 配置块。
+        episode_steps: 单 episode 决策步数。
+        episode_index: 从 0 递增的 episode 索引。
+
+    Returns:
+        起始仿真时间（秒）。
+
+    Raises:
+        ValueError: episode_index 为负或年度/episode 长度配置非法。
+    """
     if episode_index < 0:
         raise ValueError("episode_index 必须非负")
     base = float(fmu_config.get("start_time_seconds", 0.0))
@@ -146,6 +234,18 @@ def check_formal_gates(
     gates_cfg: dict[str, Any] | None = None,
     eval_result: dict[str, Any] | None = None,
 ) -> list[str]:
+    """检查 formal 训练门禁，返回阻断原因列表。
+
+    Args:
+        env: 训练环境。
+        buffer: GiveSafe 混合 replay。
+        collector: GiveSafe 收集器统计源。
+        gates_cfg: 可选门禁配置；None 时从配置加载。
+        eval_result: 可选评估结果，用于确定性拒绝率检查。
+
+    Returns:
+        空列表表示通过；否则为阻断原因字符串列表。
+    """
     blockers: list[str] = []
     root = env.root
     with open(root / "src/config/reward_config.yaml", encoding="utf-8") as f:
@@ -189,6 +289,22 @@ def run_hybrid_training(
     forecast_enabled: bool | None = None,
     annual_evaluation: bool = False,
 ) -> dict[str, Any]:
+    """Hybrid-GiveSafe-TD3 主训练循环：收集物理有效步、更新 TD3、评估并写 summary。
+
+    Args:
+        total_valid_steps: 目标物理有效步数。
+        run_dir: 运行目录。
+        seed: 随机种子。
+        learning_starts: 开始学习前需积累的 replay 样本数。
+        batch_size: 梯度更新批大小。
+        formal: 是否 formal 模式（启用门禁与完整奖励配置）。
+        enable_shadow: 是否启用影子 FMU；None 时读配置。
+        forecast_enabled: 环境预测开关。
+        annual_evaluation: 训练后是否全年评估。
+
+    Returns:
+        含 status、stats、eval、formal_gate_blockers 等的 summary 字典。
+    """
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     for name in ("config", "train", "checkpoints", "trajectories"):
@@ -230,6 +346,7 @@ def run_hybrid_training(
         registry = env.registry
 
         def factory():
+            """构造影子仿真用功能模型单元适配器(FmuAdapter)。"""
             return FmuAdapter(fmu_path, step, registry)
 
         shadow = ShadowFmuValidator(
@@ -260,6 +377,14 @@ def run_hybrid_training(
     episode_start_times: list[float] = []
 
     def reset_training_episode(index: int):
+        """按年度周窗口重置环境并记录起点。
+
+        Args:
+            index: episode 序号，用于滑动 start_time。
+
+        Returns:
+            (obs, reset_info) 元组。
+        """
         start_time = annual_episode_start_seconds(env.config["fmu"], env.episode_steps, index)
         next_obs, reset_info = env.reset(seed=seed + index, options={"start_time": start_time})
         actual_start = float(reset_info.get("time", start_time) or start_time)
@@ -294,6 +419,7 @@ def run_hybrid_training(
                 continue
 
             def propose():
+                """随机或策略采样下一步动作提案。"""
                 if valid_steps < learning_starts or np.random.rand() < 0.1:
                     return random_policy.predict(obs)
                 return agent.select_action(obs, env.get_feasible_action_spec(), deterministic=False)
@@ -346,6 +472,7 @@ def run_hybrid_training(
             step = float(eval_env.config["fmu"]["communication_step_seconds"])
 
             def efactory():
+                """构造评估用功能模型单元适配器(FmuAdapter)。"""
                 return FmuAdapter(fmu_path, step, eval_env.registry)
 
             eval_shadow = ShadowFmuValidator(
@@ -373,6 +500,7 @@ def run_hybrid_training(
                 step = float(annual_env.config["fmu"]["communication_step_seconds"])
 
                 def afactory():
+                    """构造年评估用功能模型单元适配器(FmuAdapter)。"""
                     return FmuAdapter(fmu_path, step, annual_env.registry)
 
                 annual_shadow = ShadowFmuValidator(
@@ -449,6 +577,15 @@ def run_hybrid_training(
 
 
 def run_smoke(total_valid_steps: int = 5000, **kwargs) -> dict[str, Any]:
+    """冒烟训练入口：非 formal，默认 5000 有效步。
+
+    Args:
+        total_valid_steps: 有效步数目标。
+        **kwargs: 传给 ``run_hybrid_training`` 的额外参数。
+
+    Returns:
+        训练 summary 字典。
+    """
     return run_hybrid_training(
         total_valid_steps=total_valid_steps,
         run_dir=kwargs.pop("run_dir", "runs/givesafe_td3_smoke"),
@@ -458,6 +595,15 @@ def run_smoke(total_valid_steps: int = 5000, **kwargs) -> dict[str, Any]:
 
 
 def run_short(total_valid_steps: int = 20000, **kwargs) -> dict[str, Any]:
+    """短程训练入口：非 formal，默认 20000 有效步。
+
+    Args:
+        total_valid_steps: 有效步数目标。
+        **kwargs: 传给 ``run_hybrid_training`` 的额外参数。
+
+    Returns:
+        训练 summary 字典。
+    """
     return run_hybrid_training(
         total_valid_steps=total_valid_steps,
         run_dir=kwargs.pop("run_dir", "runs/givesafe_td3_short"),
@@ -467,6 +613,15 @@ def run_short(total_valid_steps: int = 20000, **kwargs) -> dict[str, Any]:
 
 
 def run_formal(total_valid_steps: int = 100000, **kwargs) -> dict[str, Any]:
+    """正式训练入口：启用 formal 门禁，默认 100000 有效步。
+
+    Args:
+        total_valid_steps: 有效步数目标。
+        **kwargs: 传给 ``run_hybrid_training`` 的额外参数。
+
+    Returns:
+        训练 summary 字典。
+    """
     return run_hybrid_training(
         total_valid_steps=total_valid_steps,
         run_dir=kwargs.pop("run_dir", "runs/givesafe_td3_formal"),

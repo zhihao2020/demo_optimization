@@ -1,3 +1,5 @@
+"""FMU 适配器测试：VariableRegistry 与真实 FMU 输入输出名对齐。"""
+
 from pathlib import Path
 import yaml
 import pytest
@@ -8,6 +10,7 @@ from fmu.variable_registry import build_registry
 
 
 def test_registry_uses_actual_fmu_inputs_and_outputs():
+    """验证 registry 动作名、单位与经济变量与 env_config 及 FMU 描述一致。"""
     config = yaml.safe_load(Path("src/config/env_config.yaml").read_text(encoding="utf-8"))
     names = {item.name for item in read_model_description(config["fmu"]["path"]).modelVariables}
     required_economics = {item["name"] for item in config["economics"]}

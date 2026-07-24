@@ -42,6 +42,22 @@ def run_hybrid_sac_training(
     forecast_enabled: bool | None = None,
     annual_evaluation: bool = False,
 ) -> dict[str, Any]:
+    """Hybrid-GiveSafe-SAC 主训练循环。
+
+    Args:
+        total_valid_steps: 目标物理有效步数。
+        run_dir: 运行目录。
+        seed: 随机种子。
+        learning_starts: 开始学习前的 replay 样本数。
+        batch_size: SAC 更新批大小。
+        formal: 是否 formal 模式。
+        enable_shadow: 影子 FMU 开关。
+        forecast_enabled: 环境预测开关。
+        annual_evaluation: 是否全年评估。
+
+    Returns:
+        训练 summary 字典。
+    """
     run_dir = Path(run_dir)
     root = Path(__file__).resolve().parents[3]
     prepare_run_dir(run_dir, root)
@@ -73,6 +89,7 @@ def run_hybrid_sac_training(
         registry = env.registry
 
         def factory():
+            """构造影子仿真用功能模型单元适配器(FmuAdapter)。"""
             return FmuAdapter(fmu_path, step, registry)
 
         shadow = ShadowFmuValidator(
@@ -105,6 +122,14 @@ def run_hybrid_sac_training(
     episode_start_times: list[float] = []
 
     def reset_training_episode(index: int):
+        """按年度周窗口重置环境并记录起点。
+
+        Args:
+            index: episode 序号。
+
+        Returns:
+            (obs, reset_info) 元组。
+        """
         start_time = annual_episode_start_seconds(env.config["fmu"], env.episode_steps, index)
         next_obs, reset_info = env.reset(seed=seed + index, options={"start_time": start_time})
         actual_start = float(reset_info.get("time", start_time) or start_time)
@@ -140,6 +165,7 @@ def run_hybrid_sac_training(
                 continue
 
             def propose():
+                """随机或策略采样下一步动作提案。"""
                 if valid_steps < learning_starts or np.random.rand() < 0.1:
                     return random_policy.predict(obs)
                 return agent.select_action(obs, env.get_feasible_action_spec(), deterministic=False)
@@ -213,6 +239,15 @@ def run_hybrid_sac_training(
 
 
 def run_smoke(total_valid_steps: int = 5000, **kwargs) -> dict[str, Any]:
+    """SAC 冒烟训练入口。
+
+    Args:
+        total_valid_steps: 有效步数目标。
+        **kwargs: 传给 ``run_hybrid_sac_training`` 的参数。
+
+    Returns:
+        训练 summary 字典。
+    """
     return run_hybrid_sac_training(
         total_valid_steps=total_valid_steps,
         run_dir=kwargs.pop("run_dir", "runs/givesafe_sac_smoke"),
@@ -222,6 +257,15 @@ def run_smoke(total_valid_steps: int = 5000, **kwargs) -> dict[str, Any]:
 
 
 def run_short(total_valid_steps: int = 20000, **kwargs) -> dict[str, Any]:
+    """SAC 短程训练入口。
+
+    Args:
+        total_valid_steps: 有效步数目标。
+        **kwargs: 传给 ``run_hybrid_sac_training`` 的参数。
+
+    Returns:
+        训练 summary 字典。
+    """
     return run_hybrid_sac_training(
         total_valid_steps=total_valid_steps,
         run_dir=kwargs.pop("run_dir", "runs/givesafe_sac_short"),
@@ -231,6 +275,15 @@ def run_short(total_valid_steps: int = 20000, **kwargs) -> dict[str, Any]:
 
 
 def run_formal(total_valid_steps: int = 100000, **kwargs) -> dict[str, Any]:
+    """SAC 正式训练入口。
+
+    Args:
+        total_valid_steps: 有效步数目标。
+        **kwargs: 传给 ``run_hybrid_sac_training`` 的参数。
+
+    Returns:
+        训练 summary 字典。
+    """
     return run_hybrid_sac_training(
         total_valid_steps=total_valid_steps,
         run_dir=kwargs.pop("run_dir", "runs/givesafe_sac_formal"),

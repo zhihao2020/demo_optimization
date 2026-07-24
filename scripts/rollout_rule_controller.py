@@ -1,3 +1,5 @@
+"""规则控制器 rollout：评估一周并写入 runs/rule_controller/ 轨迹。"""
+
 from pathlib import Path
 import sys
 

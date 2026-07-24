@@ -7,18 +7,33 @@ from typing import Any
 import numpy as np
 
 from actions import CaesMode, FeasibilityOracle, HybridAction
-from actions.types import PhysicalFmuAction
 
 
 class RuleBasedController:
-    """保守基线：火电尽量维持高出力、储能 IDLE；动作始终落在动态可行域内。"""
+    """规则基线控制器(RuleBasedController)：火电尽量维持高出力、储能 IDLE；动作始终落在动态可行域内。"""
 
     def __init__(self, env_or_space: Any = None, oracle: FeasibilityOracle | None = None) -> None:
+        """初始化规则控制器。
+
+        Args:
+            env_or_space: 环境实例或动作空间(env_or_space)；若环境提供
+                get_feasible_action_spec 则优先使用环境可行域。
+            oracle: 可行域预言机(FeasibilityOracle)；未提供时从项目根加载默认实例。
+        """
         self.action_space = getattr(env_or_space, "action_space", env_or_space)
         self.env = env_or_space if hasattr(env_or_space, "get_feasible_action_spec") else None
         self.oracle = oracle or FeasibilityOracle.from_root()
 
     def predict(self, observation: np.ndarray, deterministic: bool = True) -> dict:
+        """根据观测生成保守混合动作字典（SB3 风格数组包装）。
+
+        Args:
+            observation: 环境观测向量(observation)。
+            deterministic: 是否确定性策略(deterministic)；本控制器忽略随机性，参数保留以兼容接口。
+
+        Returns:
+            含 u_tp、u_battery、caes_mode、caes_magnitude 键的字典，值为 NumPy 数组或整型。
+        """
         if self.env is not None and self.env.last_outputs is not None:
             feasible = self.env.get_feasible_action_spec()
         else:
@@ -46,17 +61,16 @@ class RuleBasedController:
             "caes_magnitude": np.asarray([hybrid.caes_magnitude], dtype=np.float32),
         }
 
-    def predict_hybrid(self, observation: np.ndarray, deterministic: bool = True) -> HybridAction:
-        d = self.predict(observation, deterministic=deterministic)
-        return HybridAction(
-            u_tp=float(d["u_tp"][0]),
-            u_battery=float(d["u_battery"][0]),
-            caes_mode=CaesMode(int(d["caes_mode"])),
-            caes_magnitude=float(d["caes_magnitude"][0]),
-        )
-
     @staticmethod
     def _obs_to_outputs(observation: np.ndarray) -> dict[str, float]:
+        """将扁平观测向量按固定顺序映射为 FMU 输出名字典。
+
+        Args:
+            observation: 环境观测向量(observation)。
+
+        Returns:
+            输出名到浮点值的字典；观测长度不足时仅映射已有前缀维度。
+        """
         names = (
             "battery_soc", "caes_gas_soc", "caes_hot_soc", "caes_cold_soc",
             "caes_gas_pressure", "caes_gas_temperature", "caes_hot_temperature", "caes_cold_temperature",

@@ -1,9 +1,17 @@
-"""终端 SOC 奖励专项。"""
+"""终端 SOC 奖励专项测试：非末步零 bonus 与四 SOC 联合 L1 判定。"""
 
 from envs.reward_calculator import RewardCalculator
 
 
 def _mk(mode="binary_bonus"):
+    """构造启用终端 SOC 的 RewardCalculator 与初始输出。
+
+    Args:
+        mode: 终端奖励模式(mode)，如 binary_bonus。
+
+    Returns:
+        (calculator, init_outputs) 元组。
+    """
     cfg = {
         "decision_interval_seconds": 3600,
         "episode_steps": 168,
@@ -55,6 +63,7 @@ def _mk(mode="binary_bonus"):
 
 
 def test_steps_0_to_166_bonus_zero():
+    """验证 episode 前 167 步 terminal_soc_bonus 恒为 0。"""
     calc, init = _mk()
     for step in range(167):
         _, t = calc.calculate(init, -1e6, is_final_step=False, episode_completed=False, no_failure=True, valid_episode_steps=step + 1)
@@ -62,6 +71,7 @@ def test_steps_0_to_166_bonus_zero():
 
 
 def test_initial_soc_from_reset_used():
+    """验证 reset 初始 SOC 作为终端 L1 基准，四 SOC 联合超 tolerance 则无 bonus。"""
     calc, init = _mk()
     assert calc.initial_soc["battery_soc"] == 0.5
     # 四 SOC 联合：仅一个偏离超限则无 bonus（tol=0.1，四者各偏 0.03 => L1=0.12）

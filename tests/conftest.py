@@ -1,6 +1,7 @@
-"""pytest 配置：把 src/ 加入 path，使 `import fmu` 可用。
+"""pytest 配置(conftest)：将 src/ 加入 sys.path，使 `import fmu` 等包可用。
 
-运行：`pytest tests/`（在仓库根目录）。
+本文件在 pytest 收集测试前自动加载；无需手动设置 PYTHONPATH。
+运行方式：在仓库根目录执行 `pytest tests/`。
 """
 
 from __future__ import annotations

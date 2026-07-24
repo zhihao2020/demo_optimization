@@ -24,9 +24,17 @@ from training.hybrid_td3.givesafe_collector import GiveSafeTransitionCollector
 
 
 class CountingAdapter(FakeAdapter):
-    """独立计数；不调用会双重计数的 super.step。"""
+    """独立计数的假适配器(CountingAdapter)；不调用 super.step 避免双重计数。"""
 
     def step(self, action):
+        """计数 set/step 调用并返回固定输出，不调用 super.step。
+
+        Args:
+            action: FMU 调度输入（未修改输出）。
+
+        Returns:
+            默认 FakeAdapter 输出快照。
+        """
         self.set_calls += 1
         self.step_calls += 1
         self.time += 3600
@@ -34,6 +42,11 @@ class CountingAdapter(FakeAdapter):
 
 
 def _idle():
+    """返回 IDLE 混合动作字典。
+
+    Returns:
+        u_tp=1、电池 0、CAES IDLE 的动作。
+    """
     return {
         "u_tp": np.asarray([1.0], dtype=np.float32),
         "u_battery": np.asarray([0.0], dtype=np.float32),
@@ -43,6 +56,11 @@ def _idle():
 
 
 def _charge_near_full():
+    """返回满幅 CHARGE 动作，用于近满储非法场景。
+
+    Returns:
+        caes_mode=CHARGE、magnitude=1.0 的动作。
+    """
     return {
         "u_tp": np.asarray([1.0], dtype=np.float32),
         "u_battery": np.asarray([0.0], dtype=np.float32),
@@ -52,6 +70,7 @@ def _charge_near_full():
 
 
 def test_rejection_does_not_call_main_fmu():
+    """验证 GiveSafe 一级拒绝时不调用主 FMU step。"""
     adapter = CountingAdapter()
     env = PowerSystemEnv(adapter=adapter)
     env.reset(seed=0)
@@ -69,6 +88,7 @@ def test_rejection_does_not_call_main_fmu():
 
 
 def test_givesafe_self_loop_sample():
+    """验证 givesafe_rejection 转移自环 next_obs、约束奖励非零且不入 physical buffer。"""
     buf = HybridGiveSafeReplayBuffer()
     obs = np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32)
     tr = Transition(
@@ -100,6 +120,7 @@ def test_givesafe_self_loop_sample():
 
 
 def test_same_state_resample_then_one_fmu():
+    """验证多次拒绝后重采样成功时仅调用一次主 FMU。"""
     adapter = CountingAdapter()
     env = PowerSystemEnv(adapter=adapter)
     env.reset(seed=0)
@@ -113,6 +134,7 @@ def test_same_state_resample_then_one_fmu():
     calls = {"n": 0}
 
     def propose():
+        """前两次提案近满充，第三次待机。"""
         calls["n"] += 1
         if calls["n"] < 3:
             return _charge_near_full()
@@ -130,6 +152,7 @@ def test_same_state_resample_then_one_fmu():
 
 
 def test_no_fallback_on_unsafe():
+    """验证默认配置禁用 fallback，显式启用 fallback 时构造器抛 RuntimeError。"""
     cfg = load_givesafe_config()
     assert cfg["givesafe"]["use_fallback"] is False
     with pytest.raises(RuntimeError):
@@ -137,6 +160,7 @@ def test_no_fallback_on_unsafe():
 
 
 def test_max_attempts_no_safe_action():
+    """验证达最大重采样次数后 NoSafeActionFound、不步进 FMU 且全入 givesafe buffer。"""
     adapter = CountingAdapter()
     env = PowerSystemEnv(adapter=adapter)
     env.reset(seed=0)
@@ -154,6 +178,7 @@ def test_max_attempts_no_safe_action():
     obs_before = env.build_observation()
 
     def always_bad():
+        """始终返回会被拒绝的近满充动作。"""
         return _charge_near_full()
 
     obs, reward, term, trunc, info = collector.step_with_givesafe(env, always_bad)
@@ -169,23 +194,44 @@ def test_max_attempts_no_safe_action():
 
 
 def test_shadow_rejection_no_main_fmu():
+    """验证 Shadow FMU 拒绝时主 FMU 不被调用。"""
     adapter = CountingAdapter()
     env = PowerSystemEnv(adapter=adapter)
     env.reset(seed=0)
 
     class FailShadow:
+        """步进即失败的影子适配器替身。"""
+
         def __init__(self):
+            """初始化替身状态。"""
             self.time = 0
             self.closed = False
 
         def reset(self, start):
+            """重置影子时间。
+
+            Args:
+                start: 起始仿真时间。
+
+            Returns:
+                空输出字典。
+            """
             self.time = start
             return {}
 
         def step(self, action):
+            """故意失败以模拟影子求解器错误。
+
+            Args:
+                action: 物理动作（忽略）。
+
+            Raises:
+                RuntimeError: 始终抛出求解失败。
+            """
             raise RuntimeError("shadow nonlinear solver failure")
 
         def close(self):
+            """关闭替身并标记已关闭。"""
             self.closed = True
 
     shadow = ShadowFmuValidator(factory=lambda: FailShadow(), oracle=env.oracle, enabled=True, mode="always")
@@ -204,6 +250,7 @@ def test_shadow_rejection_no_main_fmu():
 
 
 def test_mixed_replay_sampling_fractions():
+    """验证 physical/givesafe 按 7:3 比例混合采样。"""
     buf = HybridGiveSafeReplayBuffer(physical_fraction=0.7, givesafe_fraction=0.3)
     obs = np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32)
     bounds = {"u_tp_low": 1 / 3, "u_tp_high": 1.0, "u_battery_low": -1.0, "u_battery_high": 1.0}
@@ -246,6 +293,7 @@ def test_mixed_replay_sampling_fractions():
 
 
 def test_constraint_reward_not_1e9():
+    """验证约束拒绝奖励量级合理，非 1e9  poison 值。"""
     calc = ConstraintRewardCalculator({"base_rejection_cost": 1.0, "weights": {"forbidden_mode": 3.0}})
     terms = calc.calculate(
         SafetyCheckResult(safe=False, violation_type="forbidden_mode", violation_severity=1.0, normalized_violations={"forbidden_mode": 1.0})
@@ -256,6 +304,7 @@ def test_constraint_reward_not_1e9():
 
 
 def test_terminal_soc_not_advanced_by_rejections():
+    """验证 GiveSafe 拒绝步不推进 valid_episode_steps。"""
     adapter = CountingAdapter()
     env = PowerSystemEnv(adapter=adapter)
     env.episode_steps = 168

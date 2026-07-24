@@ -12,6 +12,7 @@ from training.hybrid_td3.train import RandomFeasiblePolicy
 
 
 def test_rule_and_random_feasible_no_invalid_replay():
+    """验证规则与随机可行策略 rollout 不产生 forbidden 且入库转移均合法。"""
     adapter = FakeAdapter()
     env = PowerSystemEnv(adapter=adapter)
     # 缩短 episode 便于单测
@@ -34,6 +35,7 @@ def test_rule_and_random_feasible_no_invalid_replay():
 
 
 def test_rule_controller_outputs_hybrid_dict():
+    """验证 RuleBasedController 输出完整混合动作字典且 IDLE 步 transition 合法。"""
     env = PowerSystemEnv(adapter=FakeAdapter())
     env.reset(seed=1)
     ctrl = RuleBasedController(env)

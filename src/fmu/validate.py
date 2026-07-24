@@ -59,9 +59,15 @@ _TEMP_NAMES = (
 
 
 def validate_inputs(action: Mapping[str, float]) -> None:
-    """校验调度输入；越界或缺 key / 非有限 → ValueError。
+    """校验调度输入；越界或缺 key / 非有限则抛错。
 
-    规则来源：docs/fmu_input_bounds.md（与 PowerSystem_8760h 设备参数一致）。
+    规则来源：``docs/fmu_input_bounds.md``（与 PowerSystem_8760h 设备参数一致）。
+
+    Args:
+        action: 含 ``u_tp``、``u_battery``、``u_caes`` 的映射。
+
+    Raises:
+        ValueError: 缺键、非有限或超出允许区间/集合。
     """
     for name in ("u_tp", "u_battery", "u_caes"):
         if name not in action:
@@ -100,9 +106,15 @@ def validate_inputs(action: Mapping[str, float]) -> None:
 
 
 def validate_outputs(outputs: Mapping[str, float]) -> None:
-    """校验 FMU 物理输出；NaN/Inf 或物理不合理 → ValueError。
+    """校验 FMU 物理输出；NaN/Inf 或物理不合理则抛错。
 
     用于尽早发现求解失败或接口错接，避免把坏数送进后续 Python 逻辑。
+
+    Args:
+        outputs: FMU 顶层输出名 -> 标量值。
+
+    Raises:
+        ValueError: 非有限、SOC 越界、非正压力/温度或非负功率违反等。
     """
     for name, raw in outputs.items():
         value = float(raw)

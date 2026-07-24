@@ -8,10 +8,19 @@ _EPS = 1e-9
 
 
 def _legal(u: float) -> bool:
+    """判断 u_caes 是否落在非凸合法集（放电/空闲/充电三段）。
+
+    Args:
+        u: 解码后的 u_caes 值。
+
+    Returns:
+        在合法区间内为 True。
+    """
     return (-1.0 - _EPS <= u <= -0.33 + _EPS) or (abs(u) <= _EPS) or (0.86 - _EPS <= u <= 1.0 + _EPS)
 
 
 def test_caes_decode_100000_legal():
+    """验证 10 万次随机合法 HybridAction 解码后 u_caes 均在非凸合法集内。"""
     rng = np.random.default_rng(0)
     dec = HybridActionDecoder()
     n = 100_000

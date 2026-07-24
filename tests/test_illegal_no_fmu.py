@@ -8,6 +8,7 @@ from test_env_reset import FakeAdapter
 
 
 def test_illegal_mode_does_not_call_fmu():
+    """验证近满储下 CHARGE 非法时 env.step 不调用 FMU 且 transition 无效。"""
     adapter = FakeAdapter()
     env = PowerSystemEnv(adapter=adapter)
     env.reset(seed=0)

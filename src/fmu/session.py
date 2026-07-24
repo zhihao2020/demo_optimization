@@ -73,7 +73,14 @@ DEFAULT_INITIAL_INPUTS = {"u_tp": 1.0, "u_battery": 0.0, "u_caes": 0.0}
 
 
 def fmu_platform_supported(fmu_path: Path) -> bool:
-    """当前 OS 是否能在 FMU 包中找到对应原生二进制。"""
+    """判断当前 OS 是否能在 FMU 包中找到对应原生二进制。
+
+    Args:
+        fmu_path: ``.fmu`` 压缩包路径。
+
+    Returns:
+        存在匹配 ``binaries/`` 下 Windows ``.dll`` 或 Linux ``.so`` 时为 ``True``。
+    """
     required = ".dll" if sys.platform.startswith("win") else ".so"
     marker = "windows" if sys.platform.startswith("win") else "linux"
     with zipfile.ZipFile(fmu_path) as archive:
@@ -86,10 +93,10 @@ def fmu_platform_supported(fmu_path: Path) -> bool:
 
 
 class FmuSession:
-    """固定步长 Co-Simulation 会话。
+    """FMI 会话(FmuSession)：固定步长 Co-Simulation 的唯一执行路径。
 
-    初始化约定：构造时解析 modelDescription 并锁定输入/输出 VR；
-    每次 reset() 重新 instantiate，在初始化模式写入 initial_inputs。
+    构造时解析 modelDescription 并锁定 VR；每次 ``reset()`` 重新实例化，
+    在初始化模式写入 ``initial_inputs``。
     """
 
     def __init__(
@@ -99,6 +106,20 @@ class FmuSession:
         initial_inputs: dict[str, float] | None = None,
         outputs: tuple[str, ...] | list[str] = DEFAULT_OUTPUTS,
     ) -> None:
+        """创建会话并校验 FMU 与初始输入。
+
+        Args:
+            fmu_path: ``.fmu`` 文件路径。
+            step_size: 通信步长（秒）。
+            initial_inputs: 初始调度输入；默认 ``DEFAULT_INITIAL_INPUTS``。
+            outputs: 每步读取的 FMU 输出名列表。
+
+        Raises:
+            FileNotFoundError: FMU 文件不存在。
+            RuntimeError: 当前平台无原生二进制或不支持 Co-Simulation。
+            KeyError: 请求的动作/输出变量在 FMU 中缺失。
+            ValueError: 初始输入越界（由 ``validate_inputs`` 抛出）。
+        """
         self.fmu_path = Path(fmu_path)
         if not self.fmu_path.exists():
             raise FileNotFoundError(self.fmu_path)
@@ -134,12 +155,28 @@ class FmuSession:
         self.time = 0.0
 
     def _ensure_extracted(self) -> str:
+        """解压 FMU 包（懒加载，仅一次）。
+
+        Returns:
+            解压目录路径字符串。
+        """
         if self._unzipdir is None:
             self._unzipdir = extract(str(self.fmu_path))
         return self._unzipdir
 
     def reset(self, start_time: float = 0.0) -> dict[str, float]:
-        """重新实例化，写入初始输入，返回 t=start_time 的输出快照。"""
+        """重新实例化 FMU，写入初始输入，返回 t=start_time 的输出快照。
+
+        Args:
+            start_time: 仿真起始时刻（秒）。
+
+        Returns:
+            请求输出名 -> 标量值的字典（已通过 ``validate_outputs``）。
+
+        Raises:
+            RuntimeError: FMI 实例化或初始化失败（由 fmpy 抛出）。
+            ValueError: 读出的输出不合理。
+        """
         self._release_instance()
         self._fmu = FMU3Slave(
             guid=self._md.guid,
@@ -155,7 +192,15 @@ class FmuSession:
         return self.read()
 
     def set_inputs(self, action: dict[str, float]) -> None:
-        """写调度输入到 FMU；先校验上下限，越界直接 ValueError。"""
+        """写调度输入到 FMU；先校验上下限。
+
+        Args:
+            action: 含 ``u_tp``、``u_battery``、``u_caes`` 的字典。
+
+        Raises:
+            RuntimeError: 未先 ``reset()``。
+            ValueError: 输入越界或非有限。
+        """
         if self._fmu is None:
             raise RuntimeError("call reset() before set_inputs()")
         validate_inputs(action)
@@ -163,7 +208,15 @@ class FmuSession:
             self._fmu.setFloat64([self._vrs[name]], [float(action[name])])
 
     def read(self) -> dict[str, float]:
-        """读物理输出；非有限或物理不合理时 ValueError。"""
+        """读物理输出并校验数值/物理合理性。
+
+        Returns:
+            请求输出名 -> 标量值的字典。
+
+        Raises:
+            RuntimeError: 未先 ``reset()``。
+            ValueError: 非有限或物理不合理。
+        """
         if self._fmu is None:
             raise RuntimeError("call reset() before read()")
         values = self._fmu.getFloat64(self._read_vrs)
@@ -172,7 +225,18 @@ class FmuSession:
         return result
 
     def step(self, action: dict[str, float]) -> dict[str, float]:
-        """一步：校验并写输入 → doStep → 读并校验输出。"""
+        """执行一步：校验并写输入 → doStep → 读并校验输出。
+
+        Args:
+            action: 本通信步的调度输入。
+
+        Returns:
+            步后 FMU 输出字典。
+
+        Raises:
+            RuntimeError: 未先 ``reset()``。
+            ValueError: 输入或输出校验失败。
+        """
         if self._fmu is None:
             raise RuntimeError("call reset() before step()")
         self.set_inputs(action)
@@ -189,7 +253,16 @@ class FmuSession:
         horizon_hours: int | None = None,
         start_time: float | None = None,
     ) -> SimulationResult:
-        """按计划滚动仿真；单步失败时记录 metadata，不向外抛出。"""
+        """按计划滚动仿真；单步失败时记录 metadata，不向外抛出。
+
+        Args:
+            plan: 调度计划(DispatchPlan)。
+            horizon_hours: 仿真小时数；默认 ``len(plan.time) - 1``。
+            start_time: 起始时刻；默认 ``plan.time[0]``。
+
+        Returns:
+            含时间序列、变量轨迹与执行 metadata 的 SimulationResult。
+        """
         hours = int(horizon_hours if horizon_hours is not None else len(plan.time) - 1)
         start = float(plan.time[0] if start_time is None else start_time)
         initial = self.reset(start)
@@ -230,6 +303,7 @@ class FmuSession:
         )
 
     def _release_instance(self) -> None:
+        """终止并释放当前 FMI 实例（忽略 terminate 异常）。"""
         if self._fmu is None:
             return
         try:
@@ -246,8 +320,14 @@ class FmuSession:
             shutil.rmtree(self._unzipdir, ignore_errors=True)
             self._unzipdir = None
 
-    def __enter__(self) -> FmuSession:
+    def __enter__(self) -> "FmuSession":
+        """上下文管理器入口。
+
+        Returns:
+            自身实例。
+        """
         return self
 
     def __exit__(self, *_args) -> None:
+        """上下文管理器退出时关闭会话。"""
         self.close()

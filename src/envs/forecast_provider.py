@@ -21,11 +21,20 @@ DEFAULT_OBSERVATION_DIM = BASE_OBSERVATION_DIM + FORECAST_FEATURE_DIM
 
 
 class ForecastDataError(ValueError):
-    """前瞻 CSV 与训练时间轴契约不一致。"""
+    """前瞻 CSV 与训练时间轴契约不一致(ForecastDataError)。"""
 
 
 @dataclass(frozen=True)
 class ForecastSource:
+    """单通道前瞻数据源(ForecastSource)。
+
+    Attributes:
+        name: 通道名，须与 ``FORECAST_CHANNELS`` 顺序一致。
+        path: CSV 文件路径。
+        offset: 线性缩放偏移量。
+        scale: 线性缩放系数（非零有限值）。
+    """
+
     name: str
     path: Path
     offset: float
@@ -33,7 +42,10 @@ class ForecastSource:
 
 
 class ForecastProvider:
-    """严格小时网格上的完美日前预测，特征顺序为 horizon-major。"""
+    """日前预测提供器(ForecastProvider)。
+
+    在严格小时网格上提供完美日前预测；特征顺序为 horizon-major（先通道后时刻）。
+    """
 
     def __init__(
         self,
@@ -43,6 +55,17 @@ class ForecastProvider:
         annual_horizon_hours: int,
         step_seconds: float,
     ) -> None:
+        """加载并校验全部前瞻 CSV。
+
+        Args:
+            root: 项目根目录，用于解析相对路径。
+            config: ``forecast`` 配置段（``horizon_hours``、``sources``）。
+            annual_horizon_hours: 年度仿真小时数（与 FMU 一致）。
+            step_seconds: 决策步长（秒），须与 CSV 时间网格一致。
+
+        Raises:
+            ForecastDataError: 配置、路径、网格或数值非法。
+        """
         self.root = Path(root)
         self.horizon_hours = int(config.get("horizon_hours", DEFAULT_FORECAST_HORIZON_HOURS))
         self.step_seconds = float(step_seconds)
@@ -74,17 +97,43 @@ class ForecastProvider:
 
     @property
     def feature_dim(self) -> int:
+        """前瞻特征总维度。
+
+        Returns:
+            ``horizon_hours * 通道数``。
+        """
         return self.horizon_hours * len(self.sources)
 
     @property
     def feature_low(self) -> np.ndarray:
+        """前瞻特征的 ``Box`` 下界（无界）。
+
+        Returns:
+            长度为 ``feature_dim`` 的 ``-inf`` 数组。
+        """
         return np.full(self.feature_dim, -np.inf, dtype=np.float32)
 
     @property
     def feature_high(self) -> np.ndarray:
+        """前瞻特征的 ``Box`` 上界（无界）。
+
+        Returns:
+            长度为 ``feature_dim`` 的 ``+inf`` 数组。
+        """
         return np.full(self.feature_dim, np.inf, dtype=np.float32)
 
     def _read_source(self, source: ForecastSource) -> np.ndarray:
+        """读取单通道 CSV 并校验年度小时网格。
+
+        Args:
+            source: 前瞻数据源(ForecastSource)。
+
+        Returns:
+            长度为 ``annual_horizon_hours + 1`` 的缩放后序列。
+
+        Raises:
+            ForecastDataError: 文件缺失、表头/行数/时间轴或数值非法。
+        """
         if not source.path.is_file():
             raise ForecastDataError(f"forecast CSV 不存在: {source.path}")
         times: list[float] = []
@@ -99,7 +148,9 @@ class ForecastProvider:
                         time = float(row["time"])
                         value = float(row["value"])
                     except (TypeError, ValueError, KeyError) as exc:
-                        raise ForecastDataError(f"{source.path.name}:{row_number} 存在非数值 time/value") from exc
+                        raise ForecastDataError(
+                            f"{source.path.name}:{row_number} 存在非数值 time/value"
+                        ) from exc
                     if not np.isfinite(time) or not np.isfinite(value):
                         raise ForecastDataError(f"{source.path.name}:{row_number} 含 NaN/Inf")
                     times.append(time)
@@ -122,7 +173,17 @@ class ForecastProvider:
         return (raw_values - source.offset) / source.scale
 
     def at_time(self, simulation_time_seconds: float) -> np.ndarray:
-        """返回 ``t+1`` 到 ``t+horizon`` 的缩放特征；年度末用最后值填充。"""
+        """返回 ``t+1`` 到 ``t+horizon`` 的缩放特征；年度末用最后值填充。
+
+        Args:
+            simulation_time_seconds: 当前仿真时刻（秒），须在小时网格上。
+
+        Returns:
+            展平为 ``float32`` 的一维前瞻特征向量。
+
+        Raises:
+            ForecastDataError: 仿真时间不在 forecast 小时网格内。
+        """
         time = float(simulation_time_seconds)
         index = int(round(time / self.step_seconds))
         if index < 0 or index > self.annual_horizon_hours or not np.isclose(

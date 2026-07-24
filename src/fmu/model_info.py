@@ -11,6 +11,16 @@ import fmpy
 
 @dataclass
 class ModelVariable:
+    """模型变量(ModelVariable)：modelDescription 中的单个变量元数据。
+
+    Attributes:
+        name: FMU 变量名。
+        causality: 因果性（``input`` / ``output`` 等）。
+        description: 变量描述文本。
+        start: 初始值（若有）。
+        unit: 物理单位（若有）。
+    """
+
     name: str
     causality: str
     description: str
@@ -20,6 +30,17 @@ class ModelVariable:
 
 @dataclass
 class ModelInfo:
+    """模型信息(ModelInfo)：FMU modelDescription 的结构化摘要。
+
+    Attributes:
+        path: FMU 文件路径。
+        model_name: Modelica 模型名。
+        fmi_version: FMI 版本字符串。
+        step_size: 默认实验步长（若有）。
+        stop_time: 默认实验停止时间（若有）。
+        variables: 全部变量列表。
+    """
+
     path: Path
     model_name: str
     fmi_version: str
@@ -28,27 +49,24 @@ class ModelInfo:
     variables: list[ModelVariable]
 
     @property
-    def inputs(self) -> list[ModelVariable]:
-        return [v for v in self.variables if v.causality == "input"]
-
-    @property
     def outputs(self) -> list[ModelVariable]:
-        return [v for v in self.variables if v.causality == "output"]
+        """输出变量列表。
 
-    def summary_dict(self) -> dict[str, Any]:
-        return {
-            "path": str(self.path),
-            "model_name": self.model_name,
-            "fmi_version": self.fmi_version,
-            "step_size": self.step_size,
-            "stop_time": self.stop_time,
-            "n_variables": len(self.variables),
-            "inputs": [v.name for v in self.inputs],
-            "outputs": [v.name for v in self.outputs],
-        }
+        Returns:
+            因果性为 ``output`` 的变量。
+        """
+        return [v for v in self.variables if v.causality == "output"]
 
 
 def read_model_info(fmu_path: Path) -> ModelInfo:
+    """只读解析 FMU 的 modelDescription。
+
+    Args:
+        fmu_path: ``.fmu`` 文件路径。
+
+    Returns:
+        模型信息(ModelInfo) 实例。
+    """
     md = fmpy.read_model_description(str(fmu_path))
 
     step_size = None

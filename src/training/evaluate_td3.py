@@ -19,7 +19,22 @@ def evaluate_policy(
     reset_options: dict[str, Any] | None = None,
     max_steps: int | None = None,
 ) -> dict[str, Any]:
-    """评估单个窗口；``max_steps`` 允许年度最后不足一周的尾窗。"""
+    """评估单个时间窗口内的策略表现。
+
+    Args:
+        env: 电力系统环境(PowerSystemEnv) 实例。
+        policy: 需实现 ``predict(obs, deterministic=...)`` 的策略对象。
+        output_csv: 可选逐步轨迹 CSV 路径。
+        gamma: 折扣因子，用于计算折扣回报。
+        reset_options: 传给 ``env.reset(options=...)`` 的选项，如 ``start_time``。
+        max_steps: 最大步数；用于年度尾窗不足一周时截断。
+
+    Returns:
+        含步数、奖励、成本分项、SOC、CAES 合规率等字段的字典。
+
+    Raises:
+        ValueError: ``max_steps`` 非正时抛出。
+    """
     if max_steps is not None and max_steps <= 0:
         raise ValueError("max_steps 必须为正数")
     obs, info0 = env.reset(options=reset_options)
@@ -172,7 +187,21 @@ def evaluate_annual_policy(
     gamma: float = 0.99,
     output_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """按训练一致的周窗口覆盖全年；最后窗口只执行剩余小时，不跨年度。"""
+    """按训练一致的周窗口滑动覆盖全年评估。
+
+    Args:
+        env: 电力系统环境(PowerSystemEnv) 实例。
+        policy: 评估用策略，需支持 ``predict`` 及可选 ``on_episode_reset`` / ``on_transition``。
+        annual_horizon_hours: 年度总小时数。
+        gamma: 各窗口折扣因子。
+        output_dir: 可选目录，每窗写入 ``window_XXXXh.csv``。
+
+    Returns:
+        全年汇总字典：总步数、总成本、各能量指标、违规计数等。
+
+    Raises:
+        ValueError: 年度小时数、决策间隔或 episode 长度配置非法时抛出。
+    """
     if annual_horizon_hours <= 0:
         raise ValueError("annual_horizon_hours 必须为正数")
     step_hours = float(env.config["fmu"]["decision_interval_seconds"]) / 3600.0
