@@ -1,0 +1,759 @@
+# Incentive-oriented power‑carbon emissions trading-tradable green certificate integrated market mechanisms using multi-agent deep reinforcement learning
+
+![](69cd0a598b6bd9d65d4963422babe5a1315e6e4a61db9e5f40656f57d1efb057.jpg)
+
+Xiaopeng Guo <sup>a,b</sup>, Xinyue Zhang <sup>a,\*</sup>, Xingping Zhang <sup>a,b</sup>
+
+<sup>a</sup> School of Economics and Management, North China Electric Power University, Beijing 102206, China
+
+<sup>b</sup> Beijing Key Laboratory of New Energy and Low-Carbon Development, North China Electric Power University, Beijing 102206, China
+
+## H I G H L I G H T S
+
+• An incentive-oriented multi-market framework is constructed.
+
+• A novel tradable green certificate market mechanism is proposed.
+
+• Incomplete market information and learning ability of traders are considered.
+
+• Transaction strategies are simulated by on multi-agent deep reinforcement learning
+
+• Consignment auction is the transition between free quota and traditional auction.
+
+## A R T I C L E I N F O
+
+Keywords: Incentive-oriented mechanism Power market Carbon emissions trading market Tradable green certificate market Multi-agent deep deterministic policy gradient
+
+## A B S T R A C T
+
+Due to the stricter emission reduction and renewable energy consumption goals in China, the carbon emissions trading (CET) market and tradable green certificate (TGC) market, as key means to achieve these goals, urgently need to adjust the current operating mode timely and maximize market effectiveness by introducing adaptive incentive mechanisms. Therefore, taking the power industry as an example, an incentive-oriented power-CET-TGC integrated market simulation framework based on multi-agent deep reinforcement learning is constructed. The impact of consignment auction mechanism, traditional auction mechanism, and voluntary TGC trading mechanism on the transaction situation of each market is prospectively analyzed. The results demonstrate that with the introduction of various incentive mechanisms, the transaction scale and prices of CET and TGC markets increase, and the effectiveness of carbon reduction and renewable energy consumption is significant. Among them, auction mechanisms are valid way to promote the explicit cost of carbon emissions, and the voluntary TGC trading mechanism is an important means to enhance the clean value of green energy. In addition, it is rec ommended to adopt consignment auction mechanism under the short-term goal “carbon peak” of pursuing economic benefits and stable emission reduction, while traditional auction mechanisms are recommended under the long-term goal of “carbon neutrality” of urgently requiring large-scale emission reduction. Moreover, the voluntary TGC trading mechanism can achieve synergy and connection between the TGC market and the green electricity market to a certain extent. These insights can provide mechanism reference for the sustainable development and construction of CET and TGC markets.
+
+## 1. Introduction
+
+In order to cope with environmental issues such as the energy crisis and intensified pollutant emissions, governments have established strict phased emission reduction requirements and mandatory consumption targets for renewable energy in China [1,2]. However, large-scale renewable energy construction will lead to a significant increase in government subsidies [3]. Therefore, China has established the national carbon emissions trading market and tradable green certificate since 2017 in an effort to reduce government pressure and intend to use market means to allocate resources [4].
+
+It is expected that by 2030, the installed capacity of wind and photovoltaic power will increase to 1.2 billion kilowatts in China, gradually replacing fossil fuels as the main power source [5]. Currently, both the national CET market and TGC market have conducted multiple cycles of transactions, but the overall transaction scale is limited, and the impact on renewable energy production and consumption is not obvious [6,7]. Thus, it is urgent to design effective incentive mechanisms for CET and TGC markets for further increase in market transactions, which will be conducive to providing more diverse channels on energy transformation [8,9].
+
+There are some previous studies associated with the incentive mechanism of CET and TGC markets in recent years [10]. The research on incentive mechanisms for the CET market are mainly divided into two categories. The first category of incentive mechanism on the CET market mainly relies on carbon pricing policies to achieve the optimal emission reduction effect of the CET market. The essence of carbon pricing policies is to return the social and environmental costs of carbon emissions to the initial source [11]. And the more emissions companies emit, the more expense they have to bear. Taking the European Union Emission Trading System (EU-ETS) and the CET market in China as the research subjects, some literature explore the heterogeneity and synergy of different carbon pricing policies. It has been certified that carbon pricing policies can achieve emissions reduction in a short period and at a low cost, which is crux of ensuring decarbonization in all economic sectors [12–17].
+
+The second category of incentive mechanism on the CET market mainly relies on the carbon quota allocation mechanism that balances fairness and efficiency [18]. An effective carbon quota allocation mechanism will optimize resources reasonably, which can assist enterprises in implementing low-carbon emission reduction, thereby reducing overall social carbon emissions [19]. Many scholars have analyzed the optimal carbon quota allocation mechanism in different provinces and industries through multi-objective optimization models and multi-sector low-carbon transformation path planning models [20,21]. Among them, the carbon quota allocation mechanisms in the power industry [22], iron and steel industry [23], and transportation industry [24] are currently the focus of research. With the development of the CET market, compared to the free carbon quota allocation mechanism, the auction-based allocation mechanisms of carbon quotas are the ideal approaches [25]. At present, the carbon quota auction mechanism is the main carbon quota allocation method in the EU-ETS [26]. However, the development stages, participants and regulations of the China’s CET market and the EU-ETS are different, so the mechanism of the EU-ETS cannot be completely copied. Therefore, it is worth studying how to design the auction-based allocation mechanisms of carbon quotas that adapt to the actual situation of China’s CET market and motivate various entities to join transaction, thereby expanding the scale of emission reduction and promoting the consumption of renew able energy.
+
+Similar to the incentive mechanism of the CET market, research on the incentive mechanism of the TGC market are also divided into two categories. The first category of incentive mechanism on the TGC market mainly refers to the TGC pricing policies. The TGC prices are generally determined through negotiation between the buyers and sellers [27]. From the perspective of sellers, when the optimal selling price for TGC is not reached, renewable energy enterprises tend to retain TGC rather than sell them. Therefore, higher TGC prices are the major factor to stimulate sellers joining the TGC market [28,29]. However, from the perspective of buyers, reducing the TGC prices through market-oriented grid electricity prices and higher allowance amounts is the decisive factor in attracting them to purchase TGC [30]. It can be seen that the requirements of the seller and the buyer in the TGC market are contradictory, therefore, reasonable TGC pricing policies should balance bilateral interests.
+
+The second category of incentive mechanism on the TGC market mainly refers to the setting of renewable portfolio standard (RPS). The RPS has certain advantages in strengthening government binding force and stimulating the initiative of market entities [31]. [32] proposed the dynamic RPS, and concluded that the dynamic policy will effectively promote the diffusion of renewable energy. [33] designed RPS that balance economic and emission reduction effects. However, the tradeoff between the cost and effectiveness of implementing the RPS is a challenge for governments. The excessively high RPS will affect the decisive role of the TGC market in resource allocation [34]. Therefore, it is worth studying how to construct the TGC market incentive mecha nisms that simultaneously motivate both buyers and sellers and reduce government intervention, further enhancing the economic and envi ronmental value of TGC.
+
+Analyzing changes in the behavior of market participants is a vital way to evaluate the validity of market mechanisms. Some scholars adopt game theory methods, including Nash bargaining game [35], evolutionary game [36] and Stackelberg game [37] to study the complex interest relationships between different market participants and reveal the dynamic strategic evolution process of market stakeholders. Some scholars also use operations research methods to explore the impact of market mechanisms on participant strategies [38]. [39] proposed an optimized joint decision-making model based on information gap decision-making theory to promote the enthusiasm of GENCOs entering in multi-market transactions. [40] constructed a cross provincial elec tricity market optimization model that considers CET market and RPS. The above studies are all aimed at market transaction scenarios with complete information, but in reality, the external environmental information available for trading in the power, CET and TGC markets is limited [41]. Therefore, the transaction problems of power, CET and TGC markets belong to the decision-making problem under incomplete information scenarios. Relying solely on the above methods cannot accurately reflect the current market environment, nevertheless, the multi-agent reinforcement learning method can endow each transaction entity with the ability to make independent decisions and learn independently in an incomplete information environment. As a consequence, it is necessary to use the multi-agent reinforcement learning method to simulate the dynamic bidding decision-making process of traders in the power, CET and TGC markets.
+
+Based on the above literature analysis, it can be found that with the advancement of CET and TGC market construction, reasonable market incentive mechanism settings including pricing policies, trading frequency, and initial quota allocation method are key factors that ensure the sustainable development and effectiveness for various markets. Besides, in order to more accurately describe the behavior of participants in incomplete information market environments, it is necessary to carry out deep reinforcement learning algorithms to simulate various environmental states.
+
+To highlight the contributions of this paper, existing literature associated with the CET and TGC market mechanisms has been systematically organized in Table 1. On the one hand, the existing literature does not take into account the design of incentive mechanisms for CET and TGC markets simultaneously. On the other hand, the problems of actual transaction process in various markets including incomplete market information and learning ability of traders are ignored. To fill these research gaps, this article constructs a multi-agent based deep reinforcement learning model to analyze the impact of different CET and TGC market incentive mechanisms on participant behavior. The main contributions of this article are as follows:
+
+(1) The incentive effects of traditional auction mechanisms and consignment auction mechanisms on the primary and secondary CET markets are analyzed, and the evolution process from free quota mechanisms to auction mechanisms are simulated, which are intended to fill the gap in research on the impact of different CET market incentive mechanisms in China.
+
+Table 1  
+Summary of existing literature associated with the CET and TGC market mechanism problem
+
+<table><tr><td rowspan="2">Reference</td><td colspan="2">Research background</td><td rowspan="2">Design of incentive mechanisms</td><td colspan="2">Research perspective</td><td rowspan="2">Incomplete market information and learning ability of traders</td><td rowspan="2">Method</td></tr><tr><td>CET market</td><td>TGC market</td><td>Macroscopic</td><td>Microscopic</td></tr><tr><td>[12]</td><td>√</td><td></td><td>√</td><td>√</td><td></td><td></td><td>Computable general equilibrium model</td></tr><tr><td>[13]</td><td>√</td><td></td><td>√</td><td>√</td><td></td><td></td><td>World induced technical change hybrid model</td></tr><tr><td>[14]</td><td>√</td><td></td><td>√</td><td>√</td><td></td><td></td><td>Piecewise linear method</td></tr><tr><td>[15]</td><td>√</td><td></td><td>√</td><td></td><td>√</td><td></td><td>Difference-in-difference model</td></tr><tr><td>[16]</td><td>√</td><td></td><td>√</td><td>√</td><td></td><td></td><td>Ordinary least squares</td></tr><tr><td>[17]</td><td>√</td><td></td><td>√</td><td>√</td><td></td><td></td><td>Dynamic real options model</td></tr><tr><td>[20]</td><td>√</td><td></td><td>√</td><td>√</td><td></td><td></td><td>Long-term multi-sector low-carbon transition pathway planning model</td></tr><tr><td>[21]</td><td>√</td><td></td><td>√</td><td>√</td><td></td><td></td><td>prospective zero-sum gain data envelopment analysis</td></tr><tr><td>[22]</td><td>√</td><td></td><td>√</td><td></td><td>√</td><td></td><td>Stackelberg game model</td></tr><tr><td>[23]</td><td>√</td><td></td><td>√</td><td>√</td><td></td><td></td><td>Data envelopment analysis model</td></tr><tr><td>[24]</td><td>√</td><td></td><td>√</td><td>√</td><td></td><td></td><td>Slacks-based measure-data envelopment analysis</td></tr><tr><td>[27]</td><td></td><td>√</td><td>√</td><td></td><td>√</td><td></td><td>Nash bargaining game model</td></tr><tr><td>[28]</td><td></td><td>√</td><td>√</td><td></td><td>√</td><td></td><td>Evolutionary game model</td></tr><tr><td>[29]</td><td></td><td>√</td><td>√</td><td>√</td><td></td><td></td><td>System dynamics model</td></tr><tr><td>[30]</td><td></td><td>√</td><td>√</td><td>√</td><td></td><td></td><td>System dynamics model</td></tr><tr><td>[31]</td><td></td><td>√</td><td>√</td><td></td><td>√</td><td></td><td>Operations research method</td></tr><tr><td>[32]</td><td></td><td>√</td><td>√</td><td>√</td><td></td><td></td><td>Networked evolutionary game model</td></tr><tr><td>[33]</td><td></td><td>√</td><td>√</td><td>√</td><td></td><td></td><td>Operations research method</td></tr><tr><td>[35]</td><td>√</td><td>√</td><td></td><td></td><td>√</td><td></td><td>Nash bargaining game model</td></tr><tr><td>[36]</td><td>√</td><td>√</td><td></td><td></td><td>√</td><td></td><td>Evolutionary game model</td></tr><tr><td>[37]</td><td>√</td><td>√</td><td></td><td></td><td>√</td><td></td><td>Stackelberg game model</td></tr><tr><td>[38]</td><td>√</td><td>√</td><td></td><td></td><td>√</td><td></td><td>Cross-chain transaction algorithm</td></tr><tr><td>[39]</td><td>√</td><td></td><td></td><td></td><td>√</td><td></td><td>Information gap decision theory-based optimization</td></tr><tr><td>[40]</td><td>√</td><td>√</td><td></td><td></td><td>√</td><td></td><td>Bi-level optimization</td></tr><tr><td>Our paper</td><td>√</td><td>√</td><td>√</td><td></td><td>√</td><td>√</td><td>Multi-agent deep deterministic policy gradient algorithm</td></tr></table>
+
+(2) With the goal of promoting the circulation and transfer of bundling TGC and unbundling TGC, as well as motivating both buyers and sellers together, a novel TGC market incentive mechanism has been designed, including the voluntary TGC market and the compulsory TGC market, which could provide scientific reference for the government to improve the green energy market system.
+
+(3) An incentive-oriented power-CET-TGC integrated market simulation framework based on multi-agent deep reinforcement learning has been proposed, which could solve problems on incomplete market information and learning ability of traders and contributes to more accurately reflect the trading strategy choices for different GENCOs and power purchasers.
+
+The structure of this article is as follows: Section 2 describes the process of constructing the model on market transaction and incentive mechanisms. Section 3 discusses the objective function and solving process of this model. Section 4 explores the decision-making behavior and trading situation of various GENCOs and power purchasers under different market incentive mechanisms. And section 5 summarizes the analysis results as well as provides policy recommendations for the construction of power, CET and TGC markets. Additionally, the limita tions of this article and future research content are proposed.
+
+## 2. Problem description
+
+Based on the previous analysis, there are the following crux to be addressed in this paper:
+
+(1) How to design incentive mechanisms to enhance the activity and effectiveness of CET and TGC markets, thereby promoting the transformation of the power industry? Currently, most scholars focus on evaluating the role of CET and TGC markets, while neglecting research on optimizing market mechanisms to further stimulate their superiority.
+
+(2) How to depict the decision-making behavior of GENCOs with learning ability in an incomplete information market environment? In the actual operation of the market, GENCOs will adjust the bidding status of the next transaction based on the results of last transaction. Furthermore, information in various markets is not entirely public.
+
+To address the first crux, different carbon quota allocation mechanisms including free quota mechanism, traditional auction mechanisms and consignment auction mechanisms are proposed. Additionally, an innovative voluntary TGC market mechanism is constructed to achieve the re-trading of TGC. To address the second crux, an incentive-oriented power-CET-TGC integrated market simulation framework based the multi-agent deep deterministic policy gradient algorithm is adopted, which simultaneously considering the learning ability of entities and the incomplete information situation of markets.
+
+## 3. Assumptions and market transaction mechanism
+
+In this section, we illustrate assumptions, the construction process of different market mechanisms including multi-agent power market transaction mechanism, multi-type TGC market transaction mechanism and multi-type TGC market transaction mechanism in detail.
+
+## 3.1. Assumptions
+
+(1) In the competitive power market, all GENCOs should submit their bid quantities and price of power. Then conduct transactions with power purchasers through bilateral negotiations.
+
+(2) In this article, non-renewable energy power GENCOs refer to coal-fired and gas power GENCOs, while renewable energy power GENCOs refer to wind and photovoltaic GENCOs.
+
+(3) After considering the carbon quota auction mechanism, all nonrenewable energy GENCOs need to submit their bid quantities and price of carbon quotas in the primary carbon market.
+
+(4) To better reflect the synergistic relationship between the power, CET and TGC markets, the settlement time of the CET and TGC markets is also consistent with the power market. Therefore, the CET and TGC transaction curves have also been decomposed into 24 time periods.
+
+(5) It is assumed that all units of GENCOs are in operation and not shut down.
+
+Similar assumptions are common and have been used in many othe researches [42,43]. These assumptions enable us to focus on key attri butes without losing generality.
+
+## 3.2. Multi-agent power market transaction mechanism
+
+With the rapid development of renewable energy, it is necessary to rely on market mechanisms to promote its large-scale consumption. Therefore, this article sets that both renewable energy GENCOs and nonrenewable energy GENCOs need to submit their proposed power and transaction prices. Additionally, GENCOs trade with power purchasers by bilateral negotiations.
+
+The cost functions of GENCOs and power purchasers in the power market are shown in Eqs. (1)–(3) [35,44].Among them, the costs of nonrenewable energy GENCOs include fuel costs $( C _ { i , t } ^ { t h , f } )$ and capacity cost $( C _ { i , t } ^ { t h , \nu } ) ;$ the costs of renewable energy GENCOs include capacity costs $( C _ { i , t } ^ { w / p \nu , \nu }$ )and scheduling costs due to output uncertainty( $C _ { i , t } ^ { w / p \nu , d } ) ;$ the cost of power purchasers include the cost of purchasing power $( C _ { j , t } ^ { b , e \cdot }$ )and the scheduling cost incurred by purchasing renewable energy power $\cdot (  { c } _ { j , t } ^ { b , d } )$
+
+$$
+\left\{ \begin{array}{c} C _ {i, t} ^ {t h, v} = p _ {i, t} ^ {t h} \left(\frac {I _ {i , t} ^ {t h} (e _ {i} ^ {t h} K _ {i} ^ {t h} + O _ {i} ^ {t h})}{\rho_ {i} ^ {t h} U H _ {i} ^ {t h} (1 - \sigma_ {i} ^ {t h})}\right) \\ e _ {i} ^ {t h} = \frac {r (1 + r) ^ {m _ {l i f e} ^ {t h}}}{(1 + r) ^ {m _ {l i f e} ^ {t h}} - 1} \\ K _ {i} ^ {t h} = \sum_ {m _ {c o n} ^ {t h} = 1} ^ {M} I _ {m _ {c o n} ^ {t h}} ^ {t h} (1 + r) ^ {M - m _ {c o n} ^ {t h}} \\ C _ {i, t} ^ {t h, f} = a _ {i} p _ {i, t} ^ {t h, 2} + b _ {i} p _ {i, t} ^ {t h} + c _ {i} \end{array} \right.\tag{1}
+$$
+
+$$
+\left\{ \begin{array}{c} C _ {i, t} ^ {w / p v, v} = p _ {i, t} ^ {w / p v, p v} \left(\frac {I _ {i , t} ^ {w / p v} \left(e _ {i} ^ {w / p v} K _ {i} ^ {w / p v} + O _ {i} ^ {w / p v}\right)}{\rho_ {i} ^ {w / p v} U H _ {i} ^ {w / p v} \left(1 - \sigma_ {i} ^ {w / p v}\right)}\right) \\ e _ {i} ^ {w / p v} = \frac {r (1 + r) ^ {m _ {\text {life}} ^ {w / p v}}}{(1 + r) ^ {m _ {\text {life}} ^ {w / p v}} - 1} \\ K _ {i} ^ {w / p v} = \sum_ {m _ {\text {con}} ^ {w / p v} = 1} ^ {M} I _ {m _ {\text {con}}} ^ {w / p v} (1 + r) ^ {M - m _ {\text {con}} ^ {w / p v}} \\ C _ {i, t} ^ {w / p v, d} = \psi T ^ {\text {as}} \left| p _ {i, t} ^ {w / p v, \text {actual}} - p _ {i, t} ^ {w / p v} \right| \end{array} \right.\tag{2}
+$$
+
+$$
+\left\{ \begin{array}{c} C _ {j, t} ^ {b, e} = p _ {j, t} ^ {t h} w _ {j, t} ^ {t h} + p _ {j, t} ^ {w} w _ {j, t} ^ {w} + p _ {j, t} ^ {p v} w _ {j, t} ^ {p v} \\ C _ {j, t} ^ {b, d} = T ^ {a s} (1 - \psi) \Big [ \big | p _ {i, t} ^ {p v, a c t u a l} - p _ {i, t} ^ {p v} \big | + \Big | p _ {i, t} ^ {w, a c t u a l} - p _ {i, t} ^ {w} \Big | \Big ] \end{array} \right.\tag{3}
+$$
+
+The power sales profit functions of GENCOs and power purchasers in the power market are shown in Eqs. (4)–(6).
+
+$$
+R _ {i, t} ^ {t h, e} = \iota_ {i, t} ^ {t h} \big (C _ {i, t} ^ {t h, v} + C _ {i, t} ^ {t h, f} \big) p _ {i, t} ^ {t h}\tag{4}
+$$
+
+$$
+R _ {i, t} ^ {w / p v, e} = \iota_ {i, t} ^ {w / p v} \left(C _ {i, t} ^ {w / p v, v} + C _ {i, t} ^ {w / p v, d}\right) p _ {i, t} ^ {w / p v}\tag{5}
+$$
+
+$$
+R _ {j, t} ^ {b, u} = T _ {t} ^ {\text { sell }} q _ {j, t} ^ {b}\tag{6}
+$$
+
+GENCOs and power purchasers should consider the following constraints in the power market trading process, including bidding quantity constraints in Eq. (7), bidding price constraints in Eq. (8), supply and demand balance constraint in Eq. (9), and bilateral negotiation transaction constraints in Eq. (10).
+
+$$
+\left\{ \begin{array}{c} p _ {i, t} ^ {t h, m i n} \leq p _ {i, t} ^ {t h, b i d} \leq p _ {i, t} ^ {t h, m a x} \\ p _ {i, t} ^ {w, m i n} \leq p _ {i, t} ^ {w, b i d} \leq p _ {i, t} ^ {w, m a x} \\ p _ {i, t} ^ {p v, m i n} \leq p _ {i, t} ^ {p v, b i d} \leq p _ {i, t} ^ {p v, m a x} \\ p _ {j, t} ^ {\min} \leq p _ {j, t} \leq p _ {j, t} ^ {\max} \end{array} \right.\tag{7}
+$$
+
+$$
+\left\{ \begin{array}{c} w _ {i, t} ^ {t h, m i n} \leq t _ {i, t} ^ {t h} \big (C _ {i, t} ^ {t h, v} + C _ {i, t} ^ {t h, f} \big) \leq w _ {i, t} ^ {t h, m a x} \\ w _ {i, t} ^ {w, m i n} \leq t _ {i, t} ^ {w} \big (C _ {i, t} ^ {w, v} + C _ {i, t} ^ {w, d} \big) \leq w _ {i, t} ^ {w, m a x} \\ w _ {i, t} ^ {p v, m i n} \leq t _ {i, t} ^ {p v} \big (C _ {i, t} ^ {p v, v} + C _ {i, t} ^ {p v, d} \big) \leq w _ {i, t} ^ {p v, m a x} \\ w _ {j, t} ^ {\min} \leq t _ {j, t} ^ {b} \big (C _ {j, t} ^ {b, e} + C _ {j, t} ^ {b, d} \big) \leq w _ {j, t} ^ {\max} \end{array} \right.\tag{8}
+$$
+
+$$
+\sum_ {j = 1} ^ {n} q _ {j, t} ^ {b} = \sum_ {i = 1} ^ {n} \left(p _ {i, t} ^ {t h} + p _ {i, t} ^ {w} + p _ {i, t} ^ {p v}\right)\tag{9}
+$$
+
+$$
+0 \leq \iota_ {j, t} ^ {b} C _ {j, t} ^ {b} - \iota_ {i, t} C _ {i, t}\tag{10}
+$$
+
+The final profit functions of non-renewable energy GENCOs， renewable energy GENCOs and power purchasers in the power market are shown in Eqs. (11)–(13):
+
+$$
+R _ {i} ^ {t h} = \sum_ {t = 1} ^ {T} \left(R _ {i, t} ^ {t h, e} - C _ {i, t} ^ {t h, v} - C _ {i, t} ^ {t h, f}\right)\tag{11}
+$$
+
+$$
+R _ {i} ^ {w / p v} = \sum_ {t = 1} ^ {T} \left(R _ {i, t} ^ {w / p v, e} - C _ {i, t} ^ {w / p v, v} - C _ {i, t} ^ {w / p v, d}\right)\tag{12}
+$$
+
+$$
+R _ {j} ^ {b} = \sum_ {t = 1} ^ {T} \left(R _ {j, t} ^ {b, u} - C _ {j, t} ^ {b, e} - C _ {j, t} ^ {b, d}\right)\tag{13}
+$$
+
+## 3.3. Multi-level CET market transaction and incentive mechanism
+
+To further enhance the liquidity and activity of CET market, the auction mechanism for carbon quotas in the multi-level CET markets are considered, which could enhance the role of market mechanism in resource allocation and price discovery. As shown in $\mathrm { F i g . }$ 1, thermal GENCOs need to obtain initial carbon quotas through auction mecha nisms in the primary CET market, and then conduct transactions in the secondary CET market based on their own quota amounts. The initial quota allocation mechanism includes three types: free quota mechanism, consignment auction mechanism, and traditional auction mechanism.
+
+## 3.3.1. Primary CET market transaction and incentive mechanism
+
+Firstly, as shown in $\operatorname { E q . }$ (14), the government determines the total initial carbon quota $( Q ^ { c a , t o t a l } )$ ), which is related to initial carbon quota of each non-renewable energy GENCOs $( Q _ { i } ^ { c a , i n i t i a l } )$ [45]. Then GENCOs submit carbon quota demand based on actual carbon emissions $\left( \operatorname { E q . } \right.$ (15)) [44], including bidding carbon quota price $( T _ { i } ^ { c a , b i d } = \imath _ { i } ^ { c a } T _ { 0 } ^ { c a } ) \dot { { \imath } }$ and bidding carbon quota quantity $( Q _ { i } ^ { c a , b i d } )$ .
+
+![](e55f306d531f2ade45ebf693b18308db16424c09d13830fecf1f246764490d77.jpg)  
+Fig. 1. Basic principles of different initial quota allocation mechanism in the primary CET Market.
+
+$$
+\left\{ \begin{array}{c} Q ^ {c a, t o t a l} = \sum_ {i = 1} ^ {n} \sum_ {t = 1} ^ {T} \left(Q _ {i, t} ^ {c a, i n i t i a l}\right) \\ Q _ {i} ^ {c a, i n i t i a l} = \sum_ {t = 1} ^ {T} \left(p _ {i, t} ^ {t h} U H _ {t} ^ {t h} I C _ {i} B _ {i} ^ {e} F _ {i} ^ {c} F _ {i} ^ {r} F _ {i} ^ {f}\right) \end{array} \right.
+$$
+
+$$
+\left\{ \begin{array}{l} Q _ {i} ^ {c a, a c t u a l} = \sum_ {t = 1} ^ {T} \left(p _ {i, t} ^ {t h} E _ {i, t} ^ {t h, t o t a l}\right) \\ E _ {i, t} ^ {t h, t o t a l} = e _ {i} p _ {i, t} ^ {t h ^ {2}} + f _ {i} p _ {i, t} ^ {t h} + g _ {i} \end{array} \right.\tag{14}
+$$
+
+(15)
+
+$$
+\kappa Q _ {i} ^ {c a, i n i t i a l} \leq Q _ {i} ^ {c a, b i d} \leq Q _ {i} ^ {c a, a c t u a l}\tag{17}
+$$
+
+$$
+Q _ {i} ^ {c a, p r i - w i n} = \left\{ \begin{array}{l} Q _ {i} ^ {c a, b i d} T _ {i} ^ {c a, b i d} > T ^ {c a, p r i m a r y} \\ \left(Q ^ {c a, t o t a l} - \sum_ {i = 1} ^ {k} Q _ {i} ^ {c a, p r i - w i n}\right) * \frac {Q _ {i} ^ {c a , b i d}}{\sum_ {i = k} ^ {m} Q _ {i} ^ {c a , b i d}} T _ {k} ^ {c a, b i d} = \dots = T _ {i} ^ {c a, b i d} = \dots T _ {m} ^ {c a, b i d} = T ^ {c a, p r i m a r y} \\ 0 T _ {i} ^ {c a, b i d} <   T ^ {c a, p r i m a r y} \end{array} \right.
+$$
+
+When the total bidding carbon quota quantities are less than or equal to the total initial carbon quota, all bidding quantities of non-renewable energy GENCOs can be satisfied. When the total bidding carbon quota quantities are greater than the total initial carbon quota, the available transaction quantities of non-renewable energy GENCOs is as follows (Eq. (18)) [46]:
+
+The primary CET market adopts the unified price clearing mechanism. The carbon quota prices submitted by non-renewable energy GENCOs are sorted from high to low firstly. When the total bidding carbon quota quantity is less than or equal to the total initial carbon quota, the settlement price of carbon quota is the average price of all bidding carbon quota prices from non-renewable energy GENCOs $( T ^ { c a , p r i m a r y } = \overline { { T _ { i } ^ { c a , b i d } } } )$ ). When the total bidding carbon quota quantity exceeds the total initial carbon quota, the settlement price is the price of the non-renewable energy GENCOs at the supply-demand balance point.
+
+Additionally, as shown in $\operatorname { E q . }$ (16), the bidding carbon quota price is limited by the auction ceiling price $( T ^ { c a , u l } )$ , emission reduction reserve price of GENCOs $( T _ { i } ^ { c a , r e s } = \left( \overline { { w _ { i } ^ { t h } } } - \overline { { c _ { i } ^ { t h , m } } } \right) \bigg / \overline { { E _ { i } ^ { t h } } } )$ , and the auction floor price $( T ^ { c a , a r p } )$ .
+
+(16)
+
+$$
+T ^ {c a, a r p} \leq T _ {i} ^ {c a, b i d} \leq m i n \{\overline {{T ^ {c a , s e c o n d a r y}}}, T _ {i} ^ {c a, r e s} \}\tag{18}
+$$
+
+As shown in Eq. (17), the bidding carbon quota quantity is limited by actual carbon emissions and initial carbon quota. When governments adopt the consignment auction mechanism, $\kappa = 1 ;$ ; when governments adopt the traditional auction mechanism, $\kappa = 0 .$
+
+The profits of GENCOs in the primary CET market are shown in Eq. (19). Where, when governments adopt the free quota mechanism, $R _ { i } ^ { t h , p r i - c e t } \mathrm { i s } 0 .$ . Andψ<sup>R</sup>is the return coefficient of consignment auction mechanism.
+
+$$
+R _ {i} ^ {t h, p r i - c e t} = \left\{ \begin{array}{c} \big (\psi^ {R} Q _ {i} ^ {c a, i n i t i a l} - Q _ {i} ^ {c a, p r i - w i n} \big) T ^ {c a, p r i m a r y}   \kappa = 1 \\ - Q _ {i} ^ {c a, p r i - w i n} T ^ {c a, p r i m a r y}   \kappa = 0 \end{array} \right.\tag{19}
+$$
+
+## 3.3.2. Secondary CET market transaction and incentive mechanism
+
+After the transaction in the primary CET market, GENCOs voluntarily engage in the secondary CET market and CCER market. The expected transaction quantity of CCER is $Q _ { i , t } ^ { c c e r , s e c o n d a r y } ( { \mathrm { E q . ~ } } ( 2 0 ) )$ , and the expected transaction quantity of carbon quota in the secondary CET market is $O _ { i , t } ^ { c a , s e c o n d a r y } ( \mathrm { E q }$ . (21)). CCER price is determined by the supply volume $( Q _ { t } ^ { c c e r }$ )in the CCER market (Eqs. (22)–(23)), while the carbon quota price is determined by the supply and demand relationship $( \gamma _ { t } ^ { c a } )$ in the secondary CET market (Eqs. (24)–(25)) [46].The specific transaction equations for the secondary CET market are as follows:
+
+$$
+Q _ {i, t} ^ {\text { ccer,secondary }} = \frac {\alpha^ {\text { ccer }} Q _ {i} ^ {\text { ca,ininitial }} p _ {i , t} ^ {\text { th }}}{\sum_ {t = 1} ^ {T} p _ {i , t} ^ {\text { th }}}\tag{20}
+$$
+
+$$
+Q _ {i, t} ^ {\text { ca,secondary }} = Q _ {i, t} ^ {\text { ca,actual }} - \frac {Q _ {i} ^ {\text { ca,pri - win }} p _ {i , t} ^ {\text { th }}}{\sum_ {t = 1} ^ {T} p _ {i , t} ^ {\text { th }}} - Q _ {i, t} ^ {\text { ccer,secondary }}\tag{21}
+$$
+
+$$
+Q _ {t} ^ {\text { ccer }} = \theta \sum_ {i = 1} ^ {n} \left(p _ {i, t} ^ {\text { w }, \text { actual }} + p _ {i, t} ^ {\text { pv }, \text { actual }}\right) - \sum_ {i = 1} ^ {n} \left(q _ {i, t} ^ {\text { w }, \text { tgc }} + q _ {i, t} ^ {\text { pv }, \text { tgc }}\right)\tag{22}
+$$
+
+$$
+T _ {t} ^ {c c e r} = \left\{ \begin{array}{c} T _ {0} ^ {c c e r} Q _ {t} ^ {c c e r} \leq l ^ {c c e r} \\ T _ {0} ^ {c c e r} (1 - \mu^ {c c e r}) l ^ {c c e r} <   Q _ {t} ^ {c c e r} \leq 2 l ^ {c c e r} \\ \vdots \\ T _ {0} ^ {c c e r} (1 - n \mu^ {c c e r}) Q _ {t} ^ {c c e r} > n l ^ {c c e r} \end{array} \right.\tag{23}
+$$
+
+$$
+\left\{ \begin{array}{c} Q _ {t} ^ {c a, s e c - s u p p l y} = \sum_ {Q _ {i, t} ^ {c a, s e c o n d a r y} <   0} \left| Q _ {i, t} ^ {c a, s e c o n d a r y} \right| \\ Q _ {t} ^ {c a, s e c - d e m a n d} = \sum_ {Q _ {i, t} ^ {c a, s e c o n d a r y} \geq 0} Q _ {i, t} ^ {c a, s e c o n d a r y} \\ \gamma_ {t} ^ {c a} = \frac {Q _ {t} ^ {c a , s e c - s u p p l y}}{Q _ {t} ^ {c a , s e c - d e m a n d}} \end{array} \right.\tag{24}
+$$
+
+$$
+T _ {t} ^ {c a, \text { secondary }} = \left\{ \begin{array}{c} T ^ {c a, \text { primary }} (1 + v ^ {c a}) \gamma_ {t} ^ {c a} \geq 1 + v ^ {c a} \\ T ^ {c a, \text { primary }} \gamma_ {t} ^ {c a} 1 - v ^ {c a} <   \gamma_ {t} ^ {c a} <   1 + v ^ {c a} \\ T ^ {c a, \text { primary }} (1 - v ^ {c a}) \gamma_ {t} ^ {c a} \leq 1 - v ^ {c a} \end{array} \right.\tag{25}
+$$
+
+In addition, there are some transaction constraints, including carbon quota quantity constraint in Eq. (26), CCER deduction constraint in Eq. (27), and CCER price constraint in $\operatorname { E q . }$ (28).
+
+$$
+Q _ {i} ^ {c a, p r i - w i n} + \sum_ {t = 1} ^ {T} \left(Q _ {i, t} ^ {c a, s e c - w i n} + Q _ {i, t} ^ {c c e r, s e c o n d a r y} + \tau_ {i, t} ^ {t g c - c a} Q _ {i, t} ^ {t g c}\right) \leq Q _ {i} ^ {c a, a c t u a l}\tag{26}
+$$
+
+$$
+0 \leq \alpha^ {c c e r} \leq 5 \%\tag{27}
+$$
+
+$$
+T _ {t} ^ {\text { ccer }} \leq T ^ {\text { cet.penalty }}\tag{28}
+$$
+
+Based on the supply and demand situation of carbon quotas in the secondary CET market, the quantity of carbon quotas that GENCOs could obtain is as Eq. (29):
+
+$$
+Q _ {i, t} ^ {c a, s e c - w i n} = \left\{ \begin{array}{c} Q _ {i, t} ^ {c a, s e c o n d a r y} Q _ {i, t} ^ {c a, s e c o n d a r y} \geq 0, Q _ {t} ^ {c a, s e c - s u p p l y} <   Q _ {t} ^ {c a, s e c - d e m a n d} \\ \frac {Q _ {i , t} ^ {c a , s e c o n d a r y} Q _ {t} ^ {c a , s e c - s u p p l y}}{Q _ {t} ^ {c a , s e c - d e m a n d}} Q _ {i, t} ^ {c a, s e c o n d a r y} <   0, Q _ {t} ^ {c a, s e c - s u p p l y} <   Q _ {t} ^ {c a, s e c - d e m a n d} \\ Q _ {i, t} ^ {c a, s e c o n d a r y} Q _ {t} ^ {c a, s e c - s u p p l y} = Q _ {t} ^ {c a, s e c - d e m a n d} \\ \frac {Q _ {i , t} ^ {c a , s e c o n d a r y} Q _ {t} ^ {c a , s e c - d e m a n d}}{Q _ {t} ^ {c a , s e c - s u p p l y}} Q _ {i, t} ^ {c a, s e c o n d a r y} \geq 0, Q _ {t} ^ {c a, s e c - s u p p l y} > Q _ {t} ^ {c a, s e c - d e m a n d} \\ Q _ {i, t} ^ {c a, s e c o n d a r y} Q _ {i, t} ^ {c a, s e c o n d a r y} <   0, Q _ {t} ^ {c a, s e c - s u p p l y} > Q _ {t} ^ {c a, s e c - d e m a n d} \end{array} \right.\tag{29}
+$$
+
+Non-renewable energy GENCOs can convert carbon quotas for TGC to achieve emission reduction targets, which is influenced by the coefficient of TGC converting to CA $( \tau _ { i , t } ^ { t g c - c a } )$ . And failure to obtain sufficient carbon quotas will result in punishment. Therefore, the final profit function of non-renewable GENCOs in the secondary CET market is as Eq. (30):
+
+$$
+\begin{array}{l} R _ {i} ^ {\text {th,sec - cet}} = \sum_ {t = 1} ^ {T} \left(Q _ {i, t} ^ {\text {ca,sec - win}} T _ {t} ^ {\text {ca,secondary}}\right) - T ^ {\text {cet,penalty}} \left[ Q _ {i} ^ {\text {ca,actual}} - \left(Q _ {i} ^ {\text {ca,pri - win}} + \sum_ {t = 1} ^ {T} \left(Q _ {i, t} ^ {\text {ca,sec - win}} + Q _ {i, t} ^ {\text {ccer,secondary}} + \tau_ {i, t} ^ {\text {tgc - ca}} Q _ {i, t} ^ {\text {tgc}}\right)\right) \right] \end{array}\tag{30}
+$$
+
+Additionally, renewable energy GENCOs will gain revenue from selling CCER. Therefore, their profit functions are shown in Eq. (31):
+
+$$
+R _ {i} ^ {w / p v, s e c - c e t} = \sum_ {t = 1} ^ {T} \frac {p _ {i , t} ^ {w / p v} T _ {t} ^ {c c e r} \sum_ {i = 1} ^ {n} Q _ {i , t} ^ {c c e r , s e c o n d a r y}}{\sum_ {i = 1} ^ {n} p _ {i , t} ^ {w / p v}}\tag{31}
+$$
+
+## 3.4. Multi-type TGC market transaction and incentive mechanism
+
+To further expand the transaction scale of TGC market, this article assumes that TGC can be traded again. As shown in Fig. 2, firstly, power purchasers buy unbundling TGC<sup>1</sup> (TGC and green electricity are separate) in the compulsory TGC market to meet RPS. Subsequently, power purchasers can trade their unbundling TGC and bundling TGC<sup>2</sup> (TGC and green electricity are not separate) in the voluntary TGC market to obtain more environmental premiums from clean energy.
+
+## 3.4.1. Compulsory TGC market transaction and incentive mechanism
+
+Firstly, as shown in Eq. (32), the power purchasers determine the proportion of renewable energy purchased in the overall energy $( \xi _ { j , t } ^ { b } ) .$ The compare $\xi _ { j , t } ^ { b }$ with the RPS (δ) to determine the required quantity of TGC $( Q _ { t } ^ { t g c , c m } )$ in Eq. (33). In addition, the TGC prices $( T _ { t } ^ { t g c , c m } )$ in the compulsory TGC market is determined using the Cournot model as Eq. (34).
+
+$$
+\left\{ \begin{array}{c} \xi_ {j, t} ^ {b} = \frac {p _ {j , t} ^ {G}}{q _ {j , t} ^ {b}} \\ q _ {j, t} ^ {b} = p _ {j, t} ^ {t h} + p _ {j, t} ^ {w} + p _ {j, t} ^ {p v} \\ p _ {j, t} ^ {G} = p _ {j, t} ^ {w} + p _ {j, t} ^ {p v} \end{array} \right.\tag{32}
+$$
+
+$$
+\begin{array}{l} Q _ {j, t} ^ {t g c, c m} = \left\{ \begin{array}{c} q _ {j, t} ^ {b} \left(\delta - \xi_ {j, t} ^ {b}\right) \delta \geq \xi_ {j, t} ^ {b} \\ 0 \delta <   \xi_ {j, t} ^ {b} \end{array} \right. \\ \left\{ \begin{array}{c} T _ {t} ^ {t g c, c m} = T _ {0} ^ {t g c, c m} - \frac {\left(1 - \varepsilon_ {0} ^ {t g c , c m}\right) T _ {0} ^ {t g c , c m} Q _ {t} ^ {t g c , c m}}{\delta \left(\sum_ {j = 1} ^ {n} q _ {j , t} ^ {b}\right)} \\ Q _ {t} ^ {t g c, c m} = \sum_ {i = 1} ^ {n} \left(q _ {i, t} ^ {w, t g c, c m} + q _ {i, t} ^ {p v, t g c, c m}\right) \end{array} \right. \end{array}\tag{33}
+$$
+
+(34)
+
+Due to the fact that the sellers of TGC and CCER are both renewable energy GENCOs, in order to avoid duplicate subsidies for environmental value, the following constraint (Eq. (35)) must be set up:
+
+$$
+\left\{ \begin{array}{l} \frac {q _ {i , t} ^ {w , c c e r}}{\theta} + q _ {i, t} ^ {w, t g c, c m} = p _ {i, t} ^ {w, a c t u a l} \\ \frac {q _ {i , t} ^ {p v , c c e r}}{\theta} + q _ {i, t} ^ {p v, t g c, c m} = p _ {i, t} ^ {p v, a c t u a l} \end{array} \right.
+$$
+
+(35)
+
+![](576256a23937af564be303ebe406f0ccb0499eae2fd7421e03f6a2505de19527.jpg)  
+Fig. 2. Multi-type TGC market transaction mechanism.
+
+The costs for power purchasers (Eq. (36)) and the benefits for renewable energy GENCOs (Eq. (37)) in compulsory TGC markets are:
+
+$$
+R _ {j} ^ {t g c, c m} = - C _ {j} ^ {t g c, c m} = - \sum_ {t = 1} ^ {n} \left(Q _ {j, t} ^ {t g c, c m} T _ {t} ^ {t g c, c m}\right)\tag{36}
+$$
+
+$$
+R _ {i} ^ {w / p v, t g c - c m} = \sum_ {t = 1} ^ {T} \frac {p _ {i , t} ^ {w / p v} T _ {t} ^ {t g c , c m} \sum_ {j = 1} ^ {n} Q _ {j , t} ^ {t g c , c m}}{\sum_ {i = 1} ^ {n} p _ {i , t} ^ {w / p v}}\tag{37}
+$$
+
+## 3.4.2. Voluntary TGC market transaction and incentive mechanism
+
+The establishment of the voluntary TGC market can increase the implicit value of TGC to a certain extent, which helps to enhance the enthusiasm of various entities to participate in TGC transaction. As shown in Eq. (38), the power purchasers can trade multiple types of TGC including bundling TGC $( p _ { j , t } ^ { G } )$ , unbundling TGC $( Q _ { j , t } ^ { t g c , c m } )$ and the TGC which is converted from carbo quota $( \tau _ { i , t } ^ { c a - t g c , d } Q _ { j , t } ^ { c a } )$ or CCER $( \tau _ { i , t } ^ { c c e r - t g c , d } Q _ { j , t } ^ { c c e r } )$ in the voluntary TGC market. In addition, the TGC prices $( T _ { t } ^ { t g c , v m } )$ in the voluntary TGC market are determined by the supply and demand situation (Eq. (39)). The specific transaction equations for the voluntary TGC market are as follows:
+
+$$
+Q _ {j, t} ^ {t g c, v m} = Q _ {j, t} ^ {t g c, c m} + p _ {j, t} ^ {G} + \tau_ {i, t} ^ {c a - t g c} Q _ {j, t} ^ {c a} + \tau_ {i, t} ^ {c c e r - t g c} Q _ {j, t} ^ {c c e r}\tag{38}
+$$
+
+$$
+T _ {t} ^ {t g c, v m} = \left\{ \begin{array}{c} \psi^ {P *} (T ^ {t g c, c m} (1 + v ^ {t g c})) \gamma_ {t} ^ {t g c} \geq 1 + v ^ {t g c} \\ \psi^ {P *} (T ^ {t g c, c m} \gamma_ {t} ^ {t g c}) 1 - v ^ {t g c} <   \gamma_ {t} ^ {t g c} <   1 + v ^ {t g c} \\ \psi^ {P *} (T ^ {t g c, c m} (1 - v ^ {t g c})) \gamma_ {t} ^ {t g c} \leq 1 - v ^ {t g c} \end{array} \right.\tag{39}
+$$
+
+The profits of power purchasers in the voluntary TGC market are as Eq. (40):
+
+$$
+R _ {j} ^ {t g c, v m} = \sum_ {t = 1} ^ {n} \left(Q _ {j, t} ^ {t g c, v m} T _ {t} ^ {t g c, v m}\right)\tag{40}
+$$
+
+## 4. Objective function and solution methodology
+
+In the power market, multi-level CET market, and multi-type TGC market transactions, GENCOs and power purchasers formulate transaction strategies with the goal of maximizing their own interests. To ensure that all participants no longer change their bidding behavior and achieve the game equilibrium in all markets, it is necessary to set the maximum profits of each participant as the objective function. The profit functions of each entity in various markets are as follows (Eqs. (41)– (43)):
+
+$$
+\max U _ {i} ^ {t h} = R _ {i} ^ {t h} + R _ {i} ^ {t h, p r i - c e t} + R _ {i} ^ {t h, s e c - c e t}\tag{41}
+$$
+
+$$
+\max U _ {i} ^ {w / p v} = R _ {i} ^ {w / p v} + R _ {i} ^ {w / p v, s e c - c e t} + R _ {i} ^ {w / p v, t g c - c m}\tag{42}
+$$
+
+$$
+\max U _ {j} ^ {b} = R _ {j} ^ {b} + R _ {j} ^ {t g c, c m} + R _ {j} ^ {t g c, v m}\tag{43}
+$$
+
+In fact, GENCOs and power purchasers are intelligent agents with self-learning ability, which can improve their transaction strategies based on market transaction conditions and the behavior of other entities [41]. Therefore, in order to more accurately and effectively simulate the competitive game behavior of GENCOs and power purchasers in the power market, multi-level CET markets, and multi-type TGC market, this article introduces the multi-agent deep deterministic policy gradient (MADDPG) algorithm to analyze and solve the market transaction model, as shown in Fig. 3. The MADDPG algorithm has the advantage of “centralized training and distributed execution”. In the process of multi-market transaction, each participant can obtain the status and action information of other transaction entities to better optimize future transaction strategies.
+
+In the process of reinforcement learning, multi-agent systems need to be described using Markov game process (MGP). The Markov game process can usually be represented as a tuple(N, $S , A , T , \gamma , R )$ .Where, N is the number of intelligent agents; ${ \pmb S } = \{ s _ { 1 } , s _ { 2 } . . . s _ { n } \} { \bf i }$ s the state space for intelligent agents; $A = \{ a _ { 1 } , a _ { 2 } . . . a _ { n } \} \mathrm { i }$ is the action space for intelligent agents. T is the state transition function, which gives the probability of the next state based on the current system state and the joint action. γis the discount factor; $R = \{ r _ { 1 } , r _ { 2 } . . . r _ { n } \}$ is the reward function. The multimarket transaction model constructed in this article can also be described using Markov game processes, as shown in Table 2.
+
+The MADDPG algorithm is a deep deterministic strategy gradient algorithm based on the actor-critic framework. And it uses deep neural networks (DNNs) to train the strategy network $\pi = \{ \pi _ { 1 } , \pi _ { 2 } . . . \pi _ { \mathrm { n } } \}$ and critic network, where, the parameters of the strategy network areθ = $\left\{ \theta _ { 1 } , \theta _ { 2 } . . . \theta _ { \mathrm { n } } \right\}$ . During the algorithm training process, the deep deterministic strategy gradient of the agent can be expressed as Eq. (44):
+
+![](44a7c94dd3318bf1638e9a2cb53c4096f51d28fb217c02e205257b0818a86e9c.jpg)  
+Fig. 3. Multi-market transaction framework based on MADDPG algorithm.
+
+Table 2  
+Markov game process of the multi-market transaction models.
+
+<div class="mineru-algorithm" style="white-space: pre-wrap; font-family:monospace;">
+Elements Variables in the multi-market transaction models
+N The sum of the number of GENCOs and the number of power purchasers.
+S Transaction quantities of GENCOs:  $\left\{p_{i,t}^{th}, p_{i,t}^{pv}, p_{i,t}^{w}, Q_{i}^{ca,pri-win}\right\}$ 
+Transaction prices of GENCOs:  $\left\{t_{i,t}C_{i,t}, T^{ca,primary}\right\}$ 
+Strategy coefficients for GENCOs and power
+A purchasers:  $\left\{t_{i,t}^{th}, t_{i,t}^{pv}, t_{i,t}^{w}, t_{i}^{cet}, t_{j,t}^{b}\right\}$ 
+Bidding quantities of GENCOs:  $\left\{p_{i,t}^{th,bid}, p_{i,t}^{pv,bid}, p_{i,t}^{w,bid}, Q_{i}^{ca,bid}\right\}$ 
+R Profits of GENCOs and power purchasers:  $\left\{U_{i}^{th}, U_{i}^{w/pv}, U_{j}^{b}\right\}$
+</div>
+
+$$
+\nabla_ {\theta_ {i}} J (\pi_ {i}) = E _ {s, a \sim D} \Big [ \nabla_ {\theta_ {i}} \pi_ {i} \Big (a _ {i} | s _ {i} \Big) \nabla_ {a _ {i}} Q _ {i} ^ {\pi} (s, a) \big | _ {a _ {i} = \pi_ {i} (s _ {i})} \Big ]\tag{44}
+$$
+
+Where, s is environmental information. $\pi _ { i } ( a _ { i } )$ is the current strategy function. $Q _ { i } ^ { \pi } ( s , a )$ is the action value function. s and a are the state and action vectors of the agent. D is the experience recycling pool. During the interaction between intelligent agents and the environment, the value loss function of the critic network can be expressed as Eq. (45):
+
+$$
+L (\theta_ {i}) = E _ {s, a, r, s ^ {\prime}} \left[ \left(Q _ {i} ^ {\pi} (s, a | \theta_ {i}) - \left(r _ {i} + \gamma Q _ {i} ^ {\pi^ {\prime}} (s ^ {\prime}, a ^ {\prime} | \theta_ {i} ^ {\prime}) \big | _ {a _ {i} ^ {\prime} = \pi_ {i} ^ {\prime} (s _ {i})}\right)\right) ^ {2} \right]\tag{45}
+$$
+
+Where, ${ \theta } _ { i } ^ { ' }$ is the parameters of the target strategy network. $r _ { i }$ is the reward received by the agent. $Q _ { i } ^ { \pi }$ is the action value function of the target network. s’anda’are the state and action vector of the agent at the next moment. And $\pi _ { i } ^ { ' } ( s _ { i } )$ is the target strategy function.
+
+The parameters of both the actor target network and the critic target network are updated using soft updates (Eq. (46)–(47)):
+
+$$
+\theta_ {i} ^ {\pi^ {\prime}} \rightarrow \tau \theta_ {i} ^ {\pi} + (1 - \tau) \theta_ {i} ^ {\pi^ {\prime}}\tag{46}
+$$
+
+$$
+\theta_ {i} ^ {\dot {Q}} \rightarrow \tau \theta_ {i} ^ {\dot {Q}} + (1 - \tau) \theta_ {i} ^ {\dot {Q}}\tag{47}
+$$
+
+Where, τis the soft update coefficient, andτ $\leq 1$
+
+## 5. Market liquidity measurement
+
+To measure the effectiveness of various market incentive mechanisms proposed in this article, this article introduces the market illiquidity ratio which considering both transaction volume and price factors to reflect changes in market liquidity under different market incentive mechanisms. The low value of the illiquidity ratio implies that the market is highly active [47,48]. The market illiquidity ratio func tions are as follows:
+
+$$
+i l l i q _ {c} = \frac {\left| I D R _ {c} \right|}{T R _ {c}}\tag{48}
+$$
+
+$$
+I D R _ {c} = \operatorname{In} \left(p r i c e _ {c, h}\right) - \operatorname{In} \left(p r i c e _ {c, l}\right)\tag{49}
+$$
+
+$$
+T R _ {c} = \text { volume } _ {c} / \sum_ {c = 1} ^ {6} (\text { volume } _ {c})\tag{50}
+$$
+
+Where, illiq is the market illiquidity measurement indicator. IDR is the logarithmic return of transaction price. $p r i c e _ { c , h }$ and $p r i c e _ { c , l }$ is the highest and lowest transaction price. TR is the turnover rate. volume is the transaction quantity. C is the sequence number of the cases.
+
+## 6. Simulation results and discussion
+
+In this section, we conduct simulation on the proposed market mechanisms by actual data and discuss our findings including transaction results in the power, CET and TGC markets, as well as sensitivity analysis of key factors.
+
+## 6.1. Case settings and data sources
+
+At present, the main types of GENCOs participating in the power, CET and TGC market includes coal-fired GENCOs, gas power GENCOs, centralized wind GENCOs and photovoltaic GENCOs. Therefore, based on the current installed capacity ratio in $\mathtt { C h i n a } ^ { 3 } \ [ 6 1 , 6 2 ]$ , this article assumes that there is one power purchaser and eleven GENCOs in the power-CET-TGC integrated market, including four coal-fired GENCOs (1000 MW, 600 MW, 600 MW, 300 MW), two gas power GENCOs (400 MW, 500 MW), three wind power GENCOs (350 MW, 250 MW, 250 MW), and two photovoltaic power GENCOs (450 M, 300 MW).
+
+Additionally, to reflect the diversity of traders in the current markets, the technical characteristics and parameters of GENCOs with the same capacity are different. The basic parameters of GENCOs, power purchasers, and various markets are shown in Table 3 [49,50] and Appendix B [47], [51–58]. Besides, the predicted output range and actual output curve of wind and photovoltaic power GENCOs are shown in $\mathrm { F i g . C . 1 ( a ) } ,$ And the power demand and electricity selling price of users are shown in Fig. C.1(b) [59,60].
+
+Moreover, to explore the impact of different carbon quota auction mechanisms and TGC transaction mechanisms on the behavior for various GENCOs and power purchasers, this article sets up six cases as shown in Table 4.
+
+## 6.2. Transaction results in the power market
+
+In this subsection, we mainly discuss the transaction results on power purchasers and various GENCOs in the power market. As shown in Fig. 4 (a) and Fig. D.1, overall, after the carbon quota auction mechanism and the voluntary TGC mechanism being considered (case2–6), the average increase in transaction energy of renewable energy GENCOs is around 19.02%, while the average decrease in transaction energy of nonrenewable energy GENCOs is around 7.48%. This reflects that as the carbon cost of non-renewable energy raises and the green value of renewable energy magnifies, power purchasers are more inclined to buy wind and photovoltaic power. Among them, the combined effect of the traditional auction mechanism and the voluntary TGC mechanism (case 5) is the most obvious in promoting the consumption of clean energy in the power market.
+
+The transaction prices in different cases are shown in Fig. 4(b) and Fig. E.1. After adopting the carbon quota auction mechanism, the average transaction price in the power market increase from 408 CNY/ MWh to 467.34 CNY/MWh. The power transaction prices under the consignment auction mechanism are lower than that under the tradi tional auction mechanism, which could contribute to reducing the risk of cost transfer from GENCOs to the user side and stabilizing market operation. In addition, the voluntary transaction mechanism for TGC is mainly aimed at raising the added value of power purchasers for buying green electricity, and stimulating their willingness to consume clean energy. In fact, the purchase cost of green electricity has not changed apparently. Therefore, compared to case 1, after adopting the TGC voluntary transaction mechanism (case 4–6), the average transaction price of renewable energy power GENCOs remains at 410 CNY/MWh, without obvious alterations.
+
+The bidding strategies of each GENCO under market equilibrium are shown in Fig. 5. The bidding strategy coefficients of coal-fired GENCOs (GENCO1–4) range from 1.5 to 2.05, while the bidding strategy coefficients of gas power GENCOs (GENCO5–6) and renewable energy GENCOs range from 1.0 to 1.5. This is mainly due to the differentiated generation costs for various GENCOs. Among them, the average bidding strategy coefficients of non-renewable energy GENCOs (GENCO1–6) in case 2 and case 5 are higher than those in case 3 and case $^ { 6 , }$ indicating that the carbon cost transmission effect of the traditional auction mechanism is stronger than that of the consignment auction mechanism. The traditional auction mechanism will cause non-renewable energy GENCOs to increase their prices in the power market to compensate for the losses in the CET market. In addition, after introducing various transaction mechanisms, the bidding strategy coefficients of renewable energy power GENCOs has decreased to a certain extent, but the change is not significant.
+
+## 6.3. Transaction results in the CET and TGC markets
+
+In this subsection, we concentrate on analyzing the transaction results on power purchasers and various GENCOs in the CET and TGC market. To further compare and analyze the impact of the traditional auction mechanism and the consignment auction mechanism on the transaction behavior for various GENCOs, the bidding strategy coefficients and transaction scale of GENCOs in the primary CET market are explored. As shown in Fig. $^ { 6 , }$ under the traditional auction mechanism\ (case 2 and case 5), the bidding strategy coefficients on carbon quota of non-renewable energy GENCOs are generally between 1 and $^ { 2 , }$ while under the consignment auction mechanism (case 3 and case $\left. \right) ,$ that is generally between 1.2 and 2.5. In addition, the transaction quantities of the primary CET market under the consignment auction mechanism are 48,146 t-50,099 $\mathbf { t } ,$ while under the traditional auction mechanism are 33,391 t-38,906 t. The reason is that after adopting the consignment auction mechanism, governments will return the profits obtained to GENCOs. Therefore, GENCOs tend to increase the bidding prices and quantities of carbon quotas to achieve higher clearing prices and winning quantities, ultimately receive more profit from returning carbon quota income. In addition, due to the impact of power generation scale and carbon emission coefficients, coal-fired power GENCOs are the main participants in the primary CET market.
+
+As shown in $\mathrm { F i g . } \ 7 \ ( \mathrm { a } ) .$ , this section summarizes the transaction quantities and prices of multi-level CET markets under different cases. From the perspective of transaction quantities, with the addition of the carbon quota auction mechanism, the overall transaction scale in the multi-level CET markets has remarkably increased, reaching basically 50,000 t. Among them, the consignment auction mechanism mainly promotes the expansion of the trading scale in the primary CET market, while the traditional auction mechanism also stimulates the growth of the trading volume in the primary CET, secondary CET, and CCER market simultaneously. From the perspective of transaction prices, there is a trend of convergence between the primary and secondary CET markets, with fluctuations between 75 $\mathrm { C N Y / t } { \cdot } 9 0 \ \mathrm { C N Y / t } ,$ which could strengthen the linkage between the two markets. In particular, the transaction price of the primary CET market is higher than that of the secondary CET market under the consignment auction mechanism, but the traditional auction mechanism is the opposite. In addition, as a supplement to carbon quotas, the transaction price of CCER is similar to the price trend in the secondary CET market.
+
+As shown in ${ \mathrm { F i g . ~ 7 ~ } } ( \mathbf { b } )$ , this section summarizes the transaction quantities and prices of multi-type TGC markets under different cases. With the introduction of the voluntary TGC market mechanism (case 4–6), the average transaction prices of the compulsory TGC market have increased from 67 CNY/MWh to 88 CNY/MWh. However, the changes in transaction volume are not very significant. This is mainly due to the voluntary TGC market allowing TGC to be traded again, which is conducive to promote further enhancement for the clean and low carbon value on TGC, and lead to higher selling prices of TGC originating from wind and photovoltaic GENCOs. Meanwhile, RPS has not altered, so the purchase amount of power purchasers in the compulsory TGC market will not change either. In addition, due to the oversupply of the voluntary TGC market, the average transaction price in the voluntary TGC market is about 23 CNY/MWh, which is about 1/4 of the price in the compulsory TGC market. It can be observed that bundling TGC are the main trading variety in the voluntary TGC market, accounting for about 2/3 of the total transaction volume.
+
+Table 3  
+Basic parameters of renewable energy GENCOs.
+
+<table><tr><td rowspan="2">GENCO</td><td rowspan="2">Maximum technical output (MW)</td><td rowspan="2">Minimum technical output (MW)</td><td colspan="3">Fuel cost coefficients [49]</td><td colspan="3">Carbon emission coefficients [49]</td><td rowspan="2">Benchmark value of free carbon quota [50]</td></tr><tr><td> $a_i$ </td><td> $b_i$ </td><td> $c_i$ </td><td> $e_i$ </td><td> $f_i$ </td><td> $g_i$ </td></tr><tr><td>G1</td><td>1000</td><td>400</td><td>0.0259</td><td>86.23</td><td>47,205</td><td>-0.3861</td><td>1020.2</td><td>0</td><td>0.821</td></tr><tr><td>G2</td><td>600</td><td>240</td><td>0.025</td><td>127.57</td><td>14,355</td><td>-0.3051</td><td>972.3</td><td>0</td><td>0.821</td></tr><tr><td>G3</td><td>600</td><td>240</td><td>0.0242</td><td>122.58</td><td>10,033</td><td>-0.2342</td><td>877.1</td><td>0</td><td>0.821</td></tr><tr><td>G4</td><td>300</td><td>120</td><td>0.0387</td><td>138.36</td><td>6164.6</td><td>-0.4041</td><td>996.2</td><td>0</td><td>0.892</td></tr><tr><td>G5</td><td>400</td><td>160</td><td>0.368</td><td>115.6</td><td>48,049</td><td>-0.0594</td><td>321.84</td><td>0</td><td>0.393</td></tr><tr><td>G6</td><td>500</td><td>200</td><td>0.368</td><td>115.6</td><td>48,049</td><td>-0.0594</td><td>321.84</td><td>0</td><td>0.393</td></tr></table>
+
+<table><tr><td></td><td>Free quota mechanism</td><td>Traditional auction mechanism</td><td>Consignment auction mechanism</td><td>Voluntary TGC market transaction mechanism</td></tr><tr><td>CASE1</td><td>√</td><td></td><td></td><td></td></tr><tr><td>CASE2</td><td></td><td>√</td><td></td><td></td></tr><tr><td>CASE3</td><td></td><td></td><td>√</td><td></td></tr><tr><td>CASE4</td><td>√</td><td></td><td></td><td>√</td></tr><tr><td>CASE5</td><td></td><td>√</td><td></td><td>√</td></tr><tr><td>CASE6</td><td></td><td></td><td>√</td><td>√</td></tr></table>
+
+## 6.4. Multi-market transaction analysis
+
+## 6.4.1. Profits of different GENCOs in the power, CET, CCER and TGC markets
+
+In this subsection, the profits and game processes in power, CET, CCER and TGC markets are discussed. In addition, the simulation results of different cases are compared and analyzed. Because this article sets all GENCOs as intelligent agents, they continuously adjust and update multi-market trading strategies after capturing changes in the external market environment. Taking case 6 as an example, the training process for multi-market transaction of GENCOs based on MADDPG algorithm is shown in Fig. F.1. Until the training time reaches 3500, the profits of multiple market participants tend to stabilize, and each GENCO no longer changes its trading strategy, and all markets reach an equilibrium state.
+
+The profit situation of GENCOs in various markets is shown in Fig. 8. Overall, the power market revenue remains the main profit source for GENCOs. For non-renewable energy GENCOs, the consignment auction mechanism can basically achieve the balance between the income and expenditure of carbon quotas, and some GENCOs with lower carbon emissions can also sell excess carbon quotas in the secondary CET market to obtain profits. However, under the traditional auction mechanism, non-renewable energy GENCOs need to bear considerable carbon costs, accounting for almost 15% -20% of their total revenue. It reflects that under the current market situation, directly introducing the traditional auction mechanism will exert critical influence on thermal power GENCOs.
+
+![](a0b6574e23ff9e39c6986108dc3cfcc9ce26dc31a2646e5c6aa8d093ef45c61c.jpg)  
+Total transaction energy of renewable energy GENCOs (MWh) Total transaction energy of non-renewable energy GENCOs (MWh) Total transaction energy (MWh (a) Transaction energy in the power market
+
+![](6c21e176d35ebfede010d1be3f91e8c83b5122b770f48f398c9a94cb50881959.jpg)  
+Average transaction price (CNY/MWh) Average transaction price of non-renewable energy GENCOs (CNY/MWh) Average transaction price of renewable energy GENCOs (CNY/MWh (b) Transaction prices in the power market  
+Fig. 4. Transaction energy and prices in the power market under different cases.
+
+![](5a2197d908b59f53fb6aa84f504a5624cbd63b3c8b6ecd990b616955777da22f.jpg)  
+GENCOs
+
+Fig. 5. Bidding strategy coefficients of GENCOs in the power market under different cases.  
+![](271c07f8198de045c92a968c027876d375ec203635dc438fc6e50e9a0dd9756c.jpg)  
+(a) Bidding strategy coefficients of primary CET market under differnet cases
+
+![](48958b0c12cdb80dff33ad7d3c5b98015aa3f737c8d2f44702cf80a9407246ce.jpg)  
+(b) Transaction quantities of GENCOs in primary CET market  
+Fig. 6. Bidding strategy coefficients and transaction quantities in primary CET market.
+
+For renewable energy GENCOs, both the consignment auction mechanism and the traditional auction mechanism can promote the growth of their power market revenue, whose growth rate are around 6.5%. Among them, the traditional auction mechanism has stronger incentive effect. This is mainly due to the more obvious reduction effect of the traditional auction mechanism on the bidding space of nonrenewable energy GENCOs in the power market compared to the consignment auction mechanism, and correspondingly, the more sig nificant expansion effect on the bidding space of renewable energy GENCOs in the power market. In addition, the beneficiaries of the voluntary TGC market mechanism are mainly power purchasers, so this mechanism only increases the profits of renewable energy GENCOs in TGC market to a certain extent, but not significant.
+
+6.4.2. Carbon emissions and consumption proportion of different GENCOs
+
+As shown in Table 5, after adopting stricter carbon quota allocation mechanisms, the increased carbon costs of non-renewable energy GENCOs have forced them to reduce emissions. Therefore, compared to case 1, most non-renewable energy GENCOs have reduced their carbon emissions by about 20% -30% in case 2–6. However, GENCO1 and
+
+![](c7824e9291f08c0d2fbfb6bca9dd0b41238a2c2c6f24b794e07f74e6c03fa120.jpg)  
+(a)Transaction situation of the primary CET, secondary CET and CCER markets
+
+![](26dabe4da839e645d72493d236443c06b799050b952b6890b51791b99860ffde.jpg)  
+(b)Transaction situation of compulsory TGC and voluntary TGC markets
+
+Fig. 7. Transaction situation of multi-level CET markets, CCER market and multi-type TGC markets  
+![](fcb10069ed39108c74ce425881af3680773b6d8a69dbd7594dc85a6d886f7579.jpg)  
+Fig. 8. Profits of different GENCOs in the power, CET, CCER and TGC markets.
+
+Total carbon emissions of non-renewable energy GENCOs in different cases.
+
+<table><tr><td></td><td>GENCO1 (t)</td><td>GENCO2 (t)</td><td>GENCO3 (t)</td><td>GENCO4 (t)</td><td>GENCO5 (t)</td><td>GENCO6 (t)</td></tr><tr><td>CASE1</td><td>11,847.42</td><td>8665.53</td><td>7994.92</td><td>5020.32</td><td>2206.70</td><td>2650.53</td></tr><tr><td>CASE2</td><td>12,264.59</td><td>6716.00</td><td>8960.62</td><td>3779.03</td><td>1249.62</td><td>1638.36</td></tr><tr><td>CASE3</td><td>12,333.66</td><td>8088.26</td><td>9216.24</td><td>4388.20</td><td>1640.33</td><td>1741.51</td></tr><tr><td>CASE4</td><td>10,888.47</td><td>7964.13</td><td>7347.79</td><td>4613.97</td><td>2028.08</td><td>2435.99</td></tr><tr><td>CASE5</td><td>13,085.64</td><td>6339.84</td><td>7990.50</td><td>3640.25</td><td>1639.61</td><td>2201.43</td></tr><tr><td>CASE6</td><td>12,820.34</td><td>7161.85</td><td>9174.73</td><td>4006.01</td><td>1535.47</td><td>1793.77</td></tr></table>
+
+GENCO3 which possess large capacity and low carbon emission coefficients, will undertake power generation tasks to ensure power demand when wind and solar output is insufficient, so their carbon emissions have not changed significantly.
+
+In addition, as shown in Table $^ { 6 , }$ under the influence of various market incentive mechanisms, the consumption proportion of renewable energy GENCOs has significantly increased, especially after the simultaneous use of voluntary TGC mechanisms and carbon quota auction mechanisms, the overall consumption proportion has increased by 8–10%. Moreover, the growth value of the consumption proportion for wind power GENCOs (GENCO7–9) is higher than that of photovoltaic power GENCOs (GENCO10–11), which is because compared to photovoltaic power, wind power has cost and power generation efficiency advantages, prompting power purchasers more inclined to absorb wind power.
+
+Table 6  
+Consumption proportion of renewable energy GENCOs in different cases.
+
+<table><tr><td></td><td>GENCO7</td><td>GENCO8</td><td>GENCO9</td><td>GENCO10</td><td>GENCO11</td></tr><tr><td>CASE1</td><td>74.27%</td><td>84.62%</td><td>74.67%</td><td>77.55%</td><td>88.80%</td></tr><tr><td>CASE2</td><td>93.77%</td><td>91.41%</td><td>91.45%</td><td>90.95%</td><td>95.98%</td></tr><tr><td>CASE3</td><td>77.49%</td><td>85.36%</td><td>82.35%</td><td>78.01%</td><td>93.91%</td></tr><tr><td>CASE4</td><td>95.15%</td><td>90.40%</td><td>91.50%</td><td>82.19%</td><td>95.75%</td></tr><tr><td>CASE5</td><td>95.16%</td><td>90.83%</td><td>92.78%</td><td>93.44%</td><td>95.35%</td></tr><tr><td>CASE6</td><td>92.95%</td><td>92.48%</td><td>92.92%</td><td>79.54%</td><td>90.40%</td></tr></table>
+
+6.4.3. Total profits, proportion of renewable energy and total carbon emissions in different cases
+
+The total profits, total carbon emissions, and proportion of renewable energy in different cases are shown in Fig. 9. On the whole, the total profits are positively correlated with the total carbon emissions, while negatively correlated with the consumption of renewable energy. This indicates that reducing carbon emissions and increasing the proportion of renewable energy require a certain economic cost. Among them, the traditional auction mechanism has the best carbon reduction effect, reducing approximately 3488 t–3777 t carbon emissions and increasing renewable energy consumption by 12.69% -14.29%. The voluntary TGC market mechanism has the second-best carbon reduction effect, reducing approximately 3107 t carbon emissions and increasing renewable energy consumption by 10.84%. The carbon reduction effect of the consignment auction mechanism is relatively weak, which can reduce approximately 977 t–1893 t carbon emissions and increase renewable energy consumption by 4–7%. However, it is worth noting that the traditional auction mechanism can bring enormous economic pressure, leading to a loss of 5–7% in revenue. In comparison, the consignment auction mechanism has a weaker reduction effect on the total profits, only causing a loss of 1% in revenue.
+
+## 6.4.4. The market liquidity measurement in different cases
+
+The liquidity measurement of power, CET and TGC markets in different cases are shown in Fig. 10. Overall, after the introduction of incentive mechanisms (case2–6), the illiquidity ratio has decreased, indicating that these mechanisms can effectively promote the enhancement of liquidity in the three markets. The power market has always maintained stable market vitality, and the illiquidity ratio has always been between 0.2 and 0.3. For the CET market, both the consignment auction mechanism and the traditional auction mechanism can greatly improve market liquidity, with a conspicuous decline in the illiquidity ratio. For the TGC market, the illiquidity ratio has decreased by around 35–45%, which indicates that the voluntary TGC mechanism is an effective means to enhance the market vitality. Furthermore, it is worth noting that the dual stimulation effect of the traditional auction mechanism and the voluntary TGC mechanisms can maximize the motivation of market participants, thereby achieving a significant improvement in market liquidity.
+
+![](7feb74e53af2f9a71c4e9239c4568794edb3ce1acf82473a12c2bc0b019f9db1.jpg)  
+Total carbon emissions (t) -0- Total Profits(104CNY) – - Proportion of renewable energy
+
+Fig. 9. Total profits, proportion of renewable energy and total carbon emissions in different cases.  
+![](06982c6a86abfa806898742e103d68070feef130a9945dbe8e651953ad242e4b.jpg)
+
+![](1a3450dbae3ab26f79f9c416cfbfe7f84a043294d42be222d9a696b3eb488407.jpg)  
+Fig. 10. The market liquidity measurement in different cases.
+
+![](5c047a6d63536501aebda4be7aca03eec508a3ec520c8208048565782b82fdde.jpg)
+
+![](7b7c647d97f6f0d8a7062abdda0ff29956cdd8c693ac5b00b337044be42c3280.jpg)  
+(a)The influence of return coefficient on transaction quantity in primary CET market
+
+![](bb3617e97f8eb2aeb6e449c9527208a115bf887011da178d9ed2a1f752268f71.jpg)  
+(b)The influence of return coefficient on transaction quantity in secondary CET market  
+Fig. 11. The influence of return coefficient on the transaction scale in multi-level CET markets.
+
+## 6.5. Sensitivity analysis
+
+To more effectively and accurately determine the impact of different carbon quota auction mechanisms and the voluntary TGC transaction mechanism proposed in this article on market size and trading willingness of GENCOs, this section selects two vital parameters, including the return coefficient in primary CET market and the price coefficient in voluntary TGC market, as sensitivity factors to explore the transaction situation for various markets under different value of vital parameters.
+
+When the return coefficient is 0, that is, all auction revenue belongs to the government, corresponding to the traditional auction mechanism. When the return coefficient is greater than 0, the auction expense of GENCOs is returned proportionally. As shown in Fig. 11, the variation range of the return coefficient set in this article is 1.0–0, which can reflect the evolution process from the consignment auction mechanism to the traditional auction mechanism. Overall, as the return coefficient increases, the number of transactions by GENCOs in the primary CET market shows an upward trend, while the number of transactions in the secondary CET market shows a downward trend. This is because a higher return coefficient represents the ability to obtain more primary CET market profits, prompting GENCOs to tend to conduct transactions in the primary CET market. It also indirectly proves that the traditional auction mechanism is more conducive to stimulating the liquidity of the secondary CET market, while the consignment auction mechanism can contribute to the increase in the liquidity of the primary CET market. In addition, influenced by the demand for carbon quotas, the return coefficient has a greater impact on the transaction willingness of coal-fired power GENCOs than on gas power GENCOs.
+
+![](bd340d327b1ff0887734eed8f74968a5c541ae8cc6e2826f9b1c9404c82c904f.jpg)  
+(a)The influence of price coefficient on transaction quantity in compulsory TGC market
+
+The change range of the price coefficient is from 0.1 to 0.9, as shown in Fig. 12. As the price coefficient increases, the sales volume of renewable GENCOs in the compulsory TGC market continues to decrease, and the total transaction scale in the compulsory TGC market decreases from 1501MWh to 847MWh. Among them, the transaction volume of wind power GENCOs (GENCO7–9) has decreased faster than that of photovoltaic power GENCOs (GENCO10–11). Moreover, the increase in the price coefficient represents an enhancement of the value of bundling TGC. Therefore, power purchasers tend to purchase bundling TGC instead of unbundling TGC in the voluntary TGC market, and the number of bundling TGC has increased from 2062MWh to 2575MWh.
+
+![](6eaef8dc1cf94d902075ea869c0c8e77716032a3d5257c62e866c071c130aa14.jpg)  
+(b)The influence of price coefficient on transaction quantity in voluntary TGC market  
+Fig. 12. The influence of price coefficient on the transaction scale of multi-type TGC markets.
+
+## 7. Conclusions and future work
+
+The carbon quota auction mechanism is an effective way to promote the carbon cost becoming explicit, while the voluntary tradable green certificate mechanism is an important means to enhance the clean value of green energy. These mechanisms are key choices for achieving the “carbon peak” and “carbon neutrality” goals in the future. Therefore, a multi-level carbon emissions trading market that includes free quota mechanism, consignment auction mechanism, and traditional auction mechanism is considered. Moreover, a multi-type tradable green cer tificate market that contains the voluntary tradable green certificate market and the compulsory tradable green certificate market is con structed. Based on the multi-agent deep deterministic policy gradient algorithm, the bidding strategies and game behaviors of generation companies and power purchasers in the power, multi-level carbon emissions trading and multi-type tradable green certificate markets are simulated. The main conclusions and policy recommendations are as follows:
+
+(1) For power market transactions: After the introduction of carbon quota auction mechanisms and voluntary tradable green certificate transaction mechanism, the average transaction quantities for renewable energy generation companies increase by 19.02%, while the average transaction quantities for nonrenewable energy generation companies decrease by 7.48%. By analyzing the bidding strategies on generation companies in the power market, it can be concluded that the free quota mechanism cannot effectively transmit carbon price signals, causing the bidding strategies of generation companies do not fully reflect carbon costs. The traditional auction mechanism will lead to the transaction prices reaching 467.34 CNY/MWh in the power market, posing the pressure from carbon costs shifting to the user side. The consignment auction mechanism can not only reflect a certain carbon cost but also stabilize transaction prices in the power market.
+
+(2) For multi-level carbon emissions trading market transactions: Compared with the free quota mechanism, the auction quota mechanism can stimulate the transaction willingness of participants in carbon emissions trading market, and increase the overall trading scale by 52.1–65.5 times. Additionally, there is a trend of convergence between the primary and secondary carbon emissions trading markets, both fluctuating between 75 CNY/t 90 CNY/t, which is conducive to strengthening the linkage between multi-level markets. Besides, the auction quota mechanism can greatly improve market liquidity, with a conspicuous decline in the illiquidity ratio. Moreover, the carbon reduction effect of the traditional auction mechanism is better than that of the consignment auction mechanism, but the profit reduction effect of the traditional auction mechanism is stronger than that of the consignment auction mechanism. Therefore, it is recommended to adopt the consignment auction mechanism under the shortterm goal “carbon peak” of pursuing economic benefits and stable emission reduction, while the traditional auction mechanism is recommended under the long-term goal of “carbon neutrality” of urgently requiring large-scale emission reduction.
+
+## Appendix A. Nomenclature
+
+## A.1. Abbreviations
+
+CET Carbon emissions trading CCER Chinese certified emission reduction RPS Renewable portfolio standard GENCOs Generation companies
+
+(3) For multi-type tradable green certificate market transactions: With the addition of the voluntary tradable green certificate transaction mechanism, the average transaction prices of the compulsory tradable green certificate market increase from 67 CNY/MWh to 88 CNY/MWh, and the overall transaction scale of tradable green certificate market increases by 3.3–4.48 times. More importantly, the bundling tradable green certificate and unbundling tradable green certificate could achieve simultaneous transactions in the voluntary tradable green certificate market, which is conducive to promoting synergy and connection between tradable green certificate market and green electricity market to a certain extent. Additionally, the voluntary TGC mechanism is an effective means to enhance the market vitality. Therefore, it is recommended that government departments try to use the voluntary tradable green certificate market to achieve the re-trading of tradable green certificate and enhance the envi ronmental and economic value of renewable power. However, it should be noted that the tradable proportion and upper limit price of the voluntary tradable green certificate market should be controlled reasonably to avoid affecting the operation of the compulsory tradable green certificate market and ultimately leading to excessive green premiums.
+
+There are still some limitations which need to be considered. With the continuous expansion and alterations of carbon emissions trading and tradable green certificate markets in China, it is worth paying attention to whether the incentive mechanisms proposed in this article is effective from macro perspective. In addition, this article only focuses on the power industry as the research object, and market incentive mechanisms for other high carbon industries also need to be further designed. Further research will be conducted in these areas in the future.
+
+## CRediT authorship contribution statement
+
+Xiaopeng Guo: Writing – review & editing, Supervision. Xingping Zhang: Writing – original draft, Formal analysis, Data curation, Conceptualization.
+
+## Declaration of Competing Interest
+
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
+
+## Data availability
+
+Data will be made available on request.
+
+## Acknowledgement
+
+The authors would like to thank the anonymous referees and the editor of this journal. The authors also gratefully acknowledge the financial support of the National Natural Science Foundation of China (Grant No.72074075).
+
+TGC Tradable green certificate th Thermal power w Wind power pv Photovoltaic power b Power purchasers
+
+## A.2. Indices
+
+i Index of GENCO t Index of time j Index of power purchaser c Index of case
+
+## A.3. Variables
+
+$R _ { i , t } ^ { t h , e }$ Power sales income of thermal power GENCOs (CNY) $R _ { i , t } ^ { w / p \nu , e }$ Power sales income of wind or photovoltaic power GENCOs (CNY) $R _ { j , t } ^ { b , u }$ Power sales income of power purchasers (CNY) $\overline { { c _ { i } ^ { t h , m } } }$ Average power costs of thermal power GENCOs (CNY) $C _ { i , t } ^ { t h , \nu }$ Capacity recovery costs of thermal power GENCOs (CNY) $C _ { i , t } ^ { w / p \nu , \nu }$ Capacity recovery costs of wind or photovoltaic power GENCOs (CNY) $C _ { i , t } ^ { t h , f }$ Fuel costs of thermal power GENCOs (CNY) $C _ { j , t } ^ { b , e }$ Purchasing power costs of power purchasers (CNY) $R _ { i } ^ { t h , p r i - c e t }$ The profits of GENCOs in the primary CET market (CNY) $\psi ^ { R }$ Return coefficient of consignment auction mechanism $Q _ { i , t } ^ { c c }$ er,secondary Expected transaction quantity for CCER of GENCOs $\alpha ^ { c c e r }$ Expected transaction proportion for CCER of GENCOs $\boldsymbol { Q } _ { i , t } ^ { c a , s e c o n d a r y }$ Expected transaction quantity for carbon quota in the secondary CET market of GENCOs $Q _ { t } ^ { c a , s e c - s u p p l y }$ The supply situation of secondary CET market (t) $Q _ { t } ^ { c }$ a,sec− demand The demand situation of secondary CET market (t) $\gamma _ { t } ^ { c a }$ Supply-demand ratio of secondary CET market (%) $\boldsymbol { T } _ { t } ^ { c }$ a,secondary Carbon quota price in the secondary CET market (CNY/t) $R _ { i } ^ { t h , s e c - c e t }$ The profits of thermal power GENCOs in the secondary CET market (CNY) R<sup>w/pv,sec−</sup> <sup>cet</sup> The profits of wind or photovoltaic power GENCOs in the secondary CET market (CNY) $p _ { j , t } ^ { G }$ Power purchased from renewable energy GENCOs (MWh) $C _ { i , t } ^ { w / p \nu , d }$ Dispatching power costs of wind or photovoltaic power GENCOs (CNY) $w _ { i , t } ^ { t h } / w _ { j , t } ^ { t h }$ Transaction prices of thermal power GENCOs (MWh) $w _ { i , t } ^ { w / p \nu } / w _ { j , t } ^ { w / p \nu }$ Transaction prices of wind or photovoltaic power GENCOs (MWh) $p _ { i , t } ^ { t h } / p _ { j , t } ^ { t h }$ Transaction energy of thermal power GENCOs (MWh) $p _ { i , t } ^ { w / p \nu } / p _ { j , t } ^ { w / p \nu }$ Transaction energy of wind or photovoltaic power GENCOs (MWh) $\varsigma _ { j , t } ^ { b }$ Renewable energy consumption ratio (%) $C _ { j } ^ { t g c , c m }$ Costs of power purchasers in the compulsory TGC market (CNY) $Q _ { j , t } ^ { c c e r }$ Transaction quantities of CCER for power purchasers (t) $Q _ { j , t } ^ { c a }$ Transaction quantities of CA for power purchasers (t) $i l i q _ { c }$ Market illiquidity measurement indicator $T R _ { c }$ The turnover rate. $p r i c e _ { c , l }$ The lowest transaction price $\imath _ { i , t } ^ { t h }$ Bidding strategy coefficients of thermal power GENCO $\boldsymbol { t } _ { i , t } ^ { w }$ Bidding strategy coefficients of wind power GENCOs ${ } _ { p \nu }$ Bidding strategy coefficients of photovoltaic power GENCOs ${ { t } _ { i , t } }$ $\boldsymbol { l } _ { j , t } ^ { b }$ Bidding strategy coefficients of power purchasers $T _ { i } ^ { c a , r e s }$ Emission reduction reserve price $\overline { { w _ { i } ^ { t h } } }$ Average transaction price of thermal power GENCOs (CNY) $E _ { i } ^ { t h }$ Average carbon emissions ca,primary Carbon quota price in the primary CET market (CNY/t) T<sup>ca</sup>,<sup>secondary</sup> Carbon quota price in the secondary CET market (CNY/t)
+
+ca,secondary Average carbon quota price in the secondary CET market (CNY/t) $T _ { i } ^ { c a , b i d }$ Bidding price of GENCOs in the primary CET market (CNY/t) $\boldsymbol { \imath } _ { i } ^ { c a }$ Bidding strategy coefficients of GENCOs in the primary CET market $Q _ { i } ^ { c a , b i d }$ Bidding quantity of GENCOs in the primary CET market (t) $Q _ { i } ^ { c a , p r i - w i n }$ Transaction volume of GENCOs in the primary CET market (t) $T _ { t } ^ { c c e r }$ CCER price (CNY/t) $T _ { t } ^ { t g c , c m }$ TGC price in the compulsory TGC market (CNY/MWh) $Q _ { j , t } ^ { t g c , c m }$ The required quantity of TGC for power purchasers (MWh) $Q _ { t } ^ { t g c , c m }$ Total TGC in the compulsory TGC market (MWh) $E _ { i , t } ^ { t h , t o t a l }$ Total carbon emissions of thermal power GENCOs (t) $Q _ { t } ^ { c c e r }$ Supply of CCER (t) $Q _ { i } ^ { c a . i n i t i a l }$ Initial carbon quota of thermal power GENCOs (t) Q<sup>ca</sup>.<sup>total</sup> Total initial carbon quota (t) $q _ { i , t } ^ { w / p \nu , t g c }$ Quantity of selling TGC of wind or photovoltaic power GENCOs (MWh) $q _ { i , t } ^ { w / p \nu , c c e r }$ Quantity of selling CCER of wind or photovoltaic power GENCOs (MWh) $R _ { i } ^ { w / p \nu , t g c }$ Profits of wind or photovoltaic power GENCOs in the compulsory TGC market (CNY) $R _ { j } ^ { t g c , c m }$ Profits of power purchasers in the compulsory TGC market (CNY) $Q _ { j , t } ^ { t g c , \nu m }$ The transaction quantities of TGC for power purchasers in the voluntary TGC market (MWh) $T _ { t } ^ { t g c , v m }$ TGC price in the voluntary TGC market (CNY/MWh) $R _ { j } ^ { t g c , \nu m }$ Profits of power purchasers in the voluntary TGC market (CNY) $I D R _ { c }$ The logarithmic return of transaction price $p r i c e _ { c , h }$ The highest transaction price volume<sub>c</sub> The transaction quantity
+
+## A.4. Parameters
+
+$p _ { i , t } ^ { t h , m i n }$ Minimum bidding energy of thermal power GENCOs (MWh) $p _ { i , t } ^ { w / p \nu , m i n }$ Minimum bidding energy of wind or photovoltaic power GENCOs (MWh) $p _ { j , t } ^ { \operatorname* { m i n } }$ Minimum bidding energy of power purchasers (MWh) $p _ { i , t } ^ { t h , m a x }$ Maximum bidding energy of thermal power GENCOs (MWh) $p _ { i , t } ^ { w / p \nu , m a x }$ Maximum bidding energy of wind or photovoltaic power GENCOs (MWh) $p _ { j , t } ^ { \operatorname* { m a x } }$ Maximum bidding energy of power purchasers (MWh) $q _ { j , t } ^ { b }$ Load demand (MWh) $w _ { i , t } ^ { t h , m i n }$ Minimum bidding price of thermal power GENCOs (MWh) $w _ { i , t } ^ { w / p \nu , m i n }$ Minimum bidding price of wind or photovoltaic power GENCOs (MWh) $w _ { j , t } ^ { \operatorname* { m i n } }$ Minimum bidding price of power purchasers (MWh) $w _ { i , t } ^ { t h , m a x }$ Maximum bidding price of thermal power GENCOs (MWh) $w _ { i , t } ^ { w / p \nu , m a x }$ Maximum bidding price of wind or photovoltaic power GENCOs (MWh) $w _ { j , t } ^ { \operatorname* { m a x } }$ Maximum bidding price of power purchasers (MWh) $m _ { l i f e } ^ { t h }$ Economic life of thermal power plant (y) $r$ Discount rate (%) $\upsilon ^ { t g c }$ Upper limit ratio of price fluctuations in the voluntary TGC market $T _ { 0 } ^ { c a }$ Initial CA price (CNY/t) $T _ { 0 } ^ { c c e r }$ Initial CCER price (CNY/t) $\mu ^ { c c e r }$ Change rate of CCER price (%) $l ^ { c c e r }$ Length of CCER supply interval $T _ { 0 } ^ { t g c , c m }$ Upper limit of TGC price (CNY/MWh) $T _ { t } ^ { s e l l }$ Power selling price of power purchasers (CNY/MWh) $\varepsilon _ { 0 } ^ { t g c , c m }$ TGC price ratio in the compulsory TGC market $a _ { i } , b _ { i } , c _ { i }$ Fuel cost coefficient $e _ { i } , f _ { i } , g _ { i }$ Carbon emission coefficient $\gamma _ { t } ^ { t g c }$ Supply-demand ratio of voluntary TGC market (%) $\delta$ Renewable portfolio standard (%) $T ^ { c a , u l }$ Auction ceiling price of the primary CET market $T ^ { c a , a r p }$ Auction floor price of the primary CET market $\tau _ { i , t } ^ { c a - t g c }$ Coefficient of CA converting to TGC
+
+$I _ { i , t } ^ { t h }$ Unit fixed investment of thermal power GENCOs (CNY/MW) $I _ { i , t } ^ { w / p \nu }$ Unit fixed investment of wind or photovoltaic power GENCOs (CNY/MW) $e _ { i } ^ { t h }$ Investment recovery coefficient of thermal power GENCOs (%) $e _ { i } ^ { w / p \nu }$ Investment recovery coefficient of wind or photovoltaic power GENCOs (%) $K _ { i } ^ { t h } / K _ { i } ^ { w / p \nu }$ Adjustment factor $O _ { i } ^ { t h }$ Operation and maintenance rate of thermal power GENCOs (%) $O _ { i } ^ { w / p \nu }$ Operation and maintenance rate of wind or photovoltaic power GENCOs (%) $\rho _ { i } ^ { t h }$ Available rate for unit of thermal power GENCOs (%) $\rho _ { i } ^ { w / p \nu }$ Available rate for unit of wind or photovoltaic power GENCOs (%) $\sigma _ { i } ^ { t h }$ Station service power consumption rate of thermal power GENCOs (%) $\sigma _ { i } ^ { w / p \nu }$ Station service power consumption rate of wind or photovoltaic power GENCOs (% $U H _ { i } ^ { t h }$ Annual full-load operation time of thermal power GENCOs (h) $U H _ { i } ^ { w / p \nu }$ Annual full-load operation time of wind or photovoltaic power GENCOs (h) $m _ { l i f e } ^ { w / p \nu }$ Economic life of wind or photovoltaic power plant (y) $\upsilon ^ { c a }$ Upper limit ratio of price fluctuations in the secondary CET market T<sup>cet</sup>,<sup>penalty</sup> Penalty prices in the CET market $I C _ { i }$ Installed capacity (MW) $B _ { i } ^ { e }$ Benchmark value of free carbon allowances (t/MWh) $F _ { i } ^ { c }$ Cooling mode correction factor $F _ { i } ^ { r }$ Heat supply correction factor $F _ { i } ^ { f }$ Load output correction factor $\theta$ CCER conversion factor of renewable energy $q _ { j , t } ^ { w / p \nu , a c t u a l }$ Actual output of wind or photovoltaic power GENCOs (MW) $\psi$ Allocation coefficient $T ^ { a s }$ Dispatching price (CNY/MWh) $\psi ^ { P }$ Price coefficient of voluntary TGC market $T _ { t } ^ { b , p }$ Penalty price of TGC market (CNY/t) $\tau _ { i , t } ^ { t g c - c a }$ Coefficient of TGC converting to CA $\tau _ { i , t } ^ { c c e r - t g c }$ Coefficient of CCER converting to TGC
+
+Appendix B. Related parameters for GENCOs, power purchasers and markets  
+Related parameters of Nash bargaining model for GENCOs and markets
+
+<table><tr><td>Parameters</td><td>Value</td><td>Data source</td><td>Parameters</td><td>Value</td><td>Data source</td></tr><tr><td> $UH_{i}^{th}$ </td><td>4200 (hours/year)</td><td>[51]</td><td> $m_{life}^{th}$ </td><td>30</td><td>[54]</td></tr><tr><td> $UH_{i}^{w}$ </td><td>2200 (hours/year)</td><td>[52]</td><td> $m_{life}^{w}$ </td><td>25</td><td>[57]</td></tr><tr><td> $UH_{i}^{pv}$ </td><td>1500 (hours/year)</td><td>[52]</td><td> $m_{life}^{pv}$ </td><td>25</td><td>[57]</td></tr><tr><td> $I_{i,t}^{th}$ </td><td>4,394,000/3650000/3317000(CNY/MW)</td><td>[53]</td><td> $\sigma_{i}^{th}$ </td><td>6.7%</td><td>[58]</td></tr><tr><td> $I_{i,t}^{w}$ </td><td>6,307,000 (CNY/MW)</td><td>[53]</td><td> $\sigma_{i}^{w}$ </td><td>2.47%</td><td>[58]</td></tr><tr><td> $I_{i,t}^{pv}$ </td><td>4,182,000 (CNY/MW)</td><td>[53]</td><td> $\sigma_{i}^{pv}$ </td><td>1.81%</td><td>[58]</td></tr><tr><td> $T^{as}$ </td><td>450(CNY/MW)</td><td>Actual data</td><td> $O_{i}^{th}$ ,</td><td>3%</td><td>Authors&#x27; setting</td></tr><tr><td> $T_{0}^{va}$ </td><td>50 (CNY/t)</td><td>Actual data</td><td> $O_{i}^{w},O_{i}^{pv}$ </td><td>10%</td><td>[57]</td></tr><tr><td> $T_{0}^{ccer}$ </td><td>40 (CNY/t)</td><td>Actual data</td><td> $\rho_{i}^{th},\rho_{i}^{w},\rho_{i}^{pv}$ </td><td>98%</td><td>Authors&#x27; setting</td></tr><tr><td> $T^{cet.penalty}/T_{t}^{b,p}$ </td><td>300 (CNY/t)</td><td>Authors&#x27; setting setting</td><td> $T_{0}^{tgc.cm}$ </td><td>200 CNY</td><td>Authors&#x27; setting</td></tr><tr><td> $T^{ca,ul}$ </td><td>50 (CNY/t)</td><td>Authors&#x27; setting</td><td> $\psi^{P}$ </td><td>0.35</td><td>Authors&#x27; setting</td></tr><tr><td> $T^{ca,arp}$ </td><td>200 (CNY/t)</td><td>Authors&#x27; setting</td><td> $F_{i}^{c},F_{i}^{r},F_{i}^{f}$ </td><td>1</td><td>[45]</td></tr><tr><td> $r$ </td><td>8%</td><td>[54]</td><td> $K$ </td><td>1</td><td>Authors&#x27; setting</td></tr><tr><td> $\gamma_{t}^{tgc}$ </td><td>1</td><td>Authors&#x27; setting</td><td> $e_{i}$ </td><td>95%</td><td>Authors&#x27; setting</td></tr><tr><td> $l^{ccer}$ </td><td>70 (t)</td><td>Authors&#x27; setting</td><td> $\psi$ </td><td>0.5</td><td>Authors&#x27; setting</td></tr><tr><td> $\mu^{ccer}$ </td><td>10%</td><td>Authors&#x27; setting</td><td> $\delta$ </td><td>16.5%</td><td>Actual data</td></tr><tr><td> $\theta$ </td><td>0.8269</td><td>[55]</td><td> $v^{ca}/v^{tgc}$ </td><td>15%</td><td>Authors&#x27; setting</td></tr><tr><td> $\tau_{i,t}^{tgc-ca}$ </td><td>0.8</td><td>Authors&#x27; setting</td><td> $\tau_{i,t}^{ca-tgc}$ </td><td>1.25</td><td>Authors&#x27; setting</td></tr><tr><td> $\tau_{i,t}^{ccer-tgc}$ </td><td>1.25</td><td>Authors&#x27; setting</td><td></td><td></td><td></td></tr></table>
+
+Note: Tcais set based on the situation of the ancillary services market in Northeast China. TcaandTccerare set based on data of Beijing Environment Exchange. δ is set based on https://www.gov.cn/zhengce/zhengceku/2021-05/26/5612441/files/49e6251e1206473e92ba65a6b17454a4.pdf.
+
+(a) Predicted output range and actual output of renewable energy GENCOs
+
+Appendix C. Basic data of renewable energy GENCOs and users  
+![](acaa1a6ec4be66a74d965c29dfb4093f1d7f3376c793ae75a70d3ecca0d92bc5.jpg)
+
+![](c2478c347269d0cb1d2942dc80008c2b663336573438c5bef99cd62cf4e9d323.jpg)  
+Fig. C.1. Basic data of renewable energy GENCOs and users.
+
+Appendix D. Transaction energy of GENCOs in case 1–6  
+![](9642a9a1749e362925be8d075d78f261c9fe37f4af9a9327bbc5bd8e850a7455.jpg)  
+Fig. D.1. Transaction energy of GENCOs in case 1–6
+
+Appendix E. Transaction price of GENCOs in case 1–6  
+![](bc04c1f6c34aa8ef49b28f75cf59c4b3b28d0f15cbc8bf3b504f0d6e93aca0d4.jpg)
+
+![](48531d94520b0d1ed109f581bc53929096a76c0aa2cfa13973be9b74674b5524.jpg)
+
+![](8a705e52144e6f2c59b2e642ea2da3af9548c8b971dfb479ab262da5cf5fe1a4.jpg)
+
+![](f76fb21ae891e6a514e5b14c4b5cd60bf30eb13bdb40b982293a03ed0961ecc3.jpg)
+
+![](3de0263784bb27319e9c304baab90692efb2e03ca4463200d76cb419cab4c8ed.jpg)
+
+![](818fbe303dec7a3af08781261801fede7b6394b5b0fb48cd36a779de63f08a6b.jpg)
+
+![](b2c663834a7e2524ce38ffe3c9cee9ac0baf96d13b8ca7e8730152456c9a36ac.jpg)
+
+![](16b02fa257c724b8de8d9c9acfee4f37ee3a235c3fbb1487e2d1dfc70c022970.jpg)
+
+![](b6bbec3138630b3015158b7bc7d1432e1032fc5ccbb28659f31afae8def3651a.jpg)
+
+![](8cc942b0ecd11d72303dbde52d0ac7ae1b5985ff0b37394157425834258964c5.jpg)
+
+![](22f95b10bc45a0bf6543135785c783f282edd08ff5036b7bd50a856c099dcfa7.jpg)  
+Transaction price range of peak time  Transaction price range of normal time  Transaction price range of valley time  
+Fig. E.1. Transaction price of GENCOs in case 1–6
+
+## Appendix F. Iterative process of transaction profits for various entities
+
+![](bf9f50247357f513ca348b09b5465aa25af9afbab5dfcc5ddad84d925bd04bfd.jpg)  
+Fig. F.1. Iterative process of transaction profits for various entities in multiple markets
+
+## References
+
+[1] Du Z, Wang Y. Does energy-saving and emission reduction policy affect carbon reduction performance? A quasi-experimental evidence in China. Appl Energy 2022;324:119758.
+
+[2] Cao C, Cui X, Cai W, Wang C, Xing L, Zhang N, et al. Incorporating health cobenefits into regional carbon emission reduction policy making: a case study of China’s power sector. Appl Energy 2019;253:113498.
+
+[3] Lin B, Xie Y. The impact of government subsidies on capacity utilization in the Chinese renewable energy industry: does technological innovation matter? Appl Energy 2023;352:121959.
+
+[4] Liu D, Luo Z, Qin J, Wang H, Wang G, Li Z, et al. Low-carbon dispatch of multidistrict integrated energy systems considering carbon emission trading and green certificate trading. Renew Energy 2023;119312.
+
+[5] NEA. Modern energy system planning for the 14th five year plan. http://www.nea. gov.cn/1310524241\_16479412513081n.pdf; 2022.
+
+[6] Chang X, Wu Z, Wang J, Zhang X, Zhou M, Yu T, et al. The coupling effect of carbon emission trading and tradable green certificates under electricity marketization in China. Renew Sustain Energy Rev 2023;187:113750.
+
+[7] Zhang Y-J, Shi W. Has China’s carbon emissions trading (CET) policy improved green investment in carbon-intensive enterprises? Comp Indust Eng 2023;180: 109240.
+
+[8] Safarzadeh S, Hafezalkotob A, Jafari H. Energy supply chain empowermen through tradable green and white certificates: a pathway to sustainable energy generation. Appl Energy 2022;323:119601.
+
+[9] Wang B, Duan M. Consignment auctions of emissions trading systems: An agentbased approach based on China s practice. Energy Econ 2022;112:106187.
+
+[10] Feng T-T, Li R, Zhang H-M, Gong X-L, Yang Y-S. Induction mechanism and optimization of tradable green certificates and carbon emission trading acting on electricity market in China. Res Conserv Recycl 2021;169:105487.
+
+[11] Mo J, Tu Q, Wang J. Carbon pricing and enterprise productivity-the role of price stabilization mechanism. Energy Econ 2023;120:106631.
+
+[12] Grottera C, Naspolini GF, La Rovere EL, Schmitz Gonçalves DN, Nogueira TDF, Hebeda O, et al. Energy policy implications of carbon pricing scenarios for the Brazilian NDC implementation. Energy Policy 2022;160:112664.
+
+[13] Chai J, Zhang X, Zhang X, Wang Y. Effects of scenario-based carbon pricing policies on China’s dual climate change mitigation goals: does policy design matter? J Manag Sci Eng 2023;8(2):167–75.
+
+[14] Fleschutz M, Bohlayer M, Braun M, Henze G, Murphy MD. The effect of price-based demand response on carbon emissions in European electricity markets: the importance of adequate carbon prices. Appl Energy 2021;295:117040.
+
+[15] Dong Z, Xia C, Fang K, Zhang W. Effect of the carbon emissions trading policy on the co-benefits of carbon emissions reduction and air pollution control. Energy Policy 2022;165:112998.
+
+[16] Gugler K, Haxhimusa A, Liebensteiner M. Effectiveness of climate policies: carbon pricing vs. subsidizing renewables. J Environ Econ Manag 2021;106:102405.
+
+[17] Compernolle T, Kort PM, Thijssen JJJ. The effectiveness of carbon pricing: the role of diversification in a firm’s investment decision. Energy Econ 2022;112:106115.
+
+[18] Guo C, Zhou Z, Liu X, Liu X, Meng J, Dai H. The unintended dilemma of China’s target-based carbon neutrality policy and provincial economic inequality. Energy Econ 2023;126:107002.
+
+[19] Ning B, Zhang X, Liu X, Yang C, Li G, Ma Q. Allocation of carbon quotas with local differential privacy. Appl Energy 2022;326:119974.
+
+[20] Li C, Tian G, Yang Y, Liu P, Li Z. Long-term multi-sector low-carbon transition pathway planning based on modified-grandfathering emission allocation method: a case study of China. J Clean Prod 2023;415:137774.
+
+[21] Yang F, Lee H. An innovative provincial CO2 emission quota allocation scheme for Chinese low-carbon transition. Technol Forecast Soc Change 2022;182:121823.
+
+[22] Feng H, Hu Y-J, Li C, Wang H. Rolling horizon optimization strategy and initial carbon allowance allocation model to reduce carbon emissions in the power industry: case of China. Energy 2023;277:127659.
+
+[23] Wu R, Tan Z, Lin B. Does carbon emission trading scheme really improve the CO2 emission efficiency? Evidence from China’s iron and steel industry. Energy 2023; 277:127743.
+
+[24] Bai P, Ma Z, Wei X, Jia R. Allocation scheme selection for transportation carbon allowance -evidence from China’s top ten economic regions. J Clean Prod 2023; 139310.
+
+[25] Wang M, Zhou P. A two-step auction-refund allocation rule of CO2 emission permits. Energy Econ 2022;113:106179.
+
+[26] Carratù M, Chiarini B, Piselli P. Effects of European emission unit allowance auctions on corporate profitability. Energy Policy 2020;144:111584.
+
+[27] Yi Z, Xin-gang Z, Xin M, Yu-zhuo Z. Research on tradable green certificate benchmark price and technical conversion coefficient: bargaining-based cooperative trading. Energy 2020;208:118376.
+
+[28] Teng M, Lv K, Han C, Liu P. Trading behavior strategy of power plants and the grid under renewable portfolio standards in China: a tripartite evolutionary game analysis. Energy 2023;284:128398.
+
+[29] Zhou Y, Zhao XG, Xu L. Supply side incentive under the renewable portfolio standards: a perspective of China. Renew Energy 2022;193:505–18.
+
+[30] Zhou Y, Zhao XG, Wang Z. Demand side incentive under renewable portfolio standards: a system dynamics analysis. Energy Policy 2020;144:111652.
+
+[31] Li T, Gao C, Chen T, Jiang Y, Feng Y. Medium and long-term electricity marke trading strategy considering renewable portfolio standard in the transitional period of electricity market reform in Jiangsu. China Energy Econ 2022;107:105860.
+
+[32] Fang Y, Wei W, Mei S. How dynamic renewable portfolio standards impact the diffusion of renewable energy in China? A networked evolutionary game analysis. Renew Energy 2022;193:778–88.
+
+[33] Xu J, Lv T, Hou X, Deng X, Liu F. Provincial allocation of renewable portfolio standard in China based on efficiency and fairness principles. Renew Energy 2021; 179:1233 45.
+
+[34] Fan J-L, Wang J-X, Hu J-W, Wang Y, Zhang X. Optimization of China’s provincial renewable energy installation plan for the 13th five-year plan based on renewable portfolio standards. Appl Energy 2019;254:113757.
+
+[35] Zhang X, Guo X, Zhang X. Assessing the policy synergy among power, carbon emissions trading and tradable green certificate market mechanisms on strategic GENCOs in China. Energy 2023;278:127833
+
+[36] Wang R, Li Y, Gao B. Evolutionary game-based optimization of green certificatecarbon emission right- electricity joint market for thermal-wind-photovoltaic power system. Global Energy Intercon 2023;6(1):92–102.
+
+[37] Yan S, Wang W, Li X, Lv H, Fan T, Aikepaer S. Stochastic optimal schedulin strategy of cross-regional carbon emissions trading and green certificate trading market based on Stackelberg game. Renew Energy 2023;119268.
+
+[38] Wang Y, Xie H, Sun X, Tang L, Bie Z. A cross-chain enabled day-ahead collaborative power-carbon-TGC market. Energy 2022;258:124881.
+
+[39] Deng S, Xiao D, Liang Z, Chen J, Huang Y, Chen H. Information gap decision theory-based optimization of joint decision making for power producers participating in carbon and electricity markets. Energy Rep 2023;9:74–81.
+
+[40] Song X, Wang P. Effectiveness of carbon emissions trading and renewable energy portfolio standards in the Chinese provincial and coupled electricity markets. Utilities Policy 2023;84:101622.
+
+[41] Sun Q, Wang X, Liu Z, Mirsaeidi S, He J, Pei W. Multi-agent energy management optimization for integrated energy systems under the energy and carbon co-trading market. Appl Energy 2022;324:119646.
+
+[42] Ren K, Liu J, Liu X, Nie Y. Reinforcement learning-based bi-level strategic bidding model of gas-fired unit in integrated electricity and natural gas markets preventing market manipulation. Appl Energy 2023;336:120813.
+
+[43] Chen W, Jiang Y. Trading optimization of carbon-green certificate-electricit market coupling. Power Syst Technol 2023;47(6):2273–87.
+
+[44] He Z, Liu C, Wang Y, Wang X, Man Y. Optimal operation of wind-solar-thermal collaborative power system considering carbon trading and energy storage. Appl Energy 2023;352:121993.
+
+[45] MEE. Measures for the Administration of Carbon Emission Trading (for Trial Implementation). http://www.gov.cn/gongbao/content/2021/content\_5591410. htm; 2021.
+
+[46] Zhou D, Zhou X, Ding H. Research on bidding strategies for renewable energy electricity under multi market collaboration. Chinese J Manag Sci 2023;31(01): 248 55.
+
+[47] Chang K, Chen R, Chevallier J. Market fragmentation, liquidity measures and improvement perspectives from China’s emissions trading scheme pilots. Energy Econ 2018;75:249 60.
+
+[48] Florackis C, Gregoriou A, Kostakis A. Trading frequency and asset pricing on th London stock exchange: evidence from a new price impact ratio. J Bank Financ 2011;35(12):3335 50.
+
+[49] Bu Y. Research on high-penetration renewable energy accommodation optimization based on the new renewable portfolio standard. North China Electricity Power University; 2021.
+
+[50] MEE. Notice on doing a good job in the allocation of national carbon emission trading quota for 2021 and 2022. https://www.mee.gov.cn/xxgk2018/xxgk/xxgk0 3/202303/t20230315\_1019707.html; 2023.
+
+[51] Zhang X, Gan D, Wang Y, Liu Y, Ge J, Xie R. The impact of price and revenue floors on carbon emission reduction investment by coal-fired power plants. Techno Forecast Soc Change 2020;154:119961.
+
+[52] IRENA. Renewable power generation costs in 2020. https://www.irena.org/Pu blications/2021/Jun/Renewable-Power-Costs-in-2020; 2021.
+
+[53] CEC. Annual development report of China’s power industry 2022. 2022.
+
+[54] Yang L, Xu M, Fan J, Liang X, Zhang X, Lv H, et al. Financing coal-fired power plant to demonstrate CCS (carbon capture and storage) through an innovative polic incentive in China. Energy Policy 2021;158:112562.
+
+[55] MEE. 2019 emission reduction project China regional grid baseline emission factor. http://mee.gov.cn/ywgz/ydqhbh/wsqtkz/202012/t20201229\_815386.shtml; 2019.
+
+[56] CEC. Research on flexible operation and life extension operation of coal motor unit. https://cec.org.cn/detail/index.html?2-292230; 2021.
+
+[57] IRENA. Renewable power generation costs in 2021. https://www.irena.org/pu lications/2022/Jul/Renewable-Power-Generation-Costs-in-2021; 2022.
+
+[58] NEA. 2018 national electricity price supervision notification. http://www.nea.gov. cn/2019-11/05/c\_138530255.htm; 2019.
+
+[59] Ma J, Shen YM, Rong XT, Zhang H, Ling R, Yang HJ, et al. Joint operation mode of power system considering bilateral peak regulation service transaction between energy storage users and new energy. Elect Power Automat Equip 2023;43.
+
+[60] NDRC. Typical power load curves of provincial power grids. https://www.ndrc. gov.cn/xxgk/zcfb/tz/202012/P020201202546041174254.pdf; 2020.
+
+[61] CEC. Annual development report of China s power industry 2022. 2022.
+
+[62] NEA. Operation status of photovoltaic power generation construction in 2022. https://www.nea.gov.cn/2023-02/17/c\_1310698128.htm; 2023.

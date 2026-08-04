@@ -3,6 +3,17 @@
 > 硬约束（电网容量、火电爬坡、SOC/禁区等）不进入经济 reward；
 > GiveSafe 拒绝使用独立约束奖励；FMU 硬失败不进经济 replay。
 
+# 〇、分时电价（price-taker）
+
+当 `env_config.yaml` 中 `market.available: true` 时：
+
+- 观测追加 24h×(购电价, 售电价) 前瞻特征（`data/price_tou.csv`）。
+- 经济 reward 中 **电网项** 用 Python 分时结算替换 FMU 常数购售电价增量：  
+  \(\Delta C^{\mathrm{tot}\prime}=\Delta C^{\mathrm{tot}}_{\mathrm{FMU}}-\Delta C^{\mathrm{grid}}_{\mathrm{FMU}}+C^{\mathrm{grid}}_{\mathrm{market}}\)。
+- **不做电网出清**；电价外生。
+
+结算实现：`src/market/settlement.py`。项目层 NPV/IRR/LCOE：`src/economics/project_kpi.py`。
+
 # 一、Reward 结构
 
 物理步、GiveSafe 拒绝、硬失败是**三条路径**，不是把三项加进同一步的标量公式。训练时 Replay 按约 70% / 30% 混合采样 Physical 与 GiveSafe 转移。

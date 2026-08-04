@@ -1,0 +1,16 @@
+{
+  "train": {
+    "train_mse": 0.003949230574250113,
+    "val_mse": 0.0034070813562721014,
+    "epoch": 15.0
+  },
+  "export": {
+    "mae_pred_buy": 0.035950267229389474,
+    "mae_pred_sell": 0.02183859445600538,
+    "mae_da_buy": 0.08062625989292364,
+    "improvement_vs_da_buy": 0.04467599266353417,
+    "predicted_csv": "D:\\Code\\0622\\optimal_demo\\data\\price_predicted.csv",
+    "realized_csv": "D:\\Code\\0622\\optimal_demo\\data\\price_realized.csv"
+  },
+  "checkpoint": "D:\\Code\\0622\\optimal_demo\\data\\forecast_models\\price_bilstm.pt"
+}

@@ -29,6 +29,8 @@ class HybridTD3:
         explore_noise: float = 0.1,
         target_noise: float = 0.2,
         noise_clip: float = 0.5,
+        reward_clip: tuple[float, float] | None = (-20.0, 20.0),
+        q_clip: float = 200.0,
         device: str | None = None,
     ):
         """初始化 Actor/Critic、目标网络与优化器。
@@ -52,6 +54,8 @@ class HybridTD3:
         self.explore_noise = explore_noise
         self.target_noise = target_noise
         self.noise_clip = noise_clip
+        self.reward_clip = reward_clip
+        self.q_clip = float(q_clip)
         self.actor = HybridActor(obs_dim).to(self.device)
         self.actor_target = deepcopy(self.actor).to(self.device)
         self.critic = HybridCritic(obs_dim).to(self.device)
@@ -105,6 +109,9 @@ class HybridTD3:
         mode_oh = F.one_hot(mode, num_classes=3).float()
         mag = torch.as_tensor(batch["caes_magnitude"], device=self.device)
         reward = torch.as_tensor(batch["reward"], device=self.device)
+        if self.reward_clip is not None:
+            lo, hi = self.reward_clip
+            reward = reward.clamp(lo, hi)
         done = torch.as_tensor(batch["done"], device=self.device)
         next_mask = torch.as_tensor(batch["next_mode_mask"], device=self.device)
 
@@ -136,7 +143,9 @@ class HybridTD3:
             n_mag = torch.clamp(next_act["caes_magnitude"] + noise_mag, 0.0, 1.0)
             # 不对离散模式加高斯噪声
             q1_t, q2_t = self.critic_target(next_obs, n_tp, n_bat, next_act["caes_mode_oh"], n_mag)
-            target_q = reward + (1.0 - done) * self.gamma * torch.min(q1_t, q2_t)
+            # 防止目标 Q 爆炸（此前训练曾出现 |Q|~1e10）
+            q_t = torch.min(q1_t, q2_t).clamp(-self.q_clip, self.q_clip)
+            target_q = reward + (1.0 - done) * self.gamma * q_t
 
         q1, q2 = self.critic(obs, u_tp, u_bat, mode_oh, mag)
         critic_loss = F.mse_loss(q1, target_q) + F.mse_loss(q2, target_q)
@@ -212,18 +221,17 @@ class HybridTD3:
             path,
         )
 
-    def load(self, path: str | Path) -> None:
-        """从检查点加载权重。
-
-        Args:
-            path: 检查点文件路径。
-
-        Returns:
-            无。
-        """
+    def load(self, path: str | Path, *, reset_critic: bool = False) -> None:
         data = torch.load(path, map_location=self.device)
         self.actor.load_state_dict(data["actor"])
-        self.critic.load_state_dict(data["critic"])
-        self.actor_target.load_state_dict(data["actor_target"])
-        self.critic_target.load_state_dict(data["critic_target"])
-        self.total_it = int(data.get("total_it", 0))
+        self.actor_target.load_state_dict(data.get("actor_target", data["actor"]))
+        if reset_critic:
+            # Critic 发散时只保留 actor，重估 Q，避免被坏 value 锁死
+            self.critic = HybridCritic(self.actor.encoder[0].in_features).to(self.device)
+            self.critic_target = deepcopy(self.critic).to(self.device)
+            self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=self.critic_opt.param_groups[0]["lr"])
+            self.total_it = 0
+        else:
+            self.critic.load_state_dict(data["critic"])
+            self.critic_target.load_state_dict(data.get("critic_target", data["critic"]))
+            self.total_it = int(data.get("total_it", 0))

@@ -35,6 +35,7 @@ from envs.failures import (
     StaticActionViolation,
 )
 from fmu import FmuAdapter, FmuSolverError, build_registry
+from market.price_profile import PriceProfile
 from .observation_builder import ObservationBuilder
 from .forecast_provider import ForecastProvider
 from .reward_calculator import RewardCalculator
@@ -83,22 +84,8 @@ class PowerSystemEnv(gym.Env):
         require_complete_reward: bool = False,
         run_id: str = "default",
         forecast_enabled: bool | None = None,
-    ) -> None:
-        """加载配置、构建观测/动作空间并初始化 FMU 与 Oracle 组件。
-
-        Args:
-            config_path: 环境配置 YAML 路径。
-            reward_config_path: 奖励配置 YAML 路径。
-            device_params_path: 设备参数 YAML（Oracle 用）。
-            margins_path: 可行域安全裕度 YAML。
-            adapter: 可选 FMU 适配器(FmuAdapter)；为 ``None`` 时自动构造。
-            require_complete_reward: 是否要求完整经济 reward 配置。
-            run_id: 运行标识，写入 FailureRecord。
-            forecast_enabled: 覆盖配置中的前瞻开关；``None`` 读 YAML。
-
-        Raises:
-            ValueError: 决策步长与通信步长之比非正整数。
-        """
+        market_enabled: bool | None = None,
+    ):
         super().__init__()
         self.root = Path(__file__).resolve().parents[2]
         self.config_path = self._resolve(config_path)
@@ -131,19 +118,25 @@ class PowerSystemEnv(gym.Env):
                 annual_horizon_hours=int(self.config["fmu"]["annual_horizon_hours"]),
                 step_seconds=float(self.config["fmu"]["decision_interval_seconds"]),
             )
-        forecast_low = (
-            self.forecast_provider.feature_low
-            if self.forecast_provider is not None
-            else np.empty(0, dtype=np.float32)
+        market_cfg = self.config.get("market") or {}
+        self.market_enabled = (
+            bool(market_cfg.get("available", False)) if market_enabled is None else bool(market_enabled)
         )
-        forecast_high = (
-            self.forecast_provider.feature_high
-            if self.forecast_provider is not None
-            else np.empty(0, dtype=np.float32)
-        )
+        self.price_profile: PriceProfile | None = None
+        if self.market_enabled:
+            self.price_profile = PriceProfile(
+                self.root,
+                market_cfg,
+                annual_horizon_hours=int(self.config["fmu"]["annual_horizon_hours"]),
+                step_seconds=float(self.config["fmu"]["decision_interval_seconds"]),
+            )
+        forecast_low = self.forecast_provider.feature_low if self.forecast_provider is not None else np.empty(0, dtype=np.float32)
+        forecast_high = self.forecast_provider.feature_high if self.forecast_provider is not None else np.empty(0, dtype=np.float32)
+        price_low = self.price_profile.feature_low if self.price_profile is not None else np.empty(0, dtype=np.float32)
+        price_high = self.price_profile.feature_high if self.price_profile is not None else np.empty(0, dtype=np.float32)
         self.observation_space = Box(
-            low=np.concatenate((self.observation_builder.low, forecast_low)),
-            high=np.concatenate((self.observation_builder.high, forecast_high)),
+            low=np.concatenate((self.observation_builder.low, forecast_low, price_low)),
+            high=np.concatenate((self.observation_builder.high, forecast_high, price_high)),
             dtype=np.float32,
         )
         self.action_space = HybridDictSpace(
@@ -206,21 +199,120 @@ class PowerSystemEnv(gym.Env):
         self.caes_min_run = CaesMinimumRunController()
 
     def build_observation(self) -> np.ndarray:
-        """构造当前观测：FMU 物理输出 + 可选只读日前 forecast。
-
-        Returns:
-            ``float32`` 观测向量。
-
-        Raises:
-            RuntimeError: 环境未 ``reset``（``last_outputs`` 为 ``None``）。
-        """
+        """物理输出 + 可选日前 forecast + 可选分时电价前瞻。"""
         if self.last_outputs is None:
             raise RuntimeError("环境未 reset")
-        physical = self.observation_builder.build(self.last_outputs)
-        if self.forecast_provider is None:
-            return physical
-        forecast = self.forecast_provider.at_time(float(self.adapter.time))
-        return np.concatenate((physical, forecast)).astype(np.float32, copy=False)
+        parts = [self.observation_builder.build(self.last_outputs)]
+        t = float(self.adapter.time)
+        if self.forecast_provider is not None:
+            parts.append(self.forecast_provider.at_time(t))
+        if self.price_profile is not None:
+            parts.append(self.price_profile.features_at(t))
+        if len(parts) == 1:
+            return parts[0]
+        return np.concatenate(parts).astype(np.float32, copy=False)
+
+    def _market_prices_now(self) -> dict[str, float] | None:
+        if self.price_profile is None:
+            return None
+        buy, sell = self.price_profile.prices_at(float(self.adapter.time))
+        return {"buy_yuan_per_kwh": buy, "sell_yuan_per_kwh": sell}
+
+    def _apply_terminal_soc_recovery(
+        self,
+        hybrid: HybridAction,
+        feasible: DynamicFeasibleActionSet,
+    ) -> tuple[HybridAction, bool]:
+        """末段多罐联合回收：battery + CAES gas/hot/cold 扭向初始 SOC。
+
+        物理关系（本 FMU）：
+        - CHARGE: gas↑ hot↑ cold↓
+        - DISCHARGE: gas↓ hot↓ cold↑
+        冷罐偏离是过往不过周 SOC 的主因，回收必须显式处理。
+        """
+        market = self.config.get("market") or {}
+        horizon = int(market.get("soc_recovery_horizon", 0) or 0)
+        # 电池可更早进入回收（默认 horizon+16），CAES gas 用 horizon
+        bat_horizon = int(market.get("soc_recovery_battery_horizon", 0) or (horizon + 16 if horizon > 0 else 0))
+        if horizon <= 0 or self.initial_soc is None or self.last_outputs is None:
+            return hybrid, False
+        remaining = int(self.episode_steps - self.step_index)
+        if remaining > max(horizon, bat_horizon):
+            return hybrid, False
+
+        outs = self.last_outputs
+        init = self.initial_soc
+        bat_now = float(outs.get("battery_soc", 0.5))
+        bat0 = float(init.get("battery_soc", 0.5))
+        gas_now = float(outs.get("caes_gas_soc", 0.5))
+        gas0 = float(init.get("caes_gas_soc", 0.5))
+        cold_now = float(outs.get("caes_cold_soc", 0.5))
+        cold0 = float(init.get("caes_cold_soc", 0.5))
+
+        # 越接近结束，修正越强
+        strength = 1.0 - (remaining - 1) / max(horizon if horizon > 0 else bat_horizon, 1)
+        strength = float(np.clip(strength, 0.35, 1.0))
+        mag = 0.50 + 0.50 * strength
+        band = 0.03  # 略放宽，减少回收段无谓 CAES 开关机
+        e_gas = gas_now - gas0
+        e_cold = cold_now - cold0
+        in_gas_window = horizon > 0 and remaining <= horizon
+        in_bat_window = bat_horizon > 0 and remaining <= bat_horizon
+
+        # —— 电池：可更早回收 ——
+        u_bat = float(hybrid.u_battery)
+        if in_bat_window:
+            if bat_now > bat0 + band:
+                u_bat = float(np.clip(-mag, feasible.u_battery_low, feasible.u_battery_high))
+            elif bat_now < bat0 - band:
+                u_bat = float(np.clip(mag, feasible.u_battery_low, feasible.u_battery_high))
+            else:
+                if feasible.u_battery_low <= 0.0 <= feasible.u_battery_high:
+                    u_bat = 0.0
+
+        # —— CAES：优先 gas；gas 到位后，若 cold 严重偏低且剩余足够再回充，做单次轻量放电 ——
+        # 禁止高频振荡：仅当 remaining 较大且 cold 偏离 > 0.08 时轻修
+        mode = hybrid.caes_mode
+        caes_mag = float(hybrid.caes_magnitude)
+        if in_gas_window:
+            if e_gas > band and feasible.mode_mask.discharge:
+                mode = CaesMode.DISCHARGE
+                caes_mag = max(0.6, mag)
+            elif e_gas < -band and feasible.mode_mask.charge:
+                mode = CaesMode.CHARGE
+                caes_mag = max(0.6, mag)
+            elif (
+                abs(e_gas) <= band
+                and e_cold < -0.08
+                and remaining >= 20
+                and feasible.mode_mask.discharge
+            ):
+                # cold 严重偏低：轻放电抬 cold（放电↑cold↓hot↓gas）；幅度小
+                mode = CaesMode.DISCHARGE
+                caes_mag = 0.25
+            elif feasible.mode_mask.idle:
+                mode = CaesMode.IDLE
+                caes_mag = 0.0
+            elif feasible.mode_mask.discharge and e_gas >= -band:
+                mode = CaesMode.DISCHARGE
+                caes_mag = 0.15 if e_gas > 0 else 0.05
+            elif feasible.mode_mask.charge and e_gas <= band:
+                mode = CaesMode.CHARGE
+                caes_mag = 0.15 if e_gas < 0 else 0.05
+        elif feasible.mode_mask.idle and in_bat_window:
+            # 仅电池回收窗：CAES 尽量不动，避免 cold 继续恶化
+            mode = CaesMode.IDLE
+            caes_mag = 0.0
+
+        # 火电：回充时抬升托底
+        u_tp = float(np.clip(hybrid.u_tp, feasible.u_tp_low, feasible.u_tp_high))
+        if bat_now < bat0 - band or gas_now < gas0 - band or mode == CaesMode.CHARGE:
+            u_tp = float(feasible.u_tp_high)
+
+        return (
+            HybridAction(u_tp=u_tp, u_battery=u_bat, caes_mode=mode, caes_magnitude=caes_mag),
+            True,
+        )
 
     def _resolve(self, path: str | Path) -> Path:
         """将相对路径解析为基于项目根的绝对路径。
@@ -359,10 +451,10 @@ class PowerSystemEnv(gym.Env):
             return self.build_observation(), 0.0, False, True, info
 
         hybrid: HybridAction | None = None
+        recovery_applied = False
         try:
-            hybrid = (
-                action if isinstance(action, HybridAction) else hybrid_from_dict(action)
-            )
+            hybrid = action if isinstance(action, HybridAction) else hybrid_from_dict(action)
+            hybrid, recovery_applied = self._apply_terminal_soc_recovery(hybrid, feasible)
             self.hybrid_validator.validate(hybrid, feasible)
             ok, reason = self.oracle.check_action_executable(
                 hybrid, self.last_outputs, feasible, self.previous_thermal
@@ -393,6 +485,12 @@ class PowerSystemEnv(gym.Env):
         )
 
         physical_dist, safe_dist = self.oracle.distances_to_bounds(self.last_outputs)
+        # 结算用本步起始时刻电价（FMU 推进前）
+        step_start_time = float(self.adapter.time)
+        market_prices = None
+        if self.price_profile is not None:
+            buy, sell = self.price_profile.prices_at(step_start_time)
+            market_prices = {"buy_yuan_per_kwh": buy, "sell_yuan_per_kwh": sell}
         outputs: dict[str, float] | None = None
         try:
             for _ in range(self.n_substeps):
@@ -497,9 +595,8 @@ class PowerSystemEnv(gym.Env):
         )
         final_min_run_event = None
         if is_final and self.caes_min_run.active_mode is not None:
-            final_min_run_event = self.caes_min_run.interrupt(
-                "episode_ended_before_min_run", step=next_step
-            )
+            final_min_run_event = self.caes_min_run.interrupt("episode_ended_before_min_run", step=next_step)
+        dt_hours = float(self.config["fmu"]["decision_interval_seconds"]) / 3600.0
         reward, terms = self.reward_calculator.calculate(
             outputs,
             self.previous_thermal,
@@ -507,6 +604,8 @@ class PowerSystemEnv(gym.Env):
             episode_completed=episode_completed and is_final,
             no_failure=not self.episode_failed,
             valid_episode_steps=self.valid_episode_steps,
+            market_prices=market_prices,
+            decision_interval_hours=dt_hours,
         )
         self.reward_calculator.step_in_episode = self.valid_episode_steps
         self.step_index = next_step

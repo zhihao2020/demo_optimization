@@ -1,0 +1,26 @@
+# 参考文献 Markdown 索引
+
+由 MinerU 转换生成。每篇论文目录内：`document.md` + `manifest.json` + 图片资源。
+
+| # | 标题（manifest） | Markdown 目录 | 源 PDF |
+|---|------------------|---------------|--------|
+| 1 | A market feedback framework for improved estimates of the arbitrage value of energy storage using price-taker models | `md/A_market_feedback_framework_for_improved_estimates_of_the_arbitrage_value_of_ene_md/document.md` | A market feedback framework for improved estimates of the arbitrage value of energy storage using price-taker models.pdf (42 KB) |
+| 2 | Addressing Function Approximation Error in Actor-Critic Methods | `md/addressing_function_approximation_error_in_actor-critic_methods_md/document.md` | addressing function approximation error in actor-critic methods.pdf (65 KB) |
+| 3 | Collaborative scheduling optimization of hydrogen-enhanced integrated energy system via goal-conditioned hierarchical re | `md/Collaborative_scheduling_optimization_of_hydrogen-enhanced_integrated_energy_sys_md/document.md` | Collaborative scheduling optimization of hydrogen-enhanced integrated energy system via goal-conditioned hierarchical reinforcement learning.pdf (81 KB) |
+| 4 | Decentralized coordinated planning model for integrated energy systems under seasonal distribution and source–load uncer | `md/Decentralized_coordinated_planning_model_for_integrated_energy_systems_under_sea_md/document.md` | Decentralized coordinated planning model for integrated energy systems under seasonal distribution and source–load uncertainties.pdf (91 KB) |
+| 5 | Dynamic Energy Dispatch Strategy for Integrated Energy System Based on Constrained Reinforcement Learning | `md/Dynamic_Energy_Dispatch_Strategy_for_Integrated_Energy_System_Based_on_Constrain_md/document.md` | Dynamic_Energy_Dispatch_Strategy_for_Integrated_Energy_System_Based_on_Constrained_Reinforcement_Learning.pdf (71 KB) |
+| 6 | Collaborative scheduling optimization of hydrogen-enhanced integrated energy system via goal-conditioned hierarchical re | `md/Dynamic_energy_dispatch_strategy_for_integrated_energy_system_based_on_improved_md/document.md` | Dynamic energy dispatch strategy for integrated energy system based on improved deep reinforcement learning.pdf (81 KB) |
+| 7 | Incentive-oriented power‑carbon emissions trading-tradable green certificate integrated market mechanisms using multi-ag | `md/Incentive-oriented_power_carbon_emissions_trading-tradable_green_certificate_int_md/document.md` | Incentive-oriented power‑carbon emissions trading-tradable green certificate integrated market mechanisms using multi-agent deep reinforcement learning.pdf (102 KB) |
+| 8 | Liquid air energy storage: Price arbitrage operations and sizing optimization in the GB real-time electricity market | `md/Liquid_air_energy_storage_md/document.md` | Liquid air energy storage.pdf (46 KB) |
+| 9 | Multi-agent deep reinforcement learning for efficient multi-timescale bidding of a hybrid power plant in day-ahead and r | `md/Multi-agent_deep_reinforcement_learning_for_efficient_multi-timescale_bidding_of_md/document.md` | Multi-agent deep reinforcement learning for efficient multi-timescale bidding of a hybrid power plant in day-ahead and real-time markets.pdf (82 KB) |
+| 10 | Multi-agent hierarchical reinforcement learning for energy management<sup>✩</sup> | `md/Multi-agent_hierarchical_reinforcement_learning_for_energy_management_md/document.md` | Multi-agent hierarchical reinforcement learning for energy management.pdf (108 KB) |
+| 11 | Optimal dispatch of integrated energy system based on deep reinforcement learning☆ | `md/Optimal_dispatch_of_integrated_energy_system_based_on_deep_reinforcement_learnin_md/document.md` | Optimal dispatch of integrated energy system based on deep reinforcement learning.pdf (31 KB) |
+| 12 | OPEN ACCESS | `md/Optimal_price-taker_bidding_strategy_of_distributed_energy_storage_systems_in_th_md/document.md` | Optimal price-taker bidding strategy of distributed energy storage systems in the electricity spot marketv.pdf (34 KB) |
+| 13 | Pricing Strategy for Regional Integrated Energy System Considering Privacy Based on Deep Reinforcement Learning | `md/Pricing_Strategy_for_Regional_Integrated_Energy_System_Considering_Privacy_Based_md/document.md` | Pricing_Strategy_for_Regional_Integrated_Energy_System_Considering_Privacy_Based_on_Deep_Reinforcement_Learning.pdf (78 KB) |
+| 14 | Safe Exploration in Reinforcement Learning: A Generalized Formulation and Algorithms | `md/safe_Exploration_in_reinforcement_learning_a_generalized_formulation_and_algorit_md/document.md` | safe Exploration in reinforcement learning a generalized formulation and algorithms.pdf (82 KB) |
+| 15 | Safe Exploration of State and Action Spaces in Reinforcement Learning | `md/Safe_Exploration_of_State_and_Action_Spaces_in_Reinforcement_Learning_md/document.md` | Safe Exploration of State and Action Spaces in Reinforcement Learning.pdf (151 KB) |
+| 16 | Virtual power plant participation in day-ahead and futures markets using a deep learning approach | `md/Virtual_power_plant_participation_in_day-ahead_and_futures_markets_using_a_deep_md/document.md` | Virtual_power_plant_participation_in_day-ahead_and_futures_markets_using_a_deep_learning_approach.pdf (29 KB) |
+
+共 16 篇，转换时间见各目录 `manifest.json` 的 `generated_at`。
+
+阅读时优先打开对应 `document.md`。

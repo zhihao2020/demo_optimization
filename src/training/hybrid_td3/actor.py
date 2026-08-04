@@ -44,6 +44,14 @@ class HybridActor(nn.Module):
         self.mode_head = nn.Linear(hidden, 3)
         self.discharge_mag_head = nn.Linear(hidden, 1)
         self.charge_mag_head = nn.Linear(hidden, 1)
+        # 先验：满发附近 + 电池待机 + CAES IDLE，接近强规则基线，避免早期乱充放。
+        nn.init.constant_(self.thermal_head.bias, 2.0)  # sigmoid→u_tp 靠近上界
+        nn.init.constant_(self.battery_head.bias, 0.0)  # sigmoid→u_bat 中点≈0
+        with torch.no_grad():
+            self.mode_head.bias.zero_()
+            self.mode_head.bias[int(CaesMode.IDLE)] = 2.0
+            self.mode_head.bias[int(CaesMode.DISCHARGE)] = -1.0
+            self.mode_head.bias[int(CaesMode.CHARGE)] = -1.0
 
     def forward_logits(self, obs: torch.Tensor):
         """计算各动作潜变量与模式 logits。

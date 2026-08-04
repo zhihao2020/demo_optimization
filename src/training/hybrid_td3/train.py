@@ -18,8 +18,9 @@ from envs.power_system_env import PowerSystemEnv
 from envs.reward_calculator import IncompleteRewardConfigError
 from fmu import FmuAdapter
 from replay import HybridGiveSafeReplayBuffer
-from safety import GiveSafeController, ShadowFmuValidator, load_givesafe_config
+from safety import GiveSafeController, NoSafeActionFoundError, ShadowFmuValidator, load_givesafe_config
 from training.evaluate_td3 import evaluate_annual_policy, evaluate_policy
+from controllers.price_aware_rule import PriceAwareRuleController
 from controllers.rule_based_controller import RuleBasedController
 
 from .algorithm import HybridTD3
@@ -28,15 +29,12 @@ from .givesafe_collector import GiveSafeTransitionCollector
 
 
 class RandomFeasiblePolicy:
-    """随机可行动作策略(RandomFeasiblePolicy)：训练早期探索用。"""
+    """可行域内探索；默认偏置 IDLE/满发，避免均匀抽 CAES 导致早期无效吞吐。"""
 
-    def __init__(self, env: PowerSystemEnv):
-        """绑定环境。
-
-        Args:
-            env: 电力系统环境实例。
-        """
+    def __init__(self, env: PowerSystemEnv, idle_bias: float = 0.55, high_tp_bias: float = 0.4):
         self.env = env
+        self.idle_bias = float(idle_bias)
+        self.high_tp_bias = float(high_tp_bias)
 
     def predict(self, _obs, deterministic: bool = False) -> dict:
         """在可行域内均匀随机采样混合动作。
@@ -62,9 +60,21 @@ class RandomFeasiblePolicy:
         ]
         if not modes:
             raise FeasibleSetEmpty("无可选 CAES 模式")
-        mode = modes[int(np.random.randint(len(modes)))]
-        u_tp = float(np.random.uniform(feasible.u_tp_low, feasible.u_tp_high))
-        u_bat = float(np.random.uniform(feasible.u_battery_low, feasible.u_battery_high))
+        if CaesMode.IDLE in modes and np.random.rand() < self.idle_bias:
+            mode = CaesMode.IDLE
+        else:
+            mode = modes[int(np.random.randint(len(modes)))]
+        if np.random.rand() < self.high_tp_bias:
+            # 偏高出力探索：在 [mid, high] 采样
+            mid = 0.5 * (feasible.u_tp_low + feasible.u_tp_high)
+            u_tp = float(np.random.uniform(mid, feasible.u_tp_high))
+        else:
+            u_tp = float(np.random.uniform(feasible.u_tp_low, feasible.u_tp_high))
+        # 电池：40% 采样 0（若可行），否则均匀
+        if feasible.u_battery_low <= 0.0 <= feasible.u_battery_high and np.random.rand() < 0.4:
+            u_bat = 0.0
+        else:
+            u_bat = float(np.random.uniform(feasible.u_battery_low, feasible.u_battery_high))
         mag = 0.0 if mode == CaesMode.IDLE else float(np.random.uniform(0.0, 1.0))
         return {
             "u_tp": np.asarray([u_tp], dtype=np.float32),
@@ -108,13 +118,29 @@ class HybridPolicyWrapper:
             feasible = self.env.get_feasible_action_spec()
             return self.agent.select_action(obs, feasible, deterministic=det)
 
-        gs = self.controller.select_safe_action(
-            self.env.last_outputs,
-            self.env.previous_thermal,
-            propose,
-            deterministic=det,
-        )
-        return gs.safe_action
+        try:
+            gs = self.controller.select_safe_action(
+                self.env.last_outputs,
+                self.env.previous_thermal,
+                propose,
+                deterministic=det,
+            )
+            return gs.safe_action
+        except NoSafeActionFoundError:
+            # 评估不中断：退回当前可行域内的保守动作（满发+电池0+IDLE），绝非训练 fallback
+            feasible = self.env.get_feasible_action_spec()
+            u_bat = 0.0
+            if not (feasible.u_battery_low <= 0.0 <= feasible.u_battery_high):
+                u_bat = 0.5 * (feasible.u_battery_low + feasible.u_battery_high)
+            mode = int(CaesMode.IDLE) if feasible.mode_mask.idle else (
+                int(CaesMode.DISCHARGE) if feasible.mode_mask.discharge else int(CaesMode.CHARGE)
+            )
+            return {
+                "u_tp": np.asarray([float(feasible.u_tp_high)], dtype=np.float32),
+                "u_battery": np.asarray([float(u_bat)], dtype=np.float32),
+                "caes_mode": mode,
+                "caes_magnitude": np.asarray([0.0], dtype=np.float32),
+            }
 
     def on_episode_reset(self, info: dict[str, Any]) -> None:
         """回合重置时重置影子 FMU。
@@ -288,6 +314,12 @@ def run_hybrid_training(
     enable_shadow: bool | None = None,
     forecast_enabled: bool | None = None,
     annual_evaluation: bool = False,
+    random_explore_start: float = 0.25,
+    random_explore_end: float = 0.05,
+    gradient_steps: int = 2,
+    resume_from: str | Path | None = None,
+    reset_critic_on_resume: bool = False,
+    rule_demo_fraction: float = 0.25,
 ) -> dict[str, Any]:
     """Hybrid-GiveSafe-TD3 主训练循环：收集物理有效步、更新 TD3、评估并写 summary。
 
@@ -365,11 +397,42 @@ def run_hybrid_training(
     )
     safety_dataset = SafetyDataset()
     collector = GiveSafeTransitionCollector(buffer, controller, shadow=shadow, safety_dataset=safety_dataset)
+    rew_cfg = env.reward_calculator.config
+    clip_cfg = rew_cfg.get("reward_clip") or {}
+    reward_clip = None
+    if clip_cfg.get("enabled", True):
+        reward_clip = (float(clip_cfg.get("min", -20.0)), float(clip_cfg.get("max", 20.0)))
     agent = HybridTD3(
         obs_dim=int(np.prod(env.observation_space.shape)),
-        gamma=float(env.reward_calculator.config.get("gamma", 0.99)),
+        gamma=float(rew_cfg.get("gamma", 0.99)),
+        explore_noise=0.08,
+        reward_clip=reward_clip,
+        q_clip=200.0,
     )
+    # 目标网络与带先验的 actor 同步
+    agent.actor_target.load_state_dict(agent.actor.state_dict())
+    resumed = None
+    if resume_from is not None:
+        ckpt = Path(resume_from)
+        if not ckpt.is_file():
+            env.close()
+            if shadow is not None:
+                shadow.close()
+            return {"status": "blocked_missing_checkpoint", "error": f"checkpoint 不存在: {ckpt}"}
+        agent.load(ckpt, reset_critic=reset_critic_on_resume)
+        resumed = str(ckpt.resolve())
+        if reset_critic_on_resume:
+            # 再同步 actor_target（load 已加载 actor）
+            agent.actor_target.load_state_dict(agent.actor.state_dict())
     random_policy = RandomFeasiblePolicy(env)
+    # 市场环境下用峰谷规则作示范，避免 idle 反套利先验
+    if getattr(env, "market_enabled", False):
+        rule_policy = PriceAwareRuleController(env)
+        rule_policy_name = "price_aware"
+    else:
+        rule_policy = RuleBasedController(env)
+        rule_policy_name = "conservative_idle"
+    n_grad = max(int(gradient_steps), 1)
 
     valid_steps = 0
     episode = 0
@@ -392,6 +455,13 @@ def run_hybrid_training(
         collector.on_episode_reset(actual_start)
         return next_obs, reset_info
 
+    def explore_epsilon(step: int) -> float:
+        """线性退火随机探索比例：早期多探索，后期贴近策略。"""
+        if total_valid_steps <= learning_starts:
+            return random_explore_end
+        t = min(max(step - learning_starts, 0) / max(total_valid_steps - learning_starts, 1), 1.0)
+        return float(random_explore_start + t * (random_explore_end - random_explore_start))
+
     obs, info0 = reset_training_episode(episode)
     result: dict[str, Any] = {
         "requested_valid_steps": total_valid_steps,
@@ -406,6 +476,19 @@ def run_hybrid_training(
         "forecast_enabled": env.forecast_enabled,
         "forecast_horizon_hours": env.forecast_provider.horizon_hours if env.forecast_provider else 0,
         "observation_dim": int(np.prod(env.observation_space.shape)),
+        "training_recipe": {
+            "random_explore_start": random_explore_start,
+            "random_explore_end": random_explore_end,
+            "gradient_steps": n_grad,
+            "actor_prior": "high_tp_idle_bias",
+            "random_idle_bias": True,
+            "rule_policy": rule_policy_name,
+            "resume_from": resumed,
+            "reset_critic_on_resume": bool(reset_critic_on_resume and resumed),
+            "rule_demo_fraction": float(np.clip(rule_demo_fraction, 0.0, 1.0)),
+            "soc_shaping": (rew_cfg.get("terminal_soc") or {}).get("shaping"),
+            "reward_clip": reward_clip,
+        },
     }
 
     try:
@@ -418,9 +501,19 @@ def run_hybrid_training(
                 obs, info0 = reset_training_episode(episode)
                 continue
 
+            eps = explore_epsilon(valid_steps)
+            rule_frac = float(np.clip(rule_demo_fraction, 0.0, 1.0))
+
             def propose():
-                """随机或策略采样下一步动作提案。"""
-                if valid_steps < learning_starts or np.random.rand() < 0.1:
+                # 预热：规则/随机混合；其后 ε-greedy，规则示范比例可配置（BC 后微调宜偏高）
+                if valid_steps < learning_starts:
+                    if np.random.rand() < max(rule_frac, 0.5):
+                        return rule_policy.predict(obs)
+                    return random_policy.predict(obs)
+                r = np.random.rand()
+                if r < eps * rule_frac:
+                    return rule_policy.predict(obs)
+                if r < eps:
                     return random_policy.predict(obs)
                 return agent.select_action(obs, env.get_feasible_action_spec(), deterministic=False)
 
@@ -429,20 +522,26 @@ def run_hybrid_training(
             )
             if info.get("transition_type") == "physical" and info.get("transition_valid"):
                 valid_steps += 1
+                # 探索噪声随进度略降
+                progress = valid_steps / max(total_valid_steps, 1)
+                agent.explore_noise = float(0.08 * (1.0 - 0.6 * progress))
+                metrics = {}
                 if buffer.physical_size >= learning_starts:
-                    metrics = agent.update(buffer, batch_size=min(batch_size, len(buffer)))
-                else:
-                    metrics = {}
-                step_log.append(
-                    {
-                        "valid_step": valid_steps,
-                        "reward": reward,
-                        "attempts": info.get("givesafe_attempt_count"),
-                        "rejected": info.get("givesafe_rejected_attempts"),
-                        "mode": info.get("requested_caes_mode"),
-                        **metrics,
-                    }
-                )
+                    for _ in range(n_grad):
+                        metrics = agent.update(buffer, batch_size=min(batch_size, len(buffer)))
+                if valid_steps % 500 == 0 or valid_steps == total_valid_steps:
+                    step_log.append(
+                        {
+                            "valid_step": valid_steps,
+                            "reward": reward,
+                            "eps": eps,
+                            "explore_noise": agent.explore_noise,
+                            "attempts": info.get("givesafe_attempt_count"),
+                            "rejected": info.get("givesafe_rejected_attempts"),
+                            "mode": info.get("requested_caes_mode"),
+                            **metrics,
+                        }
+                    )
                 pbar.update(1)
                 pbar.set_postfix(
                     ep=episode,

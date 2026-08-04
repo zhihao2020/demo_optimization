@@ -1,0 +1,316 @@
+# Optimal dispatch of integrated energy system based on deep reinforcement learning☆
+
+Xiang Zhou <sup>\*</sup>, Jiye Wang, Xinying Wang, Sheng Chen
+
+China Electric Power Research Institute, Haidian District, Beijing 100192, China
+
+## A R T I C L E I N F O
+
+Keywords: Integrated energy system Optimal dispatch Deep reinforcement learning Uncertainty
+
+## A B S T R A C T
+
+Optimized scheduling of integrated energy systems is of great significance for achieving multi-energy comple mentarity and economic operation of the system. However, the intermittency of renewable energy sources and the uncertainty of user energy demand cause random fluctuations in the supply and demand sides of the system. Traditional scheduling methods are difficult to accurately adapt to the dynamic changes of the actual environment. In view of the uncertainty associated with renewable energy and load in integrated energy systems, an optimal dispatch method based on deep reinforcement learning is proposed. This study first outlines the methodology of deep reinforcement learning and then presents an optimal dispatch model based on this approach. The model incorporates a well-designed state space, action space, and reward function. Next, the process of model solving using the Asynchronous Advantage Actor-Critic (A3C) algorithm is described. Finally, simulation results demonstrate that the proposed method can adaptively respond to the uncertainty of energy sources and loads, and achieve optimal performance comparable to that of traditional mathematical program ming methods.
+
+## 1. Introduction
+
+Integrated energy systems (IES) enable the cascade utilization of energy and coordinated complementarity of various energy sources, making them an essential approach to addressing a series of issues such as the depletion of traditional energy sources, environmental pollution, and global climate change (Olabi and Abdelkareem, 2022). IES combines different energy networks such as electricity, heat, and gas using various energy coupling devices. Therefore, the unified scheduling of multiple energy units in IES can achieve optimal allocation of system resources on a larger scale (Di, et al., 2020).
+
+Extensive research has been conducted by scholars both at home and abroad on the optimization scheduling of integrated energy systems (IES). Reference (Zhengjie et al., 2021) used an improved second-order oscillating particle swarm optimization algorithm to solve the sched uling model of IES, achieving peak shaving and valley filling and improving energy utilization efficiency. Reference (Haiyang et al., 2020) optimized the output of a cold-heat-electricity cogeneration system by guiding it with a price signal and solving the optimal power output with quadratic programming to make energy supply more economical.
+
+Reference (Yonghui and Bowen, 2020) studied the economic dispatch problem of an electric-gas IES system that includes wind power, photovoltaics, and power-to-gas units, using a second-order cone relaxation method to solve it. Reference [6] decoupled the electric-thermal IES system using the Lagrange multiplier method to simplify the optimiza tion scheduling model solution. However, the above references did not consider the uncertainty of renewable energy output and load, that is, they conducted experiments using the forecast results of energy sources and loads as actual values, which led to experimental results that heavily relied on the accuracy of the forecasts.
+
+To address the challenge brought by uncertainties on both the generation and consumption sides in the optimization schedule, references (Dechang et al., 2021; Xiangxiang et al., 2022) adopt stochastic optimization methods to handle uncertainty and optimize the expected operating cost of various typical scenarios. However, the generation of a large number of scenarios increases the difficulty of the solution, leading to a decrease in solution accuracy. References (Zhou et al., 2021; Liuyang et al., 2020) propose a robust optimization algorithm for IES systems with renewable energy sources. This method characterizes un certain factors by an uncertainty set and obtains the optimal operating scheme under the worst-case scenario. However, it is often difficult to determine the uncertainty set.
+
+With the application of artificial intelligence in various industrial fields, reinforcement learning(RL) methods based on the Markov decision process (MDP) theory have provided new solutions for addressing uncertainties in generation and consumption (Zidong et al., 2019; Hong et al., 2021). In reinforcement learning, an agent interacts with the environment through trial and error and optimizes its strategy by continuously exploring the environment. Typical algorithms such as Q-learning (Wang et al., 2020) and SARSA (Gangui et al., 2020) have been applied in IES optimization scheduling. For example, references (Hongsheng et al., 2021; Xingyu and Junjie, 2021) describe the dynamic optimization problem of IES scheduling with uncertainties in generation and consumption as an MDP model and solve the problem through Q-learning. Reference (Dunnan et al., 2021) implements power opti mization of a home energy system with photovoltaics and energy storage through the SARSA algorithm. However, the above methods all require discretization of the state space, greatly increasing the exploration space of the agent, which can lead to the curse of dimensionality. Deep rein forcement learning (DRL) combines reinforcement learning with deep neural networks with powerful feature extraction capabilities. Training the neural network through reinforcement learning, avoids the dis cretization of the state space, and has been widely used in automatic generation control (Li et al., 2020), power flow adjustment (Liu et al., 2020), frequency control (Yongxin et al., 2021), and other fields. Reference (Hong et al., 2020) uses DRL with Q-learning and deep neural networks to optimize IES, but this method requires the discretization of the power of gas turbines and energy storage, inevitably introducing errors and reducing the accuracy of the optimization results. Deep reinforcement learning algorithms have the following advantages when addressing optimization and operation problems in integrated energy systems.
+
+1) By interacting and experimenting with the environmental status information of the sources, loads, and storage devices in an integrated energy system, the operational optimization strategy can be continuously improved without the need for constructing complex explicit physical models.
+
+2) Through deep neural networks in deep reinforcement learning algorithms, optimization action strategies can be approximated for different system states, adapting to uncertainties such as variable wind/solar power generation and loads.
+
+3) By training the model using offline historical data, it can be applied to online policy generation, greatly reducing the time required for policy generation. When applying existing models to similar scenarios, the models can autonomously evolve.
+
+In summary, to address the issues of renewable energy and uncertain load power in IES, this paper introduces deep reinforcement learning to IES optimization scheduling, proposing an optimization scheduling method based on an asynchronous advantage actor-critic (A3C) algorithm. The method uses continuous state and action spaces to avoid solving errors caused by discretization.
+
+## 2. Deep reinforcement learning fundamentals
+
+RL is a learning method that maps from environmental states to actions. The learning process can be described as:
+
+• At each moment, the agent interacts with the environment to obtain all or part of the observable state.
+
+• For the observed state, evaluate each action based on the value function, and use a certain strategy to map the current state to the corresponding action.
+
+• The environment responds to the action to obtain the state at the next moment, the schematic diagram of the RL process is shown in Fig. 1.
+
+![](227e6ea24a33ee947e1bb8680bf6209f62c3b0db516c00b34202fef074475231.jpg)  
+Fig. 1. Schematic diagram of RL process.
+
+In DRL, the agent learns in the form of a deep neural network, directly parameterizing the policy through the neural network. This approach is suitable for problems with continuous action spaces, such as the IES optimization schedule, and avoids the error introduced by the discretization of the action space. The A3C algorithm is a typical DRL algorithm based on the policy-value framework for decision-making. It uses a value neural network to approximate the value function shown in Eq. (1), which represents the expected value of the cumulative reward that can be obtained under a state s.
+
+$$
+V _ {\pi} (s) = E _ {\pi} \left(\sum_ {k = 0} \gamma^ {k} r _ {t + k} | s _ {t} = s\right)\tag{1}
+$$
+
+The equation πrepresents the strategy of the intelligent agent; γis the discount factor, satisfying $0 < \gamma \leq 1$ . The closer is to 1, the more the agent values long-term rewards. The policy neural networkπ(a|s) is used to approximate the strategy, and the value network is used to guide the policy network update by estimating the value function of each state.
+
+Different from other DRL methods, A3C synchronously trains the policy-value framework in multiple threads on the CPU, which can effectively utilize computer resources and improve training efficiency, achieving the best performance in various tasks.
+
+3. Deep reinforcement learning model for optimal scheduling of IES
+
+## 3.1. Optimization scheduling framework
+
+According to the characteristics of the A3C algorithm, an IES opti mization and scheduling framework are constructed as shown in Fig. 2. The network structures, including the policy network and the value network, are identical in both the local and global networks within each thread. At any optimization moment, the intelligent agents within each thread independently make optimal scheduling decisions for the IES, update neural network parameters based on system feedback rewards, and pass the learning results to the global agent. After a certain number of updates, the global agent synchronously distributes its aggregated network parameters to the intelligent agents within each sub-thread to update their network parameters.
+
+After the training is completed, only the operating status of the IES at each moment needs to be inputted into the neural network of the global agent, which can then output the optimal scheduling decision at each moment in real time.
+
+## 3.2. Optimization scheduling model
+
+## 3.2.1. Action space
+
+The action space is designed as the decision variable for the optimization scheduling problem, which is the operating power of each device in the environment model shown in Fig. 2.
+
+The microturbine (MT) generates electricity and heat by burning natural gas and sends the heat to the heat recovery steam generator (HRSG).
+
+![](15103eeaaa4afd8cf6da7032176d7992063bab84f7fe002dc15ba7be5f1be0ee.jpg)  
+Fig. 2. The structure of integrated energy system optimal dispatch.
+
+$$
+P _ {G T} (t) = \eta_ {G T} G _ {G T} (t)\tag{2}
+$$
+
+$$
+Q _ {G T} (t) = (1 - \eta_ {G T}) (1 - \sigma_ {G T}) G _ {G T} (t)\tag{3}
+$$
+
+In the equation, $G _ { \mathrm { G T } } ( t ) , \ P _ { \mathrm { G T } } ( t ) ,$ , and $Q _ { \mathrm { G T } } ( t )$ respectively represent the natural gas power consumption, electricity generation power, and heat generation power of the gas turbine in period $t , \eta _ { G T }$ is the electricity generation efficiency; andσ $\cdot _ { G T }$ is the heat loss coefficient.
+
+The HRSG, electric boiler(EB), and gas-fired boiler(GB) are all energy conversion devices, and their input-output power relationship satisfies the following equation:
+
+$$
+\left\{ \begin{array}{l l} Q _ {W H} (t) = \eta_ {W H} Q _ {G T} (t) \\ Q _ {E B} (t) = \eta_ {E B} P _ {E B} (t) \\ Q _ {G B} (t) = \eta_ {G B} G _ {G B} (t) \end{array} \right.\tag{4}
+$$
+
+In the equation, $Q _ { \mathrm { W H } } ( t )$ 、η represent the output heat power and efficiency of the waste heat boiler, respectively; $\begin{array} { r } { P _ { \mathrm { E B } } ( t ) , \ Q _ { \mathrm { E B } } ( t ) . } \end{array}$ <sup>、η</sup>EB represent the input electric power, output heat power, and efficiency of the electric boiler, respectively; $G _ { \mathrm { G B } } ( t ) , \ Q _ { \mathrm { G B } } ( t )$ , andη represent the input gas power, output heat power, and efficiency of the gas boiler, respectively.
+
+From Eqs. (2) to (4), it can be seen that once $P _ { \mathrm { G T } } ( t )$ is determined, $Q _ { \mathrm { G T } } ( t )$ and $Q _ { \mathrm { W H } } ( t )$ can be determined as well. When $Q _ { \mathrm { G B } } ( t )$ is also determined, Q<sub>EB</sub>(t) can be determined according to the following heat power balance constraint:
+
+$$
+Q _ {W H} (t) + Q _ {E B} (t) + Q _ {G B} (t) = Q _ {l o a d} (t)\tag{5}
+$$
+
+In the equation, $Q _ { \mathrm { l o a d } } ( t )$ represents the thermal load power at time t. Then P (t) can be determined based on Q (t).
+
+Therefore, the action of the intelligent agent $a _ { t }$ can be expressed as:
+
+$$
+a _ {t} = \left\{P _ {G T} (t), Q _ {G B} (t), P _ {B E S} (t) \right\}\tag{6}
+$$
+
+In the equation, $P _ { \mathrm { B E S } } ( t )$ represents the power of the energy storage system, and it indicates discharge when positive and charge when negative.
+
+Each device is subject to operational power constraints:
+
+$$
+P _ {y, \min} \leq P _ {y} (t) \leq P _ {y, \max}\tag{7}
+$$
+
+where $P _ { y , \phantom { } }$ <sub>min,</sub> and $P _ { y , \ l }$ <sub>max</sub> represent the minimum and maximum operating power of device y, respectively.
+
+## 3.2.2. State space
+
+The state of the agent includes wind power, photovoltaic power, load power, and the charge status of the energy storage system within the IES. To ensure that the output power of the gas turbine and gas boiler meets the ramping power constraint, the output power at the previous time step is included as part of the state space at the current time step.
+
+$$
+s _ {t} = \left\{P _ {W} (t), P _ {P V} (t), P _ {\text { load }} (t), H _ {\text { load }} (t), S O C (t), P _ {G T} (t - 1), Q _ {G B} (t - 1) \right\}\tag{8}
+$$
+
+In the equation, $P _ { \mathrm { W } } ( t ) , \ P _ { \mathrm { P V } } ( t )$ , and $P _ { \mathrm { l o a d } } ( t )$ represent the wind power, photovoltaic power, and electrical load power at time $t ,$ respectively, while SOC(t) represents the state of charge of the energy storage system at time t. When the agent makes a scheduling decision $P _ { \mathrm { E S S } } ( t )$ and issues a dispatch instruction to the energy storage system, the state of charge SOC(t) at that time becomes:
+
+$$
+S O C (t) = S O C (t - 1) + \eta_ {B E S} P _ {B E S} (t) / E _ {B E S}\tag{9}
+$$
+
+The equation $\eta _ { B E S }$ represents the charge and discharge efficiency of the energy storage system, and E<sub>BES</sub> represents the capacity of the energy storage system. The charge status is restricted within the following range:
+
+$$
+S O C _ {\min} \leq S O C (t) \leq S O C _ {\max}\tag{10}
+$$
+
+In the equation, $S O C _ { \mathrm { { m i n } } }$ and $S O C _ { \mathrm { { m a x } } }$ represent the minimum and maximum values of the SOC.
+
+The operation of gas turbines and gas boilers needs to meet the power ramping constraint, which is expressed as follows:
+
+$$
+\Delta P _ {y, \min} \leq P _ {y} (t) - P _ {y} (t - 1) \leq \Delta P _ {y, \max}\tag{11}
+$$
+
+In the equation, $\varDelta P _ { y , \mathrm { { m a x } } } \varDelta P _ { y , \mathrm { { m i n } } }$ represent the upper and lower limits of the ramping power of equipment y.
+
+## 3.2.3. Reward function
+
+Through the reasonable construction of a reward function, the agent is guided to find the optimal scheduling strategy. As the agent updates parameters to maximize rewards, and the optimization scheduling objective is to minimize the daily operating cost, the reward obtained by the agent at each time is set to the negative operating cost.
+
+$$
+r _ {t} = - \left[ C _ {u} (t) + C _ {m} (t) \right]\tag{12}
+$$
+
+In the equation, $C _ { \mathrm { u } } ( t )$ and $C _ { \mathrm { m } } ( t )$ represent the energy procurement cost and equipment maintenance cost, respectively; F(t) represents the penalty for power constraint violation.
+
+Purchase cost includes the cost of purchasing electricity and the cost of purchasing gas.
+
+$$
+C _ {u} (t) = c _ {e} (t) P _ {b u y} (t) + c _ {g} (t) \left[ G _ {G B} (t) + G _ {G T} (t) \right]\tag{13}
+$$
+
+In the equation, $c _ { \mathrm { e } } ( t )$ 、c<sub>g</sub>(t) represent time-of-use electricity price and gas price, respectively; $P _ { \mathrm { b u y } } ( t )$ represents the power purchased from or sold to the grid, with positive values indicating electricity purchase and negative values indicating electricity sale. $P _ { \mathrm { b u y } } ( t )$ can be determined by the following power balance constraint:
+
+$$
+P _ {b u y} (t) = P _ {l o a d} (t) - P _ {W} (t) - P _ {P V} (t) - P _ {G T} (t) - P _ {B E S} (t) - P _ {E B} (t)\tag{14}
+$$
+
+The equipment maintenance cost is expressed as follows:
+
+$$
+C _ {m} (t) = \sum_ {y} \rho_ {y} P _ {y} (t)\tag{15}
+$$
+
+where $\rho _ { y }$ is the operating cost coefficient of equipment y.
+
+## 4. A solution method for optimal scheduling of IES
+
+Based on the constructed deep reinforcement learning model above, the A3C algorithm is used to offline train the agent neural network, and the agent gradually learns the optimal scheduling decisions corre sponding to each system operating state.
+
+The global policy network and value network parameters are denoted as $\theta _ { a }$ and $\theta _ { \mathrm { c } } ,$ respectively. For agent $i ,$ its policy network and value network parameters are denoted as $\theta _ { a , i }$ and $\theta _ { c , i }$ , respectively. Each agent updates the global agent network using the exploration experience. The equations are shown as (16) and (17).
+
+$$
+\theta_ {a} = \theta_ {a} + l _ {a} \left[ \nabla_ {\theta_ {a, i}} \log \pi (a | s) (R - V _ {\pi} (s)) \right]\tag{16}
+$$
+
+$$
+\theta_ {c} = \theta_ {c} + l _ {c} \left[ \partial (R - V _ {\pi} (s)) ^ {2} / \partial \theta_ {c, i} \right]\tag{17}
+$$
+
+Here, $l _ { a }$ and l<sub>c</sub> represent the learning rates for the policy network and value network, respectively, while R denotes the accumulated reward obtained by the agent under the state s.
+
+## 5. Example analysis
+
+## 5.1. Simulation example setup
+
+To validate the effectiveness of the proposed optimization scheduling method based on the A3C algorithm, the comprehensive energy system shown in Fig. 2 was used as a case study for simulation. The renewable energy generation, electricity, and heat load data from the Belgian power grid from January 2021 to June 2021 were used as training data (Wei et al., 2017; Mocanu et al., 2019). A scheduling cycle is divided into 24 time periods, and this paper adopts the time-of-use electricity price shown in reference (Xiaolu et al., 2019), and the gas price is 0.3 yuan/kW.
+
+The structure of the policy and value networks for each agent is identical. The policy network consists of four hidden layers with 256, 128, 64, and 3 neurons, respectively, while the value network consists of three hidden layers with 128, 64, and 1 neurons, respectively. All hidden layers use the ReLU activation function. The learning rates for the policy and value networks are set to $l _ { a } { = } 0 . 0 1 , l _ { c } { = } 0 . 0 0 1$ , respectively, and the discount factor is set to $\gamma = 1$
+
+## 5.2. Analysis of scheduling results
+
+During the training process, the average operating cost of every 5 scheduling cycles was recorded, as shown in Fig. 3. It can be observed that there is a significant fluctuation at the beginning of the training, but as the training progresses, the intelligent agent gradually explores the optimal scheduling strategy. After 30,000 scheduling cycles of training, the operating cost of the system converges.
+
+After the training of the agents, the day-ahead optimized dispatch for August 1st, 2021 is performed as an example. The optimized dispatch results for the electricity and heat power are shown in Figs. 4 and $^ { 5 , }$ respectively.
+
+According to Fig. $^ { 4 , }$ the system purchases electricity from the grid to charge the energy storage during the low-price period from 0:00–7:00, and stores excess electricity in the energy storage during the period of net load demand less than 0 from 13:30–17:00, to discharge and reduce the system operating cost during peak electricity prices. Since the operating cost of the gas turbine is always lower than that of purchasing electricity from the grid, when the power of energy storage is insuffi cient, the system gives priority to generating electricity through gas turbines to meet the load demand. As shown in Fig. 5, the trend of the variation of heat power generated by the heat recovery steam generator is consistent with that of the electric power generated by the gas turbine. During the low-price period, the system purchases electricity from the grid to heat through electric boilers when the gas turbine does not meet the load demand. During the flat electricity price and peak electricity price periods, the system gives priority to heating through gas boilers. From 12:15–13:00, when the power of the gas boiler reaches its maximum limit, the unsatisfied power is supplemented by electric boilers.
+
+![](c08ea5e46648e56644b9c09ab2ebbe5e26ac381038fffee8e9e0a63dfab8bc1c.jpg)  
+Fig. 3. The cost curve during training.
+
+![](f3c4548f1099d902b92c004a2c55b36638608675af04f21126caf3ba0181ae0e.jpg)  
+Fig. 4. Dispatch results of electric power.
+
+![](8e10b1fb8a5f935ae868be68cb356fe2a30a64dc1fa2ccdb4372cd70e943ee4a.jpg)  
+Fig. 5. Dispatch results of heat power.
+
+## 5.3. Comparative analysis
+
+## 5.3.1. Comparison with other methods
+
+To compare the effectiveness of the proposed method in this paper, we compare it with DQN, ant colony optimization algorithm (ACO), and traditional mathematical programming method based on CPLEX opti mizer. The optimization for August 1, 2021, is performed 100 times using various methods, and the maximum, minimum, and average system operating costs are calculated. The results are shown in Table 1. It can be seen that the average operating cost under the A3C method proposed in this paper is only 0.33% higher than the optimal mathematical programming method and better than DQN and ACO. The DQN method needs to discretize the action and state space, which inevitably deviates from the optimal scheduling plan, while the heuristic algorithm has large fluctuations in results and often falls into a locally optimal solution during the experiment.
+
+Furthermore, daily optimization was performed for 31 consecutive days in August 2021, with 100 optimizations per day, and the average values was calculated. The cumulative average operating costs under various methods are shown in Fig. 6. It can be seen that the operating costs of the optimization scheduling method based on A3C are basically consistent with the optimal costs. As the number of operating days increases, the deviation of the operating costs of the DQN and ACO methods from A3C gradually increases. On the 31st day, the operating costs of the DQN and ACO methods were 3.47% and 1.67% higher than that of A3C, respectively. The analysis results in Fig. 7 are consistent with Table 1.
+
+## 5.3.2. Comparative analysis in response to uncertainty
+
+In order to verify the ability of the proposed method to deal with the uncertainty of source load, a comparative analysis was conducted between the proposed method and the traditional stochastic optimization method shown in reference (GuiLi et al., 2020). It was assumed that the photovoltaic and load forecasting errors followed a normal distribution, while the wind power forecasting error followed a Laplace normal mixture distribution (Xingyu and Buying, 2017). Taking August 1st, 2021 as an example, the day-ahead optimization scheduling costs under different levels of source-load fluctuations are shown in Table 2.
+
+According to Table 2, as the level of source-load fluctuations increases, the optimization scheduling costs of both methods also increase, but the increase in cost for the A3C method is lower than that for the stochastic optimization method. Moreover, under the same level of source-load fluctuations, the scheduling cost of the A3C method is always lower than that of the stochastic optimization method, which proves the effectiveness of the A3C method in dealing with source-load uncertainty.
+
+Table 1  
+Comparison of different methods.
+
+<table><tr><td>Method</td><td>A3C</td><td>DQN</td><td>ACO</td><td>CPLEX</td></tr><tr><td>Maximum/¥</td><td>7054.12</td><td>7187.49</td><td>7082.00</td><td>6975.67</td></tr><tr><td>Minimum/¥</td><td>6982.43</td><td>7068.52</td><td>6976.32</td><td>6975.67</td></tr><tr><td>Average/¥</td><td>6998.63</td><td>7155.02</td><td>7013.34</td><td>6975.67</td></tr></table>
+
+![](24fd4f74eabf966dced91fea4e62f8d10db9292daf36920f36ce0c6e95c21d09.jpg)  
+Fig. 6. Cumulative cost of different methods.
+
+![](513a9764cbc82c8a5e46afa1b7d6fcb1ee7cbedae001c76f619243e6f1fd15e9.jpg)  
+Fig. 7. Cumulative cost of different methods.
+
+Table 2  
+Operation cost under different volatility levels of power sources and load.
+
+<table><tr><td>Source-load fluctuation level</td><td>A3C Cost/¥</td><td>Stochastic optimization Cost/¥</td></tr><tr><td>4%</td><td>6998.63</td><td>7023.30</td></tr><tr><td>8%</td><td>7130.03</td><td>7167.56</td></tr><tr><td>15%</td><td>7221.32</td><td>7325.45</td></tr></table>
+
+## 6. Conclusion
+
+In this paper, a comprehensive energy system optimization and scheduling method based on deep reinforcement learning is proposed. The optimization scheduling problem is formulated as a Markov decision model, and a deep reinforcement learning-based optimization scheduling framework is designed. The proposed method also includes a model-solving method based on the A3C algorithm. The proposed method can output the scheduling strategy in real-time based on the system state, without relying on accurate day-ahead source-load forecasting, effectively dealing with the uncertainty and fluctuation of source load. The effectiveness of the proposed method is verified through comparisons with traditional mathematical programming methods, heuristic algorithms, and DQN algorithms.
+
+## Declaration of Competing Interest
+
+Please declare whether or not the submitted work was carried out with a conflict of interest. If yes, please state any personal, professional or financial relationships that could potentially be construed as a conflict of interest. If no, please add "The authors declare no conflict of interest".
+
+## Data Availability
+
+The data that has been used is confidential.
+
+## Acknowledgments
+
+This work was supported by the Science and Technology Project of State Grid Corporation of China (5100–202155320A-0-0-00).
+
+## References
+
+Dechang, Yang, Ming, Wang, Ruiqi, Yang, et al., 2021. Optimal dispatching of an energy system with integrated compressed air energy storage and demand response. Energy (19), 121232.
+
+Di, Wu, Zhonghe, Han, Zhijian, Liu, et al., 2020. Comparative study of optimization method and optimal operation strategy for multi-scenario integrated energy system. Energy, 119311.
+
+Dunnan, Liu, Linxiang, Wang, Weiye, Wang, et al., 2021. Optimal scheduling of charging and swap loads for large-scale electric vehicles based on deep reinforcement learning. Autom. of Elec. Power Syst. 1–19. -09-17.
+
+Gangui, Yan, Tianyang, Kan, Yulong, Yang, et al., 2020. Demand response optimal scheduling for distributed electric heating based on deep reinforcement learning. Power System Technol. 44 (11), 4140 4149.
+
+GuiLi, Yuan, Xinchao, jia, Fang, fang, et al., 2020. Joint stochastic optimal scheduling of heat and power considering source and load sides of virtual power plant. Power Syst. Technol. 44 (08), 2932 2940.
+
+Haiyang, Wang, Ke, Li, Chenghui, Zhang, et al., 2020. ．Distributed coordinative optimal operation of community integrated energy system based on stackelberg game. Proc. CSEE 40 (17), 5435 5445.
+
+Hong, Liang, Hongxin, Li, Huaying, Zhang, et al., 2021. Research on control strategy of microgrid energy storage system based on deep reinforcement learning. Power Syst. Technol. 1 11. -09-16.
+
+Hong, Zhang, Xin, Shen, Haoyuan, Mu, et al., 2020. Research on online optima dispatching of residential energy consumption based on multi-agent asynchronous deep reinforcement learning. Proc. CSEE 40 (01), 117–127. +379.
+
+Hongsheng, Xu, Jixiang, Lu, Zhihong, Yang, et al., 2021. Incentive demand response decision-making optimization model based on deep reinforcement learning. Autom. of Electric Power Syst. 45 (14), 97–103.
+
+Li, H., Wan, Z., He, H., 2020. Constrained EV charging scheduling based on safe deep reinforcement learning. in IEEE Trans. on Smart Grid vol. 11 (3), 2427 2439.
+
+Liu, Y., Zhang, D., Gooi, H.B., 2020. Optimization strategy based on deep reinforcement learning for home energy management. CSEE J. Power Energy Syst.
+
+Liuyang, Peng, Yuanzhang, Sun, Xu, Jian, et al., 2020. Adaptive uncertain economic dispatch based on deep reinforcement learning. Autom. of Elec. Power Syst. 44 (09), 33–42.
+
+Mocanu, E., et al., 2019. On-line building energy optimization using deep reinforcement learning. IEEE Trans. on Smart Grid vol. 10 (4), 3698–3708. https://doi.org 10.1109/TSG.2018.2834219
+
+Olabi, A.G., Abdelkareem, Mohammad Ali, 2022. Renewable energy and climate change. Renew. Sustain. Energy Rev. Volume158.
+
+Wang, B., Li, Y., Ming, W., Wang, S., 2020. Deep reinforcement learning method for demand response management of interruptible load. IEEE Transactions on Smart Grid vol. 11 (4), 3146–3155.
+
+T. Wei, Yanzhi Wang and Q. Zhu, Deep reinforcement learning for building HVAC control, 2017 54th ACM/EDAC/IEEE Design Automation Conference (DAC), 2017, pp. 1–6, doi: 10.1145/3061639.3062224.
+
+Xiangxiang, Dong, Jiang, Wu, Zhanbo, Xu, et al., 2022. Optimal coordination of hydrogen-based integrated energy systems with combination of hydrogen and water storage. Appl. Energy 308, 118274.
+
+Xiaolu, Li, Fuzhou, shan, Yanmin, song, et al., 2019. ．Optimal dispatch of multi-region integrated energy systems considering heating network constraints and carbon trading. Autom. Elec. Power Syst. 43 (19), 52–59. +131.
+
+Xingyu, Liu, Buying, Wen, Yuewen, Jiang, 2017. Study on the benefit from spinning reserve in wind power integrated power system based on conditional value at risk. Trans. China Electrotech. Soc. 32 (9), 169 178.
+
+Xingyu, Zhao, Junjie, Hu, 2021. Deep reinforcement learning based optimization method for charging of aggregated electric vehi-cles. Power Syst. Technol. 45 (06), 2319–2327.
+
+Yonghui, Sun, Bowen, Zhang, Leijiao, Ge, et al., 2020. Day-ahead optimization schedule for gas-electric integrated energy system based on second-order cone programming. CSEE J. Power Energy Syst. 6 (1), 142–151.
+
+Yongxin, Su, Zexuan, Wu, Mao, Tan, et al., 2021. Online optimization for home integrated demand response based on deep reinforcement learning. Proc. CSEE 41 (16), 5581 5593.
+
+Zhengjie, Li, Aoyang, Han, Shengqi, Zhou, et al., 2021. Optimization of an integrated energy system considering integrated demand response. Power Syst. Protect. Contro 49 (21), 36 42.
+
+Zhou, Y., Wei, Z., Shahidehpour, M., et al., 2021. Distributionally robust resilien operation of integrated energy systems using moment and wasserstein metric for contingencies. IEEE Trans. Power Syst. 36 (4), 3574–3584.
+
+Zidong, Zhang, Caiming, Qiu, Dongxia, Zhang, et al., 2019. A coordinated control method for hybrid energy storage system in microgrid based on deep reinforcement learning. Power Syst. Technol. 43 (06), 1914–1921.

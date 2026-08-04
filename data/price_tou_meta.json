@@ -1,0 +1,56 @@
+{
+  "province": "shandong",
+  "province_name": "山东",
+  "year": 2026,
+  "doc_no": "国网山东省电力公司2026年工商业分时电价公告；框架依据鲁发改价格〔2023〕914号",
+  "effective_from": "2026-01-01",
+  "path": "proxy_purchase_tou",
+  "review_status": "provincial-published (via jiezijiuwei compiled table)",
+  "source_url": "https://www.jiezijiuwei.com/tools/smart-microgrid",
+  "transmission_source": "国家发展改革委第四监管周期省级电网输配电价表（山东 110kV 档示例 td_energy=0.106）",
+  "float_base_components": {
+    "proxy_price": 0.4,
+    "capacity_comp_price": 0.0705,
+    "line_loss_price": 0.01,
+    "sys_op_price": 0.0209,
+    "float_base_sum": 0.5014000000000001
+  },
+  "non_float_components": {
+    "td_energy_price": 0.106,
+    "fund_price": 0.02717,
+    "non_float_sum": 0.13317,
+    "td_voltage_note": "算例取山东 110kV 输配电度价 0.106 元/kWh（第四监管周期）"
+  },
+  "ratios": {
+    "S": 2.0,
+    "P": 1.7,
+    "F": 1.0,
+    "V": 0.3,
+    "D": 0.1
+  },
+  "buy_yuan_per_kwh_by_band": {
+    "S": 1.13597,
+    "P": 0.98555,
+    "F": 0.63457,
+    "V": 0.28359,
+    "D": 0.18331
+  },
+  "buy_formula": "buy = (proxy+capacity_comp+line_loss+sys_op) * ratio[band] + td_energy + fund",
+  "sell_yuan_per_kwh": 0.1875,
+  "sell_formula": "0.5*export_mech_price + 0.5*export_market_price",
+  "export_components": {
+    "export_mech_ratio": 0.5,
+    "export_mech_price": 0.225,
+    "export_market_price": 0.15
+  },
+  "band_hours_in_8760": {
+    "S": 1188,
+    "P": 1001,
+    "F": 4386,
+    "V": 1366,
+    "D": 819
+  },
+  "calendar_year": 2026,
+  "n_hours": 8760,
+  "note": "Price-taker 外生价；非现货出清结果。直接参与市场交易用户电能量价可由现货形成，本文件采用代理购电分时路径。"
+}

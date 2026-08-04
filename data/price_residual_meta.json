@@ -1,0 +1,11 @@
+{
+  "source_tou": "data/price_tou.csv",
+  "n_hours": 8760,
+  "seed": 42,
+  "sigma_base": 0.04,
+  "rho": 0.85,
+  "formula": "realized = max(da + eps, floor); eps ~ AR(1) scaled by band",
+  "eps_buy_std": 0.1005450831532657,
+  "eps_sell_std": 0.07270011424012778,
+  "buy_realized_mean": 0.6443140273900668
+}
