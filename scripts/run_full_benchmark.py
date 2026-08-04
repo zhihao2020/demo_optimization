@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -14,6 +15,10 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from config.paths import apply_process_cache_env, resolve_run_dir  # noqa: E402
+
+apply_process_cache_env()
+
 from actions import CaesMode  # noqa: E402
 from controllers.price_aware_rule import PriceAwareRuleController  # noqa: E402
 from controllers.rule_based_controller import RuleBasedController  # noqa: E402
@@ -21,6 +26,7 @@ from envs.power_system_env import PowerSystemEnv  # noqa: E402
 from optimization.metrics import extract_kpi_from_eval, relative_to_baseline  # noqa: E402
 from optimization.pso_fmu import PSOConfig, run_pso  # noqa: E402
 from optimization.rolling_lp import RollingLPController  # noqa: E402
+from optimization.rolling_linprog import RollingLinprogController  # noqa: E402
 from safety import GiveSafeController, NoSafeActionFoundError, load_givesafe_config  # noqa: E402
 from training.evaluate_td3 import evaluate_policy  # noqa: E402
 from training.ghtd3.agent import GHTD3Agent  # noqa: E402
@@ -110,12 +116,16 @@ def main() -> None:
         "--hybrid-ckpt",
         default="runs/market_soc_ok_15k_20260803/checkpoints/hybrid_givesafe_td3.pt",
     )
-    p.add_argument("--out-dir", default="runs/benchmark_full_20260804")
+    p.add_argument(
+        "--out-dir",
+        default="runs/benchmark_full_20260804",
+        help="相对 runs/ 时写入 OPTIMAL_DEMO_RUNS（默认 E:/optimal_demo_cache/runs）",
+    )
     args = p.parse_args()
 
-    out = Path(args.out_dir)
-    out.mkdir(parents=True, exist_ok=True)
+    out = resolve_run_dir(args.out_dir)
     (out / "trajectories").mkdir(exist_ok=True)
+    print(f"[cache] out_dir={out} TEMP={os.environ.get('TEMP')}")
 
     seasons = [s.strip() for s in args.seasons.split(",") if s.strip()]
     methods = [m.strip() for m in args.methods.split(",") if m.strip()]
@@ -142,65 +152,85 @@ def main() -> None:
         start = SEASONS[season]
         b0_kpi = None
         for name in methods:
-            print(f"=== {season} × {name} ===")
+            print(f"=== {season} × {name} ===", flush=True)
             csv_path = out / "trajectories" / f"{season}_{name}.csv"
-            if name == "b0":
-                kpi = eval_policy_method(
-                    name, lambda e: RuleBasedController(e), start, csv_path
-                )
-            elif name == "b1":
-                kpi = eval_policy_method(
-                    name, lambda e: PriceAwareRuleController(e), start, csv_path
-                )
-            elif name == "lp":
-                kpi = eval_policy_method(
-                    name, lambda e: RollingLPController(e), start, csv_path
-                )
-            elif name == "hybrid":
-                kpi = eval_policy_method(
-                    name,
-                    lambda e: HybridPolicy(
-                        hybrid_algo,
-                        e,
-                        GiveSafeController(oracle=e.oracle, shadow=None, config=gs_cfg),
-                    ),
-                    start,
-                    csv_path,
-                )
-            elif name == "ghtd3":
-                kpi = eval_policy_method(
-                    name,
-                    lambda e: GHTD3PolicyWrapper(
-                        gh_agent,
-                        e,
-                        GiveSafeController(oracle=e.oracle, shadow=None, config=gs_cfg),
-                        gh_cfg,
-                    ),
-                    start,
-                    csv_path,
-                )
-            elif name == "pso":
-                kpi = run_pso(
-                    start_time=start,
-                    cfg=PSOConfig(
-                        n_particles=args.pso_pop,
-                        n_iters=args.pso_iters,
-                        seed=0,
-                    ),
-                )
-                kpi["method"] = "pso"
-            else:
-                raise ValueError(name)
+            try:
+                if name == "b0":
+                    kpi = eval_policy_method(
+                        name, lambda e: RuleBasedController(e), start, csv_path
+                    )
+                elif name == "b1":
+                    kpi = eval_policy_method(
+                        name, lambda e: PriceAwareRuleController(e), start, csv_path
+                    )
+                elif name == "lp":
+                    kpi = eval_policy_method(
+                        name, lambda e: RollingLPController(e), start, csv_path
+                    )
+                elif name in ("linprog", "lp_true"):
+                    kpi = eval_policy_method(
+                        name, lambda e: RollingLinprogController(e), start, csv_path
+                    )
+                elif name == "hybrid":
+                    kpi = eval_policy_method(
+                        name,
+                        lambda e: HybridPolicy(
+                            hybrid_algo,
+                            e,
+                            GiveSafeController(oracle=e.oracle, shadow=None, config=gs_cfg),
+                        ),
+                        start,
+                        csv_path,
+                    )
+                elif name == "ghtd3":
+                    kpi = eval_policy_method(
+                        name,
+                        lambda e: GHTD3PolicyWrapper(
+                            gh_agent,
+                            e,
+                            GiveSafeController(oracle=e.oracle, shadow=None, config=gs_cfg),
+                            gh_cfg,
+                        ),
+                        start,
+                        csv_path,
+                    )
+                elif name == "pso":
+                    kpi = run_pso(
+                        start_time=start,
+                        cfg=PSOConfig(
+                            n_particles=args.pso_pop,
+                            n_iters=args.pso_iters,
+                            seed=0,
+                        ),
+                    )
+                    kpi["method"] = "pso"
+                else:
+                    raise ValueError(name)
+            except Exception as exc:
+                print(f"  FAILED {season}/{name}: {exc}", flush=True)
+                kpi = {
+                    "method": name,
+                    "error": str(exc),
+                    "episode_reward": None,
+                    "net_cashflow_j": None,
+                    "terminal_soc_satisfied": False,
+                }
             kpi["season"] = season
             kpi["start_time"] = start
-            if name == "b0":
+            if name == "b0" and kpi.get("net_cashflow_j") is not None:
                 b0_kpi = dict(kpi)
-            if b0_kpi is not None and name != "b0":
+            if b0_kpi is not None and name != "b0" and kpi.get("net_cashflow_j") is not None:
                 kpi["vs_b0"] = relative_to_baseline(kpi, b0_kpi)
             rows.append(kpi)
+            # incremental save
+            (out / "benchmark_table.json").write_text(
+                json.dumps({"rows": rows}, indent=2, ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
             print(
                 f"  J={kpi.get('net_cashflow_j')} reward={kpi.get('episode_reward')} "
-                f"soc={kpi.get('terminal_soc_satisfied')} curt={kpi.get('curtailment_mwh')}"
+                f"soc={kpi.get('terminal_soc_satisfied')} curt={kpi.get('curtailment_mwh')}",
+                flush=True,
             )
 
     summary = {

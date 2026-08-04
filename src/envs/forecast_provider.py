@@ -48,7 +48,11 @@ class ForecastSource:
 class ForecastProvider:
     """日前预测提供器(ForecastProvider)。
 
-    在严格小时网格上提供完美日前预测；特征顺序为 horizon-major（先通道后时刻）。
+    在严格小时网格上提供日前预测观测；特征顺序为 horizon-major（先通道后时刻）。
+
+    - ``mode=perfect``：CSV 真值完美前瞻（默认主表）
+    - ``mode=noisy``：对真值乘性噪声 + 可选时移，模拟有误差的日前预报；
+      **仅污染观测**，不改变 FMU 物理真值与结算
     """
 
     def __init__(
@@ -58,14 +62,22 @@ class ForecastProvider:
         *,
         annual_horizon_hours: int,
         step_seconds: float,
+        mode: str | None = None,
+        noise_seed: int | None = None,
+        noise_sigma: Mapping[str, float] | None = None,
+        lag_hours: int | None = None,
     ) -> None:
         """加载并校验全部前瞻 CSV。
 
         Args:
             root: 项目根目录，用于解析相对路径。
-            config: ``forecast`` 配置段（``horizon_hours``、``sources``）。
+            config: ``forecast`` 配置段（``horizon_hours``、``sources``、可选 ``mode``/``noise``）。
             annual_horizon_hours: 年度仿真小时数（与 FMU 一致）。
             step_seconds: 决策步长（秒），须与 CSV 时间网格一致。
+            mode: 覆盖配置的 ``perfect`` / ``noisy``。
+            noise_seed: 覆盖噪声种子。
+            noise_sigma: 覆盖各通道乘性误差标准差。
+            lag_hours: 覆盖预报时移（小时，正=滞后）。
 
         Raises:
             ForecastDataError: 配置、路径、网格或数值非法。
@@ -97,7 +109,71 @@ class ForecastProvider:
         if tuple(item.name for item in sources) != FORECAST_CHANNELS:
             raise ForecastDataError(f"forecast source 顺序必须为 {FORECAST_CHANNELS}")
         self.sources = tuple(sources)
-        self._values = np.stack([self._read_source(source) for source in self.sources], axis=1)
+        perfect = np.stack([self._read_source(source) for source in self.sources], axis=1)
+
+        noise_cfg = dict(config.get("noise") or {})
+        self.mode = str(mode if mode is not None else config.get("mode", "perfect")).lower()
+        if self.mode not in ("perfect", "noisy"):
+            raise ForecastDataError(f"未知 forecast.mode={self.mode!r}（支持 perfect|noisy）")
+        self.noise_seed = int(
+            noise_seed if noise_seed is not None else noise_cfg.get("seed", 0)
+        )
+        self.lag_hours = int(
+            lag_hours if lag_hours is not None else noise_cfg.get("lag_hours", 0)
+        )
+        default_sigma = {
+            "wind": 0.10,
+            "irradiance": 0.10,
+            "ambient_temperature": 0.0,
+            "planned_load": 0.08,
+        }
+        sigma_map = dict(default_sigma)
+        raw_sigma = noise_sigma if noise_sigma is not None else noise_cfg.get("sigma")
+        if isinstance(raw_sigma, Mapping):
+            for key, val in raw_sigma.items():
+                sigma_map[str(key)] = float(val)
+        elif raw_sigma is not None:
+            # 标量：施加到除温度外的通道
+            s = float(raw_sigma)
+            for key in ("wind", "irradiance", "planned_load"):
+                sigma_map[key] = s
+        self.noise_sigma = {name: float(sigma_map.get(name, 0.0)) for name in FORECAST_CHANNELS}
+
+        self._perfect_values = perfect
+        if self.mode == "perfect":
+            self._values = perfect
+        else:
+            self._values = self._build_noisy_values(perfect)
+
+    def _build_noisy_values(self, perfect: np.ndarray) -> np.ndarray:
+        """由完美序列构造可复现 noisy 日前预报序列。
+
+        Args:
+            perfect: 形状 ``(H+1, C)`` 的缩放真值。
+
+        Returns:
+            同形状 noisy 序列（非负通道裁剪到 ≥0）。
+        """
+        rng = np.random.default_rng(self.noise_seed)
+        noisy = perfect.copy()
+        n_rows, n_ch = perfect.shape
+        for c, name in enumerate(FORECAST_CHANNELS):
+            sigma = float(self.noise_sigma.get(name, 0.0))
+            if sigma <= 0.0:
+                continue
+            eps = rng.normal(0.0, sigma, size=n_rows)
+            noisy[:, c] = perfect[:, c] * (1.0 + eps)
+            # 风速/辐照/负荷缩放后仍应非负；温度通道可保留负值（相对 273.15 的偏差）
+            if name != "ambient_temperature":
+                noisy[:, c] = np.maximum(noisy[:, c], 0.0)
+        if self.lag_hours != 0:
+            # 正 lag：预报滞后于真值（用更早时刻当真预报）
+            shift = int(self.lag_hours)
+            idx = np.clip(np.arange(n_rows) - shift, 0, n_rows - 1)
+            noisy = noisy[idx]
+        if not np.all(np.isfinite(noisy)):
+            raise ForecastDataError("noisy forecast 含 NaN/Inf")
+        return noisy.astype(np.float64, copy=False)
 
     @property
     def feature_dim(self) -> int:

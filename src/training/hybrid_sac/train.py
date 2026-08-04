@@ -41,19 +41,21 @@ def run_hybrid_sac_training(
     enable_shadow: bool | None = None,
     forecast_enabled: bool | None = None,
     annual_evaluation: bool = False,
+    resume_from: str | Path | None = None,
 ) -> dict[str, Any]:
     """Hybrid-GiveSafe-SAC 主训练循环。
 
     Args:
-        total_valid_steps: 目标物理有效步数。
+        total_valid_steps: 目标物理有效步数（本 run 内新采步数；续训时为追加步数）。
         run_dir: 运行目录。
         seed: 随机种子。
-        learning_starts: 开始学习前的 replay 样本数。
+        learning_starts: 开始学习前的 replay 样本数；续训时若已加载权重可置 0。
         batch_size: SAC 更新批大小。
         formal: 是否 formal 模式。
         enable_shadow: 影子 FMU 开关。
         forecast_enabled: 环境预测开关。
         annual_evaluation: 是否全年评估。
+        resume_from: 可选 checkpoint 路径（``hybrid_givesafe_sac.pt``）。
 
     Returns:
         训练 summary 字典。
@@ -114,6 +116,18 @@ def run_hybrid_sac_training(
         obs_dim=int(np.prod(env.observation_space.shape)),
         gamma=float(env.reward_calculator.config.get("gamma", 0.99)),
     )
+    resumed: str | None = None
+    if resume_from is not None:
+        ckpt = Path(resume_from)
+        if not ckpt.is_file():
+            env.close()
+            if shadow is not None:
+                shadow.close()
+            raise FileNotFoundError(f"SAC resume checkpoint not found: {ckpt}")
+        agent.load(ckpt)
+        resumed = str(ckpt.resolve())
+        # 续训：权重已热，尽早开始梯度更新（仍需先填少量 replay）
+        learning_starts = min(int(learning_starts), 64)
     random_policy = RandomFeasiblePolicy(env)
 
     valid_steps = 0
@@ -152,6 +166,8 @@ def run_hybrid_sac_training(
         "forecast_enabled": env.forecast_enabled,
         "forecast_horizon_hours": env.forecast_provider.horizon_hours if env.forecast_provider else 0,
         "observation_dim": int(np.prod(env.observation_space.shape)),
+        "resume_from": resumed,
+        "agent_total_it_at_start": int(agent.total_it),
     }
 
     try:

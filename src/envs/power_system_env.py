@@ -84,6 +84,10 @@ class PowerSystemEnv(gym.Env):
         require_complete_reward: bool = False,
         run_id: str = "default",
         forecast_enabled: bool | None = None,
+        forecast_mode: str | None = None,
+        forecast_noise_seed: int | None = None,
+        forecast_noise_sigma: float | dict | None = None,
+        forecast_lag_hours: int | None = None,
         market_enabled: bool | None = None,
     ):
         super().__init__()
@@ -117,6 +121,10 @@ class PowerSystemEnv(gym.Env):
                 forecast_cfg,
                 annual_horizon_hours=int(self.config["fmu"]["annual_horizon_hours"]),
                 step_seconds=float(self.config["fmu"]["decision_interval_seconds"]),
+                mode=forecast_mode,
+                noise_seed=forecast_noise_seed,
+                noise_sigma=forecast_noise_sigma,
+                lag_hours=forecast_lag_hours,
             )
         market_cfg = self.config.get("market") or {}
         self.market_enabled = (

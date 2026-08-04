@@ -20,6 +20,19 @@
 | 代理购电与加项参数 | 同工具 `REFERENCE_INPUTS`（山东园区算例）：`proxy_price`、`capacity_comp`、`line_loss`、`sys_op`、`td_energy`、`fund` |
 | 输配电度价 | 国家发展改革委 **第四监管周期** 省级输配电价表，算例取山东 **110 kV** 电度电价 0.106 元/kWh |
 
+### 官方 PDF / 网页（核对用）
+
+| 核对对象 | 链接 |
+|----------|------|
+| **鲁发改价格〔2023〕914 号**（浮动比例框架） | https://www.shandong.gov.cn/module/download/downfile.jsp?classid=0&filename=b373ac6b7f11438abf4c9ff6c1bb4d0e.pdf |
+| **2026 年工商业分时电价公告**（时段表，济南发改转发） | https://jndpc.jinan.gov.cn/col2191/art/2025/art_2191_4789557.html |
+| 2026 分时公告摘录（第三方，便于对照时段） | https://www.pvmeng.com/2025/11/29/50325/ |
+| **代理购电价格表**（按月变；示例 PDF） | http://www.jiyang.gov.cn/resources/public/20251121/692033cb2e3aee8561e64264.pdf |
+| **输配电价** NDRC 通知页（下载附件核山东 110kV） | https://www.ndrc.gov.cn/xxgk/zcfb/tz/202305/t20230515_1356603.html |
+
+**核对顺序建议**：① 2026 公告时段 → ② 914 浮动比例 → ③ 当月代理购电分项 vs 本表 `0.4/0.0705/…`（算例可简化）→ ④ NDRC 附件 110kV 是否 0.106。  
+仓库 `proxy_price=0.4` 等为**算例参数**，非全年法定单一目录价；正式写作请注明 “illustrative proxy-purchase composition”。
+
 ## 购电价公式
 
 参与浮动基数：

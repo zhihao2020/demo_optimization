@@ -7,11 +7,22 @@ fmu:
   # 正式训练按 168 h 周 episode 覆盖该 FMU 的全年时间轴；尾段由最后一个窗口覆盖。
   annual_horizon_hours: 8760
 
-# 仅供策略使用的已知日前时序；FMU 仍使用其内嵌的同源表作为物理边界。
+# 仅供策略使用的日前时序观测；FMU 仍使用其内嵌的同源表作为物理边界与真值。
 # 每小时特征顺序：wind, irradiance, ambient_temperature, planned_load。
+# mode=perfect：CSV 完美前瞻（主表默认）；mode=noisy：有误差日前预报（仅污染 obs）。
 forecast:
   enabled: true
+  mode: perfect
   horizon_hours: 24
+  noise:
+    seed: 0
+    # 乘性相对误差标准差；温度默认 0（避免无量纲温偏被误乘）
+    sigma:
+      wind: 0.10
+      irradiance: 0.10
+      ambient_temperature: 0.0
+      planned_load: 0.08
+    lag_hours: 0
   sources:
     - {name: wind, path: data/winds.csv, offset: 0.0, scale: 15.0}
     - {name: irradiance, path: data/Gstc.csv, offset: 0.0, scale: 1000.0}

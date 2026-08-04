@@ -10,6 +10,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from config.paths import apply_process_cache_env, resolve_run_dir  # noqa: E402
+
+apply_process_cache_env()
+
 from training.ghtd3.train import run_ghtd3_training
 
 
@@ -34,6 +38,7 @@ def main() -> None:
         steps = args.steps or 10000
         run_dir = args.run_dir or "runs/ghtd3_custom"
 
+    run_dir = str(resolve_run_dir(run_dir))
     result = run_ghtd3_training(
         total_valid_steps=steps,
         run_dir=run_dir,

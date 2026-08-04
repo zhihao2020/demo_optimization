@@ -62,3 +62,31 @@ def test_forecast_csv_header_and_annual_grid_fail_fast(tmp_path):
     bad.write_text("time,value\n0,1\n3600,2\n", encoding="utf-8")
     with pytest.raises(ForecastDataError, match="8761 行"):
         provider._read_source(ForecastSource("wind", bad, 0.0, 1.0))
+
+
+def test_noisy_mode_differs_from_perfect_and_is_reproducible():
+    """noisy 与 perfect 不同；同 seed 可复现。"""
+    config = yaml.safe_load((ROOT / "src/config/env_config.yaml").read_text(encoding="utf-8"))
+    fc = dict(config["forecast"])
+    kwargs = dict(
+        annual_horizon_hours=config["fmu"]["annual_horizon_hours"],
+        step_seconds=config["fmu"]["decision_interval_seconds"],
+    )
+    perfect = ForecastProvider(ROOT, fc, mode="perfect", **kwargs)
+    noisy_a = ForecastProvider(ROOT, fc, mode="noisy", noise_seed=7, **kwargs)
+    noisy_b = ForecastProvider(ROOT, fc, mode="noisy", noise_seed=7, **kwargs)
+    noisy_c = ForecastProvider(ROOT, fc, mode="noisy", noise_seed=8, **kwargs)
+    p0 = perfect.at_time(0.0)
+    a0 = noisy_a.at_time(0.0)
+    b0 = noisy_b.at_time(0.0)
+    c0 = noisy_c.at_time(0.0)
+    assert perfect.mode == "perfect"
+    assert noisy_a.mode == "noisy"
+    assert not np.allclose(p0, a0)
+    assert np.allclose(a0, b0)
+    assert not np.allclose(a0, c0)
+    # 非负通道（除温度）不应出现负值
+    a_mat = a0.reshape(24, 4)
+    assert np.all(a_mat[:, 0] >= 0.0)
+    assert np.all(a_mat[:, 1] >= 0.0)
+    assert np.all(a_mat[:, 3] >= 0.0)

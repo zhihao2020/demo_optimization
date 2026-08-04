@@ -186,6 +186,7 @@ def evaluate_annual_policy(
     annual_horizon_hours: int,
     gamma: float = 0.99,
     output_dir: Path | None = None,
+    continuous_soc: bool = False,
 ) -> dict[str, Any]:
     """按训练一致的周窗口滑动覆盖全年评估。
 
@@ -195,6 +196,8 @@ def evaluate_annual_policy(
         annual_horizon_hours: 年度总小时数。
         gamma: 各窗口折扣因子。
         output_dir: 可选目录，每窗写入 ``window_XXXXh.csv``。
+        continuous_soc: 若 True，改为**单次连续年轨迹**（SOC 不跨周 reset），
+            见 ``evaluate_continuous_annual_policy``；主表默认 False（周窗口 reset）。
 
     Returns:
         全年汇总字典：总步数、总成本、各能量指标、违规计数等。
@@ -202,6 +205,14 @@ def evaluate_annual_policy(
     Raises:
         ValueError: 年度小时数、决策间隔或 episode 长度配置非法时抛出。
     """
+    if continuous_soc:
+        return evaluate_continuous_annual_policy(
+            env,
+            policy,
+            annual_horizon_hours=annual_horizon_hours,
+            gamma=gamma,
+            output_dir=output_dir,
+        )
     if annual_horizon_hours <= 0:
         raise ValueError("annual_horizon_hours 必须为正数")
     step_hours = float(env.config["fmu"]["decision_interval_seconds"]) / 3600.0
@@ -232,6 +243,7 @@ def evaluate_annual_policy(
     metric_names = tuple(windows[0]["metrics"]) if windows else ()
     return {
         "annual_horizon_hours": annual_horizon_hours,
+        "protocol": "weekly_reset",
         "windows": len(windows),
         "steps": sum(int(item["steps"]) for item in windows),
         "valid_steps": sum(int(item["valid_steps"]) for item in windows),
@@ -248,3 +260,202 @@ def evaluate_annual_policy(
         ),
         "caes_min_run_interruption_count": sum(int(item["caes_min_run_interruption_count"]) for item in windows),
     }
+
+
+def evaluate_continuous_annual_policy(
+    env,
+    policy: Any,
+    *,
+    annual_horizon_hours: int,
+    gamma: float = 0.99,
+    output_dir: Path | None = None,
+    start_time: float = 0.0,
+    snapshot_hours: int | None = None,
+) -> dict[str, Any]:
+    """连续年 SOC 附录协议：单次 reset 后连续滚动全年，储能状态跨周传递。
+
+    与主表 ``evaluate_annual_policy``（周窗口 reset）的差异：
+    - **不**在每 168 h 边界重置 FMU / SOC；
+    - 将 ``env.episode_steps`` 临时拉长为全年步数，仅在年终触发 terminal SOC 门控；
+    - 仍按 ``snapshot_hours``（默认原周长）切片汇总周级 KPI，便于与主表对照。
+
+    物理依据：FMU 内部状态仅在 ``adapter.reset`` 时回到标称初值；连续轨迹是唯一
+    能在不改写 FMU 连续状态的前提下实现「跨周 SOC 传递」的协议。
+
+    Args:
+        env: PowerSystemEnv。
+        policy: 评估策略。
+        annual_horizon_hours: 年度小时数（通常 8760）。
+        gamma: 折扣因子（用于切片回报；连续年总回报亦累计）。
+        output_dir: 可选，写逐步 CSV 与周切片摘要。
+        start_time: 仿真起点秒。
+        snapshot_hours: 周切片长度；None 时用环境原 ``episode_steps`` 小时数。
+
+    Returns:
+        连续年汇总字典，含 ``protocol="continuous_soc"`` 与 ``window_snapshots``。
+
+    Raises:
+        ValueError: 配置非法时抛出。
+    """
+    if annual_horizon_hours <= 0:
+        raise ValueError("annual_horizon_hours 必须为正数")
+    step_hours = float(env.config["fmu"]["decision_interval_seconds"]) / 3600.0
+    if step_hours <= 0 or not step_hours.is_integer():
+        raise ValueError("年度评估要求整数小时决策间隔")
+    step_hours_i = int(step_hours)
+    if annual_horizon_hours % step_hours_i != 0:
+        raise ValueError("annual_horizon_hours 须整除决策间隔小时数")
+    annual_steps = int(annual_horizon_hours // step_hours_i)
+    default_episode = int(env.episode_steps)
+    snap_h = int(snapshot_hours if snapshot_hours is not None else default_episode * step_hours_i)
+    if snap_h <= 0 or snap_h % step_hours_i != 0:
+        raise ValueError("snapshot_hours 必须为正且整除决策间隔")
+    snap_steps = int(snap_h // step_hours_i)
+
+    # 临时拉长 episode，使 truncation / terminal_soc 仅在年终触发
+    saved_env_steps = int(env.episode_steps)
+    saved_rc_steps = int(env.reward_calculator.episode_steps)
+    saved_rc_cfg = env.reward_calculator.config.get("episode_steps")
+    env.episode_steps = annual_steps
+    env.reward_calculator.episode_steps = annual_steps
+    env.reward_calculator.config["episode_steps"] = annual_steps
+
+    output_csv = None
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_csv = output_dir / "continuous_year.csv"
+
+    try:
+        full = evaluate_policy(
+            env,
+            policy,
+            output_csv=output_csv,
+            gamma=gamma,
+            reset_options={"start_time": float(start_time)},
+            max_steps=annual_steps,
+        )
+    finally:
+        env.episode_steps = saved_env_steps
+        env.reward_calculator.episode_steps = saved_rc_steps
+        if saved_rc_cfg is None:
+            env.reward_calculator.config.pop("episode_steps", None)
+        else:
+            env.reward_calculator.config["episode_steps"] = saved_rc_cfg
+
+    # 从逐步 CSV 重建周切片（若无 CSV 则仅返回年汇总）
+    window_snapshots: list[dict[str, Any]] = []
+    if output_csv is not None and output_csv.is_file():
+        window_snapshots = _continuous_year_window_snapshots(
+            output_csv, snap_steps=snap_steps, gamma=gamma
+        )
+        if output_dir is not None:
+            snap_path = output_dir / "window_snapshots.json"
+            import json
+
+            snap_path.write_text(
+                json.dumps(window_snapshots, indent=2, ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
+
+    n_windows = (annual_steps + snap_steps - 1) // snap_steps
+    return {
+        "annual_horizon_hours": annual_horizon_hours,
+        "protocol": "continuous_soc",
+        "start_time": float(start_time),
+        "snapshot_hours": snap_h,
+        "windows": len(window_snapshots) if window_snapshots else n_windows,
+        "steps": int(full["steps"]),
+        "valid_steps": int(full["valid_steps"]),
+        "annual_raw_total_cost": float(full["weekly_raw_total_cost"]),
+        "annual_episode_reward": float(full["weekly_episode_reward"]),
+        "window_discounted_return_sum": float(full["weekly_discounted_return"]),
+        "metrics": dict(full["metrics"]),
+        "fmu_failure_count": int(full["fmu_failure_count"]),
+        "forbidden_action_count": int(full["forbidden_action_count"]),
+        "invalid_transition_count": int(full["invalid_transition_count"]),
+        "terminal_soc_satisfied_year_end": bool(full["terminal_soc_satisfied"]),
+        "terminal_soc": full.get("terminal_soc"),
+        "initial_soc": full.get("initial_soc"),
+        "annual_economic_cashflow": float(
+            (full.get("cost_terms") or {}).get("economic_cashflow_delta", 0.0)
+        ),
+        "caes_min_run_interruption_count": int(full["caes_min_run_interruption_count"]),
+        "window_snapshots": window_snapshots,
+        "note": (
+            "Single continuous FMU trajectory; SOC carries across week boundaries. "
+            "Year-end terminal SoC gate only. Main-table weekly_reset is separate."
+        ),
+    }
+
+
+def _continuous_year_window_snapshots(
+    csv_path: Path,
+    *,
+    snap_steps: int,
+    gamma: float,
+) -> list[dict[str, Any]]:
+    """从连续年逐步 CSV 按 snap_steps 切片汇总。
+
+    Args:
+        csv_path: ``evaluate_policy`` 写出的逐步轨迹。
+        snap_steps: 每窗步数。
+        gamma: 窗内折扣因子。
+
+    Returns:
+        各窗摘要列表。
+    """
+    rows: list[dict[str, str]] = []
+    with Path(csv_path).open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+    if not rows:
+        return []
+
+    snapshots: list[dict[str, Any]] = []
+    for start in range(0, len(rows), snap_steps):
+        chunk = rows[start : start + snap_steps]
+        rew = 0.0
+        disc = 0.0
+        raw = 0.0
+        cash = 0.0
+        for i, row in enumerate(chunk):
+            r = float(row.get("reward") or 0.0)
+            rew += r
+            disc += (gamma**i) * r
+            raw += float(row.get("rt_raw_total_cost") or 0.0)
+            cash += float(row.get("rt_economic_cashflow_delta") or 0.0)
+        last = chunk[-1]
+        soc_keys = ("battery_soc", "caes_gas_soc", "caes_hot_soc", "caes_cold_soc")
+        term_soc = {
+            k: float(last[f"obs_{k}"]) if f"obs_{k}" in last and last[f"obs_{k}"] not in ("", None)
+            else float("nan")
+            for k in soc_keys
+        }
+        # obs_* 可能不在 CSV 列名中——回退 rt / 直接字段
+        for k in soc_keys:
+            if term_soc[k] != term_soc[k]:  # nan
+                for cand in (f"obs_{k}", k, f"rt_{k}"):
+                    if cand in last and last[cand] not in ("", None):
+                        try:
+                            term_soc[k] = float(last[cand])
+                            break
+                        except (TypeError, ValueError):
+                            pass
+        snapshots.append(
+            {
+                "window_index": len(snapshots),
+                "start_step": start,
+                "steps": len(chunk),
+                "episode_reward": rew,
+                "discounted_return": disc,
+                "raw_total_cost": raw,
+                "economic_cashflow_delta": cash,
+                "net_cashflow_j": -raw,
+                "terminal_soc": term_soc,
+                "invalid_transition_count": sum(
+                    1 for r in chunk if str(r.get("transition_valid")).lower() in ("false", "0")
+                ),
+            }
+        )
+    return snapshots

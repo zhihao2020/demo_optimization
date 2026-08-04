@@ -36,7 +36,27 @@ def test_annual_evaluation_covers_exactly_8760_hours_without_overrun():
         result = evaluate_annual_policy(env, IdlePolicy(), annual_horizon_hours=8760)
     finally:
         env.close()
+    assert result.get("protocol", "weekly_reset") == "weekly_reset"
     assert result["windows"] == 53
     assert result["steps"] == 8760
     assert result["valid_steps"] == 8760
     assert result["invalid_transition_count"] == 0
+
+
+def test_continuous_annual_single_trajectory_covers_horizon():
+    """连续年协议：单轨迹覆盖 horizon，protocol 标记 continuous_soc。"""
+    from training.evaluate_td3 import evaluate_continuous_annual_policy
+
+    env = PowerSystemEnv(adapter=FakeAdapter())
+    try:
+        # FakeAdapter 决策步 1h；用 336h 冒烟避免长循环
+        result = evaluate_continuous_annual_policy(
+            env, IdlePolicy(), annual_horizon_hours=336
+        )
+    finally:
+        env.close()
+    assert result["protocol"] == "continuous_soc"
+    assert result["steps"] == 336
+    assert result["valid_steps"] == 336
+    assert result["invalid_transition_count"] == 0
+    assert "terminal_soc_satisfied_year_end" in result
