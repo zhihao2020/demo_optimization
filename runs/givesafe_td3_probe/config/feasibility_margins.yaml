@@ -1,0 +1,85 @@
+# FeasibilityOracle 方向感知裕度（来自方程 + residual P99 + failure 审计）。
+# 禁止统一 0.02 盲目扩张；各设备/模式/方向独立配置。
+# residual = actual - predicted；dangerous 方向上的 P99 转化为保守裕度。
+
+oracle_version: "d5.2-probe-calibrated"
+
+# 裕度来自 runs/feasibility_probe（800 valid steps）残差危险方向 P99 + 工程内收
+battery:
+  # Modelica 一阶 SOC：充电 soc' = soc + u P dt / E；放电 soc' = soc + u P dt /(E eta)
+  residual_p99_charge_high: 0.013   # measured probe charge residual P99
+  residual_p99_discharge_low: 0.018 # measured |discharge residual| ~P99
+  margin_charge_high: 0.010
+  margin_discharge_low: 0.012
+  source: "exact_1step_modelica + probe_P99_2026-07-14"
+
+thermal:
+  # 必须用上一时刻 ACTUAL p_thermal，而非请求动作
+  use_actual_previous_p_thermal: true
+  residual_p99_ramp: 0.0
+  margin_u: 0.0
+  source: "python_rate_max_from_actual_p_thermal"
+
+caes:
+  # 模式专用：气/热/冷 SOC + 压力 + 温度联合约束，禁止仅看 gas SOC
+  discharge:
+    residual_p99_gas_low: 0.073
+    residual_p99_hot_low: 0.022
+    residual_p99_cold_low: 0.047
+    residual_p99_pressure_low: 9.8e4
+    residual_p99_temp_abs: 3.2
+    margin_gas: 0.015
+    margin_hot: 0.015
+    margin_cold: 0.015
+    margin_pressure_Pa: 1.0e5
+    margin_temp_K: 4.0
+  idle:
+    # idle 仍可能漂移压力/温度；probe 有 caes_pressure_low@idle
+    residual_p99_gas: 0.02
+    residual_p99_hot: 0.005
+    residual_p99_cold: 0.01
+    residual_p99_pressure: 6.5e4
+    residual_p99_temp_abs: 2.8
+    margin_gas: 0.01
+    margin_hot: 0.01
+    margin_cold: 0.01
+    margin_pressure_Pa: 1.2e5
+    margin_temp_K: 3.0
+  charge:
+    residual_p99_gas_high: 0.073
+    residual_p99_hot_high: 0.022
+    residual_p99_cold_high: 0.047
+    residual_p99_pressure_high: 9.8e4
+    residual_p99_temp_abs: 3.2
+    margin_gas: 0.015
+    margin_hot: 0.015
+    margin_cold: 0.015
+    margin_pressure_Pa: 1.0e5
+    margin_temp_K: 4.0
+  energy_model:
+    E_ref_J: 5.4e12
+    alpha_gas: 1.0
+    alpha_hot: 0.35
+    alpha_cold: 0.35
+    alpha_pressure_Pa_per_soc: 3.0e6
+    alpha_temp_K_per_u: 2.0
+  source: "mode_specific_joint_feasibility + probe_P99_2026-07-14"
+
+grid:
+  residual_p99_W: 5.9e7   # probe p_grid residual P99 (large; balance/curt dynamics)
+  margin_W: 2.0e5
+  source: "power_balance_prediction + probe_note_large_residual"
+
+safety_classifier:
+  model_version: "d5.1-logistic"
+  default_threshold: 0.99
+  thresholds: [0.99, 0.995, 0.999]
+  gate_metric: false_safe_rate
+  max_false_safe_rate: 0.01
+
+phase_e_gates:
+  zero_known_post_step_hard_violations: true
+  boundary_stress_min_actions: 20000
+  boundary_stress_require_pass: true
+  safety_classifier_max_false_safe_rate: 0.01
+  formal_default_blocked: true

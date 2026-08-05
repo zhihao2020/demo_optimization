@@ -1,0 +1,480 @@
+{
+  "seasons": {
+    "winter": 0.0,
+    "summer": 15552000.0,
+    "transition": 7776000.0
+  },
+  "methods": [
+    "b0",
+    "pso"
+  ],
+  "rows": [
+    {
+      "episode_reward": 67.47903658558717,
+      "net_cashflow_j": 8333189.446039211,
+      "raw_total_cost": -8333189.446039211,
+      "economic_reward": 53.2336668333556,
+      "market_buy_cost": 671748.6310778189,
+      "market_sell_revenue": 1654875.9152401558,
+      "market_energy_buy_mwh": 1668.6839060742834,
+      "market_energy_sell_mwh": 8826.004881280833,
+      "curtailment_mwh": 0.0,
+      "unserved_mwh": 0.0,
+      "thermal_mwh": 25200.0,
+      "battery_throughput_mwh": 0.0,
+      "caes_throughput_mwh": 275.325,
+      "terminal_soc_satisfied": true,
+      "terminal_soc_l1": 0.01403113377742482,
+      "terminal_soc_l1_full": 7.075642011425168,
+      "terminal_soc": {
+        "battery_soc": 0.5,
+        "caes_gas_soc": 0.8359688662225752,
+        "caes_hot_soc": 0.5183633213423782,
+        "caes_cold_soc": 0.4846534288015291
+      },
+      "fmu_failure_count": 0,
+      "invalid_transition_count": 0,
+      "wall_s": 0.3544429999310523,
+      "fmu_steps": 168,
+      "steps": 168,
+      "valid_steps": 168,
+      "method": "b0",
+      "season": "winter",
+      "start_time": 0.0
+    },
+    {
+      "episode_reward": 1.8177938863234449,
+      "net_cashflow_j": 737107.2307992452,
+      "raw_total_cost": -737107.2307992452,
+      "economic_reward": 4.708751792925424,
+      "market_buy_cost": 0.0,
+      "market_sell_revenue": 234874.01201422664,
+      "market_energy_buy_mwh": 0.0,
+      "market_energy_sell_mwh": 1252.6613974092086,
+      "curtailment_mwh": 2.980232238769531e-14,
+      "unserved_mwh": 0.0,
+      "thermal_mwh": 810.6000602245331,
+      "battery_throughput_mwh": 181.05177879333496,
+      "caes_throughput_mwh": 591.5999979972839,
+      "terminal_soc_satisfied": false,
+      "terminal_soc_l1": 0.5509094498985473,
+      "terminal_soc_l1_full": 1.7706773882327205,
+      "terminal_soc": {
+        "battery_soc": 0.8620584333644197,
+        "caes_gas_soc": 0.8421782001480822,
+        "caes_hot_soc": 0.5254075563686713,
+        "caes_cold_soc": 0.4511289810474239
+      },
+      "fmu_failure_count": 0,
+      "invalid_transition_count": 1,
+      "wall_s": 0.13634919992182404,
+      "fmu_steps": 6,
+      "steps": 7,
+      "valid_steps": 6,
+      "fitness": 612561.7583043178,
+      "theta": [
+        0.3790372827070481,
+        0.9418640208966204,
+        0.6037025916582331,
+        0.9,
+        0.3,
+        1.0
+      ],
+      "method": "pso",
+      "wall_s_search": 40.00262789998669,
+      "fmu_steps_search": 959,
+      "history": [
+        {
+          "iter": 0,
+          "gbest_f": 588153.434972251
+        },
+        {
+          "iter": 1,
+          "gbest_f": 608146.2055315628
+        },
+        {
+          "iter": 2,
+          "gbest_f": 611626.9539725463
+        },
+        {
+          "iter": 3,
+          "gbest_f": 612476.5159673733
+        },
+        {
+          "iter": 4,
+          "gbest_f": 612476.5159673733
+        },
+        {
+          "iter": 5,
+          "gbest_f": 612529.9696731125
+        },
+        {
+          "iter": 6,
+          "gbest_f": 612529.9696731125
+        },
+        {
+          "iter": 7,
+          "gbest_f": 612544.2323684436
+        },
+        {
+          "iter": 8,
+          "gbest_f": 612561.4135265093
+        },
+        {
+          "iter": 9,
+          "gbest_f": 612561.4135265093
+        },
+        {
+          "iter": 10,
+          "gbest_f": 612561.4135265093
+        },
+        {
+          "iter": 11,
+          "gbest_f": 612561.4135265093
+        },
+        {
+          "iter": 12,
+          "gbest_f": 612561.4135265093
+        },
+        {
+          "iter": 13,
+          "gbest_f": 612561.7583043178
+        },
+        {
+          "iter": 14,
+          "gbest_f": 612561.7583043178
+        }
+      ],
+      "theta_best": [
+        0.3790372827070481,
+        0.9418640208966204,
+        0.6037025916582331,
+        0.9,
+        0.3,
+        1.0
+      ],
+      "season": "winter",
+      "start_time": 0.0,
+      "vs_b0": {
+        "delta_j_vs_b0": -7596082.215239966,
+        "delta_curtailment_mwh": 2.980232238769531e-14,
+        "delta_unserved_mwh": 0.0,
+        "thermal_ratio_vs_b0": 0.03216666905652909,
+        "storage_throughput_ratio_vs_b0": 2.8063262572879784,
+        "delta_episode_reward": -65.66124269926372
+      }
+    },
+    {
+      "episode_reward": 13.302222958651862,
+      "net_cashflow_j": -84153.17702830271,
+      "raw_total_cost": 84153.17702830271,
+      "economic_reward": -0.5375831448332616,
+      "market_buy_cost": 5487991.860734188,
+      "market_sell_revenue": 1155776.5403144045,
+      "market_energy_buy_mwh": 9711.007531221736,
+      "market_energy_sell_mwh": 6164.141548343491,
+      "curtailment_mwh": 0.0,
+      "unserved_mwh": 0.0,
+      "thermal_mwh": 25200.0,
+      "battery_throughput_mwh": 0.0,
+      "caes_throughput_mwh": 1881.4875000000002,
+      "terminal_soc_satisfied": true,
+      "terminal_soc_l1": 0.04002562821770406,
+      "terminal_soc_l1_full": 7.161643244539876,
+      "terminal_soc": {
+        "battery_soc": 0.5,
+        "caes_gas_soc": 0.8099743717822959,
+        "caes_hot_soc": 0.45224019322740183,
+        "caes_cold_soc": 0.40714091709404027
+      },
+      "fmu_failure_count": 0,
+      "invalid_transition_count": 0,
+      "wall_s": 0.34516430005896837,
+      "fmu_steps": 168,
+      "steps": 168,
+      "valid_steps": 168,
+      "method": "b0",
+      "season": "summer",
+      "start_time": 15552000.0
+    },
+    {
+      "episode_reward": 24.002085750779834,
+      "net_cashflow_j": 4459263.239992189,
+      "raw_total_cost": -4459263.239992189,
+      "economic_reward": 28.48644389727667,
+      "market_buy_cost": 1677857.5429025611,
+      "market_sell_revenue": 1327489.256248829,
+      "market_energy_buy_mwh": 3208.369916743913,
+      "market_energy_sell_mwh": 7079.942699993754,
+      "curtailment_mwh": 0.0,
+      "unserved_mwh": 0.0,
+      "thermal_mwh": 6310.713909566402,
+      "battery_throughput_mwh": 1317.5224870443344,
+      "caes_throughput_mwh": 0.0,
+      "terminal_soc_satisfied": false,
+      "terminal_soc_l1": 0.5648521576938565,
+      "terminal_soc_l1_full": 20.751216975344477,
+      "terminal_soc": {
+        "battery_soc": 0.1495775292901458,
+        "caes_gas_soc": 0.8892184516290752,
+        "caes_hot_soc": 0.5,
+        "caes_cold_soc": 0.5
+      },
+      "fmu_failure_count": 0,
+      "invalid_transition_count": 1,
+      "wall_s": 0.24396010010968894,
+      "fmu_steps": 93,
+      "steps": 94,
+      "valid_steps": 93,
+      "fitness": 4334020.632107496,
+      "theta": [
+        0.5223014626898832,
+        0.8602890246438111,
+        0.30723568862082695,
+        0.0,
+        0.3,
+        0.9915306964821319
+      ],
+      "method": "pso",
+      "wall_s_search": 48.453623899957165,
+      "fmu_steps_search": 8073,
+      "history": [
+        {
+          "iter": 0,
+          "gbest_f": 795613.4634009277
+        },
+        {
+          "iter": 1,
+          "gbest_f": 795613.4634009277
+        },
+        {
+          "iter": 2,
+          "gbest_f": 795613.4634009277
+        },
+        {
+          "iter": 3,
+          "gbest_f": 795613.4634009277
+        },
+        {
+          "iter": 4,
+          "gbest_f": 795613.4634009277
+        },
+        {
+          "iter": 5,
+          "gbest_f": 998928.0985184269
+        },
+        {
+          "iter": 6,
+          "gbest_f": 4333929.863965346
+        },
+        {
+          "iter": 7,
+          "gbest_f": 4333929.863965346
+        },
+        {
+          "iter": 8,
+          "gbest_f": 4333929.863965346
+        },
+        {
+          "iter": 9,
+          "gbest_f": 4333929.863965346
+        },
+        {
+          "iter": 10,
+          "gbest_f": 4333929.863965346
+        },
+        {
+          "iter": 11,
+          "gbest_f": 4333929.863965346
+        },
+        {
+          "iter": 12,
+          "gbest_f": 4333929.863965346
+        },
+        {
+          "iter": 13,
+          "gbest_f": 4334020.632107496
+        },
+        {
+          "iter": 14,
+          "gbest_f": 4334020.632107496
+        }
+      ],
+      "theta_best": [
+        0.5223014626898832,
+        0.8602890246438111,
+        0.30723568862082695,
+        0.0,
+        0.3,
+        0.9915306964821319
+      ],
+      "season": "summer",
+      "start_time": 15552000.0,
+      "vs_b0": {
+        "delta_j_vs_b0": 4543416.417020492,
+        "delta_curtailment_mwh": 0.0,
+        "delta_unserved_mwh": 0.0,
+        "thermal_ratio_vs_b0": 0.2504251551415239,
+        "storage_throughput_ratio_vs_b0": 0.7002557747758803,
+        "delta_episode_reward": 10.699862792127972
+      }
+    },
+    {
+      "episode_reward": 58.630390012354574,
+      "net_cashflow_j": 6883404.533749985,
+      "raw_total_cost": -6883404.533749985,
+      "economic_reward": 43.972222880762786,
+      "market_buy_cost": 2066092.843644449,
+      "market_sell_revenue": 1845965.0108799983,
+      "market_energy_buy_mwh": 6217.980189210072,
+      "market_energy_sell_mwh": 9845.146724693323,
+      "curtailment_mwh": 0.0,
+      "unserved_mwh": 0.0,
+      "thermal_mwh": 25200.0,
+      "battery_throughput_mwh": 0.0,
+      "caes_throughput_mwh": 0.0,
+      "terminal_soc_satisfied": true,
+      "terminal_soc_l1": 0.010396368877547912,
+      "terminal_soc_l1_full": 2.8005560741643976,
+      "terminal_soc": {
+        "battery_soc": 0.5,
+        "caes_gas_soc": 0.8396036311224521,
+        "caes_hot_soc": 0.5,
+        "caes_cold_soc": 0.5
+      },
+      "fmu_failure_count": 0,
+      "invalid_transition_count": 0,
+      "wall_s": 0.3423979999497533,
+      "fmu_steps": 168,
+      "steps": 168,
+      "valid_steps": 168,
+      "method": "b0",
+      "season": "transition",
+      "start_time": 7776000.0
+    },
+    {
+      "episode_reward": 69.58759501332369,
+      "net_cashflow_j": 8923837.38588396,
+      "raw_total_cost": -8923837.38588396,
+      "economic_reward": 57.006814659779735,
+      "market_buy_cost": 1645503.9579257725,
+      "market_sell_revenue": 2226128.211547276,
+      "market_energy_buy_mwh": 4668.180743055243,
+      "market_energy_sell_mwh": 11872.683794918803,
+      "curtailment_mwh": 0.0,
+      "unserved_mwh": 0.0,
+      "thermal_mwh": 21773.41732442379,
+      "battery_throughput_mwh": 1761.7845672369003,
+      "caes_throughput_mwh": 0.0,
+      "terminal_soc_satisfied": true,
+      "terminal_soc_l1": 0.03620858135175831,
+      "terminal_soc_l1_full": 23.97972538579663,
+      "terminal_soc": {
+        "battery_soc": 0.5172081416494736,
+        "caes_gas_soc": 0.8396036311224521,
+        "caes_hot_soc": 0.5,
+        "caes_cold_soc": 0.5
+      },
+      "fmu_failure_count": 0,
+      "invalid_transition_count": 0,
+      "wall_s": 0.33222989994101226,
+      "fmu_steps": 168,
+      "steps": 168,
+      "valid_steps": 168,
+      "fitness": 8923837.38588396,
+      "theta": [
+        0.44081646861227153,
+        0.6649926389879994,
+        0.30150766863895884,
+        0.0,
+        0.5582984609890121,
+        0.9673351754604277
+      ],
+      "method": "pso",
+      "wall_s_search": 55.954942899988964,
+      "fmu_steps_search": 12676,
+      "history": [
+        {
+          "iter": 0,
+          "gbest_f": 7679314.463528125
+        },
+        {
+          "iter": 1,
+          "gbest_f": 7679314.463528125
+        },
+        {
+          "iter": 2,
+          "gbest_f": 7683157.646226166
+        },
+        {
+          "iter": 3,
+          "gbest_f": 7773446.677769603
+        },
+        {
+          "iter": 4,
+          "gbest_f": 7792390.67343146
+        },
+        {
+          "iter": 5,
+          "gbest_f": 7888047.938027054
+        },
+        {
+          "iter": 6,
+          "gbest_f": 7951320.228766765
+        },
+        {
+          "iter": 7,
+          "gbest_f": 7988724.703138674
+        },
+        {
+          "iter": 8,
+          "gbest_f": 8026706.309097039
+        },
+        {
+          "iter": 9,
+          "gbest_f": 8026706.309097039
+        },
+        {
+          "iter": 10,
+          "gbest_f": 8141415.2630344
+        },
+        {
+          "iter": 11,
+          "gbest_f": 8244164.086034231
+        },
+        {
+          "iter": 12,
+          "gbest_f": 8367604.992311949
+        },
+        {
+          "iter": 13,
+          "gbest_f": 8632200.711104756
+        },
+        {
+          "iter": 14,
+          "gbest_f": 8923837.38588396
+        }
+      ],
+      "theta_best": [
+        0.44081646861227153,
+        0.6649926389879994,
+        0.30150766863895884,
+        0.0,
+        0.5582984609890121,
+        0.9673351754604277
+      ],
+      "season": "transition",
+      "start_time": 7776000.0,
+      "vs_b0": {
+        "delta_j_vs_b0": 2040432.8521339763,
+        "delta_curtailment_mwh": 0.0,
+        "delta_unserved_mwh": 0.0,
+        "thermal_ratio_vs_b0": 0.8640244970009441,
+        "storage_throughput_ratio_vs_b0": 1761784567236.9001,
+        "delta_episode_reward": 10.957205000969118
+      }
+    }
+  ],
+  "ghtd3_ckpt": "runs/ghtd3_annual_soc_boost_40k_20260803/checkpoints/ghtd3.pt",
+  "hybrid_ckpt": "runs/market_soc_ok_15k_20260803/checkpoints/hybrid_givesafe_td3.pt"
+}

@@ -1,0 +1,133 @@
+fmu:
+  path: data/TypicalScensrio_Example_TypicalScene_PowerSystem_8760h.fmu
+  communication_step_seconds: 3600
+  decision_interval_seconds: 3600
+  episode_steps: 168
+  start_time_seconds: 0
+  annual_horizon_hours: 8760
+forecast:
+  enabled: true
+  horizon_hours: 24
+  sources:
+  - name: wind
+    path: data/winds.csv
+    offset: 0.0
+    scale: 15.0
+  - name: irradiance
+    path: data/Gstc.csv
+    offset: 0.0
+    scale: 1000.0
+  - name: ambient_temperature
+    path: data/environment.csv
+    offset: 273.15
+    scale: 40.0
+  - name: planned_load
+    path: data/load.csv
+    offset: 0.0
+    scale: 3.0e8
+actions:
+- name: u_tp
+  fmu_variable: u_tp
+  unit: '1'
+  min: 0.3333333333333333
+  max: 1.0
+  bound_source: 'resources/Example/TypicalScene/PowerSystem_8760h.mo: thermal P_min=50MW,
+    P_cap=150MW'
+- name: u_battery
+  fmu_variable: u_battery
+  unit: '1'
+  min: -1.0
+  max: 1.0
+  bound_source: 'docs/fmu_input_bounds.md: battery nominal dispatch range'
+- name: u_caes
+  fmu_variable: u_caes
+  unit: '1'
+  min: -1.0
+  max: 1.0
+  valid_intervals:
+  - - -1.0
+    - -0.33
+  - - 0.0
+    - 0.0
+  - - 0.86
+    - 1.0
+  bound_source: 'docs/fmu_input_bounds.md: CAES min-start constraints; non-convex
+    legal set'
+observations:
+- name: battery_soc
+  unit: '1'
+  low: 0.0
+  high: 1.0
+- name: caes_gas_soc
+  unit: '1'
+  low: 0.0
+  high: 1.0
+- name: caes_hot_soc
+  unit: '1'
+  low: 0.0
+  high: 1.0
+- name: caes_cold_soc
+  unit: '1'
+  low: 0.0
+  high: 1.0
+- name: caes_gas_pressure
+  unit: Pa
+  low: 0.0
+- name: caes_gas_temperature
+  unit: K
+  low: 0.0
+- name: caes_hot_temperature
+  unit: K
+  low: 0.0
+- name: caes_cold_temperature
+  unit: K
+  low: 0.0
+- name: p_thermal
+  unit: W
+- name: p_battery
+  unit: W
+- name: p_caes
+  unit: W
+- name: p_grid
+  unit: W
+- name: p_wind_available
+  unit: W
+- name: p_wind_actual
+  unit: W
+- name: p_pv_available
+  unit: W
+- name: p_pv_actual
+  unit: W
+- name: p_load_actual
+  unit: W
+- name: p_curtailment
+  unit: W
+  low: 0.0
+- name: p_unserved
+  unit: W
+  low: 0.0
+economics:
+- name: economic_cashflow_total
+  unit: CNY
+- name: economic_cashflow_wind
+  unit: CNY
+- name: economic_cashflow_pv
+  unit: CNY
+- name: economic_cashflow_thermal
+  unit: CNY
+- name: economic_cashflow_battery
+  unit: CNY
+- name: economic_cashflow_caes
+  unit: CNY
+- name: economic_cashflow_load
+  unit: CNY
+- name: economic_cashflow_grid
+  unit: CNY
+market:
+  available: true
+  price_path: data/price_realized.csv
+  obs_price_path: data/price_predicted.csv
+  horizon_hours: 24
+  buy_scale_yuan_per_kwh: 1.2
+  sell_scale_yuan_per_kwh: 0.3
+  note: 山东2026代理购电分时；obs 可接预测价，结算用实现价；不做电网出清。

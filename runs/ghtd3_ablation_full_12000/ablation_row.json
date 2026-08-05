@@ -1,0 +1,30 @@
+{
+  "status": "completed",
+  "valid_steps": 12000,
+  "episode_reward": 62.170701537169016,
+  "terminal_soc_satisfied": false,
+  "terminal_soc_l1": 0.14612282747140043,
+  "thermal_mwh": 17610.000556111336,
+  "economic_reward": 71.5003813081824,
+  "rule_reward": 67.58608216083053,
+  "price_rule_reward": 32.354607645710864,
+  "annual_episode_reward": null,
+  "annual_mean_reward": null,
+  "annual_soc_pass": null,
+  "annual_windows": null,
+  "annual_economic_cashflow": null,
+  "innovations": {
+    "smdp_gamma_c": true,
+    "market_goal_prior": true,
+    "recovery_goal_horizon_steps": 40,
+    "price_aware_bootstrap": true,
+    "high_reward_normalize": true,
+    "hierarchical_bc_pretrain": true,
+    "givesafe_low_level": true,
+    "huber_q_clip_critics": true
+  },
+  "run_dir": "D:\\Code\\0622\\optimal_demo\\runs\\ghtd3_ablation_full_12000",
+  "name": "full",
+  "description": "完整 Safe Market-GHTD3",
+  "overrides": {}
+}

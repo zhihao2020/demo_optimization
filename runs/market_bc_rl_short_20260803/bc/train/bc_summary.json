@@ -1,0 +1,24 @@
+{
+  "status": "completed",
+  "checkpoint": "D:\\Code\\0622\\optimal_demo\\runs\\market_bc_rl_short_20260803\\bc\\checkpoints\\hybrid_givesafe_td3.pt",
+  "bc_metrics": {
+    "n_demos": 967.0,
+    "epochs": 40.0,
+    "final_loss": 283815682048.0,
+    "mean_loss": 7545140217139.2,
+    "loss_curve_tail": 295964747366.4,
+    "mae_u_tp": 0.058468371629714966,
+    "mae_u_battery": 0.837540864944458,
+    "mode_accuracy": 0.8831437230110168
+  },
+  "action_match_sample": {
+    "rule_u_tp": 1.0,
+    "bc_u_tp": 1.0,
+    "rule_u_battery": 0.0,
+    "bc_u_battery": -1.0,
+    "rule_mode": 1,
+    "bc_mode": 0
+  },
+  "n_demo_windows": 8,
+  "price_aware_rule": true
+}

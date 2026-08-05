@@ -1,0 +1,54 @@
+ghtd3:
+  enabled: true
+  subgoal_interval: 8
+  goal_dim: 2
+  goal_low:
+  - -0.25
+  - -0.15
+  goal_high:
+  - 0.25
+  - 0.15
+  intrinsic_alpha: 0.35
+  high_explore_noise: 0.05
+  low_explore_noise: 0.08
+  epsilon_start: 0.25
+  epsilon_end: 0.05
+  gamma: 0.99
+  tau: 0.005
+  policy_delay: 2
+  actor_lr: 0.0001
+  critic_lr: 0.0003
+  target_noise: 0.2
+  noise_clip: 0.5
+  reward_clip:
+  - -25.0
+  - 25.0
+  q_clip: 200.0
+  q_clip_high: 50.0
+  high_reward_normalize: true
+  high_buffer_size: 30000
+  low_buffer_size: 120000
+  high_batch_size: 64
+  low_batch_size: 128
+  learning_starts_low: 512
+  learning_starts_high: 800
+  gradient_steps_low: 2
+  gradient_steps_high: 1
+  goal_relabel: true
+  relabel_candidates: 8
+  market_goal_prior: true
+  market_prior_weight: 0.55
+  market_prior_strength: 0.14
+  charge_threshold: 0.4
+  discharge_threshold: 0.9
+  recovery_goal_horizon_steps: 0
+  recovery_prior_weight: 0.0
+  price_aware_bootstrap: true
+  bc_pretrain: true
+  bc_windows: 4
+  bc_epochs_low: 30
+  bc_epochs_high: 20
+  use_shadow: false
+soc_keys:
+- battery_soc
+- caes_gas_soc

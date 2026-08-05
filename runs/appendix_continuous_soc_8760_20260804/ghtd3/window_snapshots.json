@@ -1,0 +1,138 @@
+[
+  {
+    "window_index": 0,
+    "start_step": 0,
+    "steps": 168,
+    "episode_reward": 108.19503569356235,
+    "discounted_return": 50.63469056118196,
+    "raw_total_cost": -18481638.738852095,
+    "economic_cashflow_delta": 18481638.738852095,
+    "net_cashflow_j": 18481638.738852095,
+    "terminal_soc": {
+      "battery_soc": 0.15000000596046448,
+      "caes_gas_soc": 0.8570472598075867,
+      "caes_hot_soc": 0.5322819948196411,
+      "caes_cold_soc": 0.4529915153980255
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 1,
+    "start_step": 168,
+    "steps": 168,
+    "episode_reward": 91.66076038300105,
+    "discounted_return": 44.37653899666803,
+    "raw_total_cost": -15473877.847882207,
+    "economic_cashflow_delta": 15473877.847882207,
+    "net_cashflow_j": 15473877.847882207,
+    "terminal_soc": {
+      "battery_soc": 0.15000000596046448,
+      "caes_gas_soc": 0.8422698378562927,
+      "caes_hot_soc": 0.5384343862533569,
+      "caes_cold_soc": 0.4689826965332031
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 2,
+    "start_step": 336,
+    "steps": 168,
+    "episode_reward": 99.06256731439065,
+    "discounted_return": 47.30020099846907,
+    "raw_total_cost": -16655562.286610171,
+    "economic_cashflow_delta": 16655562.286610171,
+    "net_cashflow_j": 16655562.286610171,
+    "terminal_soc": {
+      "battery_soc": 0.15000000596046448,
+      "caes_gas_soc": 0.8702564239501953,
+      "caes_hot_soc": 0.5446204543113708,
+      "caes_cold_soc": 0.4923400580883026
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 3,
+    "start_step": 504,
+    "steps": 168,
+    "episode_reward": 110.57625705522936,
+    "discounted_return": 53.47053955329276,
+    "raw_total_cost": -18436375.960914437,
+    "economic_cashflow_delta": 18436375.960914437,
+    "net_cashflow_j": 18436375.960914437,
+    "terminal_soc": {
+      "battery_soc": 0.15000000596046448,
+      "caes_gas_soc": 0.8565291166305542,
+      "caes_hot_soc": 0.5446204543113708,
+      "caes_cold_soc": 0.4923400580883026
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 4,
+    "start_step": 672,
+    "steps": 168,
+    "episode_reward": 107.73175379291857,
+    "discounted_return": 53.41900152283877,
+    "raw_total_cost": -18012412.35374792,
+    "economic_cashflow_delta": 18012412.35374792,
+    "net_cashflow_j": 18012412.35374792,
+    "terminal_soc": {
+      "battery_soc": 0.15000000596046448,
+      "caes_gas_soc": 0.8673902153968811,
+      "caes_hot_soc": 0.5446204543113708,
+      "caes_cold_soc": 0.4923400580883026
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 5,
+    "start_step": 840,
+    "steps": 168,
+    "episode_reward": 108.86626894043586,
+    "discounted_return": 53.013856425008605,
+    "raw_total_cost": -18234182.69850241,
+    "economic_cashflow_delta": 18234182.69850241,
+    "net_cashflow_j": 18234182.69850241,
+    "terminal_soc": {
+      "battery_soc": 0.15000000596046448,
+      "caes_gas_soc": 0.8810084462165833,
+      "caes_hot_soc": 0.5446204543113708,
+      "caes_cold_soc": 0.4923400580883026
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 6,
+    "start_step": 1008,
+    "steps": 168,
+    "episode_reward": 85.78354970542709,
+    "discounted_return": 39.68138246833214,
+    "raw_total_cost": -14533028.397213474,
+    "economic_cashflow_delta": 14533028.397213474,
+    "net_cashflow_j": 14533028.397213474,
+    "terminal_soc": {
+      "battery_soc": 0.15000000596046448,
+      "caes_gas_soc": 0.8445066213607788,
+      "caes_hot_soc": 0.5446204543113708,
+      "caes_cold_soc": 0.4923400580883026
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 7,
+    "start_step": 1176,
+    "steps": 100,
+    "episode_reward": 58.36047191783367,
+    "discounted_return": 37.062021236847144,
+    "raw_total_cost": -9804064.319218315,
+    "economic_cashflow_delta": 9804064.319218315,
+    "net_cashflow_j": 9804064.319218315,
+    "terminal_soc": {
+      "battery_soc": 0.15000000596046448,
+      "caes_gas_soc": 0.8420315384864807,
+      "caes_hot_soc": 0.5603786110877991,
+      "caes_cold_soc": 0.5337579846382141
+    },
+    "invalid_transition_count": 1
+  }
+]

@@ -1,0 +1,61 @@
+# GHTD3：论文 goal-conditioned hierarchical TD3 的本仓库适配配置
+# 高层：每 c 步提出储能 SoC 增量目标；底层：条件于 goal 的混合动作 + GiveSafe
+
+# Safe Market-GHTD3：对齐 Cui GHTD3 + Ochoa 多时间尺度 + Pei price-taker + GiveSafe
+ghtd3:
+  enabled: true
+  subgoal_interval: 8
+  goal_dim: 2
+  goal_low: [-0.25, -0.15]
+  goal_high: [0.25, 0.15]
+  intrinsic_alpha: 0.35
+  # 探索
+  high_explore_noise: 0.05
+  low_explore_noise: 0.08
+  epsilon_start: 0.25
+  epsilon_end: 0.05
+  # TD3 + SMDP γ^c
+  gamma: 0.99
+  tau: 0.005
+  policy_delay: 2
+  actor_lr: 1.0e-4
+  critic_lr: 3.0e-4
+  target_noise: 0.2
+  noise_clip: 0.5
+  reward_clip: [-25.0, 25.0]
+  q_clip: 200.0
+  q_clip_high: 50.0
+  high_reward_normalize: true
+  # buffer
+  high_buffer_size: 30000
+  low_buffer_size: 120000
+  high_batch_size: 64
+  low_batch_size: 128
+  # 高层更晚再更新，避免稀疏 SMDP 样本把 critic 吹爆
+  learning_starts_low: 512
+  learning_starts_high: 256
+  gradient_steps_low: 2
+  gradient_steps_high: 1
+  goal_relabel: true
+  relabel_candidates: 8
+  # 创新：市场条件高层目标先验（低价充/高价放；回收段回初始 SoC）
+  market_goal_prior: true
+  market_prior_weight: 0.55
+  market_prior_strength: 0.14
+  charge_threshold: 0.40
+  discharge_threshold: 0.90
+  # 与 env.market.soc_recovery_horizon 对齐：上层也下发回收 goal
+  recovery_goal_horizon_steps: 36
+  # 冷启动用峰谷规则而非 idle
+  price_aware_bootstrap: true
+  # 创新：分层 BC 预热（低层动作 + 高层 goal）
+  bc_pretrain: true
+  bc_windows: 4
+  bc_epochs_low: 30
+  bc_epochs_high: 20
+  use_shadow: false
+
+# observation 中 SoC 键（与 env_config observations 顺序一致）
+soc_keys:
+  - battery_soc
+  - caes_gas_soc

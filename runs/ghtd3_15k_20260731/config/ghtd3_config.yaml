@@ -1,0 +1,47 @@
+# GHTD3：论文 goal-conditioned hierarchical TD3 的本仓库适配配置
+# 高层：每 c 步提出储能 SoC 增量目标；底层：条件于 goal 的混合动作 + GiveSafe
+
+ghtd3:
+  enabled: true
+  # 子目标更新间隔（论文 c=8）
+  subgoal_interval: 8
+  # goal = [Δbattery_soc, Δcaes_gas_soc]
+  goal_dim: 2
+  goal_low: [-0.25, -0.15]
+  goal_high: [0.25, 0.15]
+  # 内在奖励：r_int = -||soc + g - soc'||_2 + alpha * r_ext
+  intrinsic_alpha: 0.3
+  # 探索
+  high_explore_noise: 0.05
+  low_explore_noise: 0.08
+  epsilon_start: 0.3
+  epsilon_end: 0.05
+  # 网络 / TD3
+  gamma: 0.99
+  tau: 0.005
+  policy_delay: 2
+  actor_lr: 3.0e-4
+  critic_lr: 3.0e-4
+  target_noise: 0.2
+  noise_clip: 0.5
+  reward_clip: [-20.0, 20.0]
+  q_clip: 200.0
+  # buffer
+  high_buffer_size: 20000
+  low_buffer_size: 100000
+  high_batch_size: 64
+  low_batch_size: 128
+  learning_starts_low: 512
+  learning_starts_high: 64
+  gradient_steps_low: 2
+  gradient_steps_high: 1
+  # 高层 goal relabel（历史动作最大似然近似：选最贴近实际 Δsoc 的候选）
+  goal_relabel: true
+  relabel_candidates: 8
+  # GiveSafe
+  use_shadow: false
+
+# observation 中 SoC 键（与 env_config observations 顺序一致）
+soc_keys:
+  - battery_soc
+  - caes_gas_soc

@@ -1,0 +1,147 @@
+{
+  "protocol": "continuous_soc",
+  "horizon_hours": 8760,
+  "rows": [
+    {
+      "method": "b0",
+      "protocol": "continuous_soc",
+      "horizon_hours": 8760,
+      "steps": 8760,
+      "valid_steps": 8760,
+      "annual_raw_total_cost": -312149469.68605155,
+      "net_cashflow_j": 312149469.68605155,
+      "annual_episode_reward": 1982.7630446498306,
+      "annual_economic_cashflow": 312149469.68605155,
+      "terminal_soc_satisfied_year_end": true,
+      "terminal_soc": {
+        "battery_soc": 0.5,
+        "caes_gas_soc": 0.8331176737610201,
+        "caes_hot_soc": 0.5194840479360223,
+        "caes_cold_soc": 0.486173978173345
+      },
+      "initial_soc": {
+        "battery_soc": 0.5,
+        "caes_gas_soc": 0.85,
+        "caes_hot_soc": 0.5,
+        "caes_cold_soc": 0.5
+      },
+      "metrics": {
+        "curtailment_energy_mwh": 0.0,
+        "unserved_energy_mwh": 0.0,
+        "battery_throughput_mwh": 0.0,
+        "caes_throughput_mwh": 286.34999999999997,
+        "thermal_generation_mwh": 1314000.0,
+        "max_thermal_ramp_mw": 0.0
+      },
+      "invalid_transition_count": 0,
+      "fmu_failure_count": 0,
+      "wall_s": 11.495235100039281
+    },
+    {
+      "method": "hybrid",
+      "protocol": "continuous_soc",
+      "horizon_hours": 8760,
+      "steps": 1276,
+      "valid_steps": 1275,
+      "annual_raw_total_cost": -129782364.4903502,
+      "net_cashflow_j": 129782364.4903502,
+      "annual_episode_reward": 771.3280976318091,
+      "annual_economic_cashflow": 129782364.4903502,
+      "terminal_soc_satisfied_year_end": false,
+      "terminal_soc": {
+        "battery_soc": 0.8499999970218304,
+        "caes_gas_soc": 0.8391395345663901,
+        "caes_hot_soc": 0.5587367218919246,
+        "caes_cold_soc": 0.5681490567427885
+      },
+      "initial_soc": {
+        "battery_soc": 0.5,
+        "caes_gas_soc": 0.85,
+        "caes_hot_soc": 0.5,
+        "caes_cold_soc": 0.5
+      },
+      "metrics": {
+        "curtailment_energy_mwh": 2.980232238769531e-14,
+        "unserved_energy_mwh": 0.0,
+        "battery_throughput_mwh": 196.79681827040238,
+        "caes_throughput_mwh": 1290.0,
+        "thermal_generation_mwh": 63975.00192672014,
+        "max_thermal_ramp_mw": 22.50000089406967
+      },
+      "invalid_transition_count": 1,
+      "fmu_failure_count": 1,
+      "wall_s": 2.7331045999890193
+    },
+    {
+      "method": "ghtd3",
+      "protocol": "continuous_soc",
+      "horizon_hours": 8760,
+      "steps": 1276,
+      "valid_steps": 1275,
+      "annual_raw_total_cost": -129631142.60294087,
+      "net_cashflow_j": 129631142.60294087,
+      "annual_episode_reward": 770.236664802799,
+      "annual_economic_cashflow": 129631142.60294087,
+      "terminal_soc_satisfied_year_end": false,
+      "terminal_soc": {
+        "battery_soc": 0.14999999999999997,
+        "caes_gas_soc": 0.8420315378648372,
+        "caes_hot_soc": 0.5603786205195939,
+        "caes_cold_soc": 0.5337579954464479
+      },
+      "initial_soc": {
+        "battery_soc": 0.5,
+        "caes_gas_soc": 0.85,
+        "caes_hot_soc": 0.5,
+        "caes_cold_soc": 0.5
+      },
+      "metrics": {
+        "curtailment_energy_mwh": 1.1920928955078124e-13,
+        "unserved_energy_mwh": 0.0,
+        "battery_throughput_mwh": 171.4350140743002,
+        "caes_throughput_mwh": 1350.0,
+        "thermal_generation_mwh": 63975.00192672014,
+        "max_thermal_ramp_mw": 22.50000089406967
+      },
+      "invalid_transition_count": 1,
+      "fmu_failure_count": 1,
+      "wall_s": 2.8117535999044776
+    },
+    {
+      "method": "sac",
+      "protocol": "continuous_soc",
+      "horizon_hours": 8760,
+      "steps": 1277,
+      "valid_steps": 1276,
+      "annual_raw_total_cost": -50721585.823214605,
+      "net_cashflow_j": 50721585.823214605,
+      "annual_episode_reward": 266.3324244651719,
+      "annual_economic_cashflow": 50721585.823214605,
+      "terminal_soc_satisfied_year_end": false,
+      "terminal_soc": {
+        "battery_soc": 0.8499999970218304,
+        "caes_gas_soc": 0.8424852106524536,
+        "caes_hot_soc": 0.5648142375596857,
+        "caes_cold_soc": 0.5162279950364691
+      },
+      "initial_soc": {
+        "battery_soc": 0.5,
+        "caes_gas_soc": 0.85,
+        "caes_hot_soc": 0.5,
+        "caes_cold_soc": 0.5
+      },
+      "metrics": {
+        "curtailment_energy_mwh": 2.980232238769531e-14,
+        "unserved_energy_mwh": 0.0,
+        "battery_throughput_mwh": 196.79681827040238,
+        "caes_throughput_mwh": 1200.0,
+        "thermal_generation_mwh": 191550.0,
+        "max_thermal_ramp_mw": 0.0
+      },
+      "invalid_transition_count": 1,
+      "fmu_failure_count": 1,
+      "wall_s": 3.8889769000234082
+    }
+  ],
+  "note": "Appendix only. Do not merge with weekly_reset main table without labeling protocol. See docs/连续年SOC附录协议.md"
+}

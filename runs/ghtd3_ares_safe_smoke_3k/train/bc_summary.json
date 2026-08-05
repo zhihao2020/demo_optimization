@@ -1,0 +1,16 @@
+{
+  "low": null,
+  "high": {
+    "n_demos": 525.0,
+    "epochs": 25.0,
+    "final_loss": 0.09493102629979451
+  },
+  "residual_mle": {
+    "n": 672.0,
+    "epochs": 25.0,
+    "final_loss": 0.12875303626060486,
+    "fit_mode": 0.0
+  },
+  "n_demos": 525,
+  "execution_mode": "action_residual"
+}

@@ -1,0 +1,138 @@
+[
+  {
+    "window_index": 0,
+    "start_step": 0,
+    "steps": 168,
+    "episode_reward": 44.37184449889417,
+    "discounted_return": 20.46818532154769,
+    "raw_total_cost": -8486352.867583565,
+    "economic_cashflow_delta": 8486352.867583565,
+    "net_cashflow_j": 8486352.867583565,
+    "terminal_soc": {
+      "battery_soc": 0.8500000238418579,
+      "caes_gas_soc": 0.8555129170417786,
+      "caes_hot_soc": 0.5313588976860046,
+      "caes_cold_soc": 0.46864110231399536
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 1,
+    "start_step": 168,
+    "steps": 168,
+    "episode_reward": 22.66339671331354,
+    "discounted_return": 11.11099080986909,
+    "raw_total_cost": -4670190.1630794685,
+    "economic_cashflow_delta": 4670190.1630794685,
+    "net_cashflow_j": 4670190.1630794685,
+    "terminal_soc": {
+      "battery_soc": 0.8500000238418579,
+      "caes_gas_soc": 0.8456437587738037,
+      "caes_hot_soc": 0.5409107804298401,
+      "caes_cold_soc": 0.459810733795166
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 2,
+    "start_step": 336,
+    "steps": 168,
+    "episode_reward": 31.55956939076549,
+    "discounted_return": 14.076191330733444,
+    "raw_total_cost": -6078617.907514797,
+    "economic_cashflow_delta": 6078617.907514797,
+    "net_cashflow_j": 6078617.907514797,
+    "terminal_soc": {
+      "battery_soc": 0.8500000238418579,
+      "caes_gas_soc": 0.8643722534179688,
+      "caes_hot_soc": 0.5409107804298401,
+      "caes_cold_soc": 0.459810733795166
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 3,
+    "start_step": 504,
+    "steps": 168,
+    "episode_reward": 45.44908459632835,
+    "discounted_return": 21.73642984072418,
+    "raw_total_cost": -8235313.927042541,
+    "economic_cashflow_delta": 8235313.927042541,
+    "net_cashflow_j": 8235313.927042541,
+    "terminal_soc": {
+      "battery_soc": 0.8500000238418579,
+      "caes_gas_soc": 0.8507510423660278,
+      "caes_hot_soc": 0.5409107804298401,
+      "caes_cold_soc": 0.459810733795166
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 4,
+    "start_step": 672,
+    "steps": 168,
+    "episode_reward": 43.12311111748294,
+    "discounted_return": 22.02474904080928,
+    "raw_total_cost": -7890005.734627702,
+    "economic_cashflow_delta": 7890005.734627702,
+    "net_cashflow_j": 7890005.734627702,
+    "terminal_soc": {
+      "battery_soc": 0.8500000238418579,
+      "caes_gas_soc": 0.86153644323349,
+      "caes_hot_soc": 0.5409107804298401,
+      "caes_cold_soc": 0.459810733795166
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 5,
+    "start_step": 840,
+    "steps": 168,
+    "episode_reward": 43.578001940211905,
+    "discounted_return": 21.52527633315178,
+    "raw_total_cost": -8001404.747303205,
+    "economic_cashflow_delta": 8001404.747303205,
+    "net_cashflow_j": 8001404.747303205,
+    "terminal_soc": {
+      "battery_soc": 0.8500000238418579,
+      "caes_gas_soc": 0.8750513792037964,
+      "caes_hot_soc": 0.5409107804298401,
+      "caes_cold_soc": 0.459810733795166
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 6,
+    "start_step": 1008,
+    "steps": 168,
+    "episode_reward": 16.28953645089354,
+    "discounted_return": 5.166705216301363,
+    "raw_total_cost": -3659011.1467472464,
+    "economic_cashflow_delta": 3659011.1467472464,
+    "net_cashflow_j": 3659011.1467472464,
+    "terminal_soc": {
+      "battery_soc": 0.8500000238418579,
+      "caes_gas_soc": 0.85063636302948,
+      "caes_hot_soc": 0.5490608811378479,
+      "caes_cold_soc": 0.47517797350883484
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 7,
+    "start_step": 1176,
+    "steps": 101,
+    "episode_reward": 19.29787975728226,
+    "discounted_return": 12.103192352219057,
+    "raw_total_cost": -3700689.3293161546,
+    "economic_cashflow_delta": 3700689.3293161546,
+    "net_cashflow_j": 3700689.3293161546,
+    "terminal_soc": {
+      "battery_soc": 0.8500000238418579,
+      "caes_gas_soc": 0.8424851894378662,
+      "caes_hot_soc": 0.5648142099380493,
+      "caes_cold_soc": 0.5162280201911926
+    },
+    "invalid_transition_count": 1
+  }
+]

@@ -1,0 +1,35 @@
+{
+  "method": "ghtd3",
+  "protocol": "continuous_soc",
+  "horizon_hours": 8760,
+  "steps": 1276,
+  "valid_steps": 1275,
+  "annual_raw_total_cost": -129631142.60294087,
+  "net_cashflow_j": 129631142.60294087,
+  "annual_episode_reward": 770.236664802799,
+  "annual_economic_cashflow": 129631142.60294087,
+  "terminal_soc_satisfied_year_end": false,
+  "terminal_soc": {
+    "battery_soc": 0.14999999999999997,
+    "caes_gas_soc": 0.8420315378648372,
+    "caes_hot_soc": 0.5603786205195939,
+    "caes_cold_soc": 0.5337579954464479
+  },
+  "initial_soc": {
+    "battery_soc": 0.5,
+    "caes_gas_soc": 0.85,
+    "caes_hot_soc": 0.5,
+    "caes_cold_soc": 0.5
+  },
+  "metrics": {
+    "curtailment_energy_mwh": 1.1920928955078124e-13,
+    "unserved_energy_mwh": 0.0,
+    "battery_throughput_mwh": 171.4350140743002,
+    "caes_throughput_mwh": 1350.0,
+    "thermal_generation_mwh": 63975.00192672014,
+    "max_thermal_ramp_mw": 22.50000089406967
+  },
+  "invalid_transition_count": 1,
+  "fmu_failure_count": 1,
+  "wall_s": 2.8117535999044776
+}

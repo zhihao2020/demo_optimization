@@ -1,0 +1,698 @@
+{
+  "run_dir": "runs\\ghtd3_market_50k_annual_20260803",
+  "n_windows": 53,
+  "n_pass": 16,
+  "pass_rate": 0.3018867924528302,
+  "l1_mean": 0.0806024491186718,
+  "l1_p50": 0.06497621569763293,
+  "l1_p90": 0.14943850117730334,
+  "by_season": {
+    "winter": {
+      "n": 14,
+      "ok": 5,
+      "pass_rate": 0.35714285714285715,
+      "mean_l1": 0.09252038230820449
+    },
+    "spring": {
+      "n": 13,
+      "ok": 3,
+      "pass_rate": 0.23076923076923078,
+      "mean_l1": 0.08940975982286571
+    },
+    "summer": {
+      "n": 13,
+      "ok": 5,
+      "pass_rate": 0.38461538461538464,
+      "mean_l1": 0.0585482196696167
+    },
+    "autumn": {
+      "n": 13,
+      "ok": 3,
+      "pass_rate": 0.23076923076923078,
+      "mean_l1": 0.08101467058249782
+    }
+  },
+  "fail_main_component_counts": {
+    "caes_cold_soc": 28,
+    "battery_soc": 4,
+    "caes_gas_soc": 5
+  },
+  "worst_10": [
+    {
+      "window": "window_8736h.csv",
+      "start_hour": 8736,
+      "season": "winter",
+      "soc_ok": false,
+      "l1": 0.5622197299215291,
+      "terminal": {
+        "battery_soc": 0.15000000596046448,
+        "caes_gas_soc": 0.8429964780807495,
+        "caes_hot_soc": 0.5261020064353943,
+        "caes_cold_soc": 0.4397699236869812
+      },
+      "component_weighted": {
+        "battery_soc": 0.5249999910593033,
+        "caes_gas_soc": 0.007003521919250466,
+        "caes_hot_soc": 0.009135702252388,
+        "caes_cold_soc": 0.02108052670955658
+      },
+      "main_component": "battery_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_7392h.csv",
+      "start_hour": 7392,
+      "season": "autumn",
+      "soc_ok": false,
+      "l1": 0.17153915330079939,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8303596377372742,
+        "caes_hot_soc": 0.4835165739059448,
+        "caes_cold_soc": 0.11399955302476883
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.019640362262725808,
+        "caes_hot_soc": 0.005769199132919311,
+        "caes_cold_soc": 0.1351001564413309
+      },
+      "main_component": "caes_cold_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_7728h.csv",
+      "start_hour": 7728,
+      "season": "autumn",
+      "soc_ok": false,
+      "l1": 0.16933441863796644,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8393197655677795,
+        "caes_hot_soc": 0.4923328757286072,
+        "caes_cold_soc": 0.08588199317455292
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.010680234432220437,
+        "caes_hot_soc": 0.0026834934949874875,
+        "caes_cold_soc": 0.14494130238890646
+      },
+      "main_component": "caes_cold_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_2184h.csv",
+      "start_hour": 2184,
+      "season": "spring",
+      "soc_ok": false,
+      "l1": 0.16661836326166968,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8345390558242798,
+        "caes_hot_soc": 0.4942430257797241,
+        "caes_cold_soc": 0.10539131611585617
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.015460944175720193,
+        "caes_hot_soc": 0.0020149409770965575,
+        "caes_cold_soc": 0.13811303935945032
+      },
+      "main_component": "caes_cold_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_7056h.csv",
+      "start_hour": 7056,
+      "season": "autumn",
+      "soc_ok": false,
+      "l1": 0.1574171895466059,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8301002979278564,
+        "caes_hot_soc": 0.48538172245025635,
+        "caes_cold_soc": 0.15322378277778625
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.019899702072143532,
+        "caes_hot_soc": 0.005116397142410278,
+        "caes_cold_soc": 0.12137167602777481
+      },
+      "main_component": "caes_cold_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_1848h.csv",
+      "start_hour": 1848,
+      "season": "spring",
+      "soc_ok": false,
+      "l1": 0.15112304289610834,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8269820809364319,
+        "caes_hot_soc": 0.5016669034957886,
+        "caes_cold_soc": 0.16716483235359192
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.023017919063568093,
+        "caes_hot_soc": 0.0005834162235260009,
+        "caes_cold_soc": 0.11649230867624281
+      },
+      "main_component": "caes_cold_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_3192h.csv",
+      "start_hour": 3192,
+      "season": "spring",
+      "soc_ok": false,
+      "l1": 0.14270033430208323,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8428359627723694,
+        "caes_hot_soc": 0.49486276507377625,
+        "caes_cold_soc": 0.14940325915813446
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.007164037227630593,
+        "caes_hot_soc": 0.0017980322241783141,
+        "caes_cold_soc": 0.12270885929465293
+      },
+      "main_component": "caes_cold_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_3696h.csv",
+      "start_hour": 3696,
+      "season": "summer",
+      "soc_ok": false,
+      "l1": 0.12442656816411578,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8461747169494629,
+        "caes_hot_soc": 0.48659974336624146,
+        "caes_cold_soc": 0.20033766329288483
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.003825283050537087,
+        "caes_hot_soc": 0.00469008982181549,
+        "caes_cold_soc": 0.1048818178474903
+      },
+      "main_component": "caes_cold_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_3024h.csv",
+      "start_hour": 3024,
+      "season": "spring",
+      "soc_ok": false,
+      "l1": 0.11981771486489959,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8244341611862183,
+        "caes_hot_soc": 0.4915620982646942,
+        "caes_cold_soc": 0.2706593871116638
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.025565838813781716,
+        "caes_hot_soc": 0.002953265607357025,
+        "caes_cold_soc": 0.08026921451091766
+      },
+      "main_component": "caes_cold_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_8400h.csv",
+      "start_hour": 8400,
+      "season": "winter",
+      "soc_ok": false,
+      "l1": 0.11520099032449922,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8283831477165222,
+        "caes_hot_soc": 0.5230982899665833,
+        "caes_cold_soc": 0.287227600812912
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.02161685228347776,
+        "caes_hot_soc": 0.008084401488304138,
+        "caes_cold_soc": 0.0744703397154808
+      },
+      "main_component": "caes_cold_soc",
+      "week_reward_sum": null
+    }
+  ],
+  "fail_windows": [
+    {
+      "start_hour": 8736,
+      "season": "winter",
+      "l1": 0.5622197299215291,
+      "main": "battery_soc",
+      "terminal": {
+        "battery_soc": 0.15000000596046448,
+        "caes_gas_soc": 0.8429964780807495,
+        "caes_hot_soc": 0.5261020064353943,
+        "caes_cold_soc": 0.4397699236869812
+      }
+    },
+    {
+      "start_hour": 7392,
+      "season": "autumn",
+      "l1": 0.17153915330079939,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8303596377372742,
+        "caes_hot_soc": 0.4835165739059448,
+        "caes_cold_soc": 0.11399955302476883
+      }
+    },
+    {
+      "start_hour": 7728,
+      "season": "autumn",
+      "l1": 0.16933441863796644,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8393197655677795,
+        "caes_hot_soc": 0.4923328757286072,
+        "caes_cold_soc": 0.08588199317455292
+      }
+    },
+    {
+      "start_hour": 2184,
+      "season": "spring",
+      "l1": 0.16661836326166968,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8345390558242798,
+        "caes_hot_soc": 0.4942430257797241,
+        "caes_cold_soc": 0.10539131611585617
+      }
+    },
+    {
+      "start_hour": 7056,
+      "season": "autumn",
+      "l1": 0.1574171895466059,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8301002979278564,
+        "caes_hot_soc": 0.48538172245025635,
+        "caes_cold_soc": 0.15322378277778625
+      }
+    },
+    {
+      "start_hour": 1848,
+      "season": "spring",
+      "l1": 0.15112304289610834,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8269820809364319,
+        "caes_hot_soc": 0.5016669034957886,
+        "caes_cold_soc": 0.16716483235359192
+      }
+    },
+    {
+      "start_hour": 3192,
+      "season": "spring",
+      "l1": 0.14270033430208323,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8428359627723694,
+        "caes_hot_soc": 0.49486276507377625,
+        "caes_cold_soc": 0.14940325915813446
+      }
+    },
+    {
+      "start_hour": 3696,
+      "season": "summer",
+      "l1": 0.12442656816411578,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8461747169494629,
+        "caes_hot_soc": 0.48659974336624146,
+        "caes_cold_soc": 0.20033766329288483
+      }
+    },
+    {
+      "start_hour": 3024,
+      "season": "spring",
+      "l1": 0.11981771486489959,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8244341611862183,
+        "caes_hot_soc": 0.4915620982646942,
+        "caes_cold_soc": 0.2706593871116638
+      }
+    },
+    {
+      "start_hour": 8400,
+      "season": "winter",
+      "l1": 0.11520099032449922,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8283831477165222,
+        "caes_hot_soc": 0.5230982899665833,
+        "caes_cold_soc": 0.287227600812912
+      }
+    },
+    {
+      "start_hour": 6888,
+      "season": "autumn",
+      "l1": 0.11017814082504962,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8399930596351624,
+        "caes_hot_soc": 0.4787802994251251,
+        "caes_cold_soc": 0.2665288746356964
+      }
+    },
+    {
+      "start_hour": 3528,
+      "season": "spring",
+      "l1": 0.10960066812121602,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.816638171672821,
+        "caes_hot_soc": 0.4736180305480957,
+        "caes_cold_soc": 0.34006938338279724
+      }
+    },
+    {
+      "start_hour": 3360,
+      "season": "spring",
+      "l1": 0.10382620246834995,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8347408175468445,
+        "caes_hot_soc": 0.48996224999427795,
+        "caes_cold_soc": 0.2885017693042755
+      }
+    },
+    {
+      "start_hour": 2352,
+      "season": "spring",
+      "l1": 0.10352102192925852,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8194625377655029,
+        "caes_hot_soc": 0.4967922866344452,
+        "caes_cold_soc": 0.32619577646255493
+      }
+    },
+    {
+      "start_hour": 6720,
+      "season": "autumn",
+      "l1": 0.09549139617105257,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8335702419281006,
+        "caes_hot_soc": 0.468606561422348,
+        "caes_cold_soc": 0.33701568841934204
+      }
+    },
+    {
+      "start_hour": 4872,
+      "season": "summer",
+      "l1": 0.0939246745249343,
+      "main": "caes_gas_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8068228363990784,
+        "caes_hot_soc": 0.44583404064178467,
+        "caes_cold_soc": 0.4406856596469879
+      }
+    },
+    {
+      "start_hour": 336,
+      "season": "winter",
+      "l1": 0.08891222186569536,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8156099915504456,
+        "caes_hot_soc": 0.5087230205535889,
+        "caes_cold_soc": 0.38445788621902466
+      }
+    },
+    {
+      "start_hour": 3864,
+      "season": "summer",
+      "l1": 0.0863295934648351,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8330807089805603,
+        "caes_hot_soc": 0.473084956407547,
+        "caes_cold_soc": 0.36011239886283875
+      }
+    },
+    {
+      "start_hour": 1680,
+      "season": "spring",
+      "l1": 0.08330633983758849,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8157954812049866,
+        "caes_hot_soc": 0.49620336294174194,
+        "caes_cold_soc": 0.39501839876174927
+      }
+    },
+    {
+      "start_hour": 6384,
+      "season": "autumn",
+      "l1": 0.08239017728608902,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8423476219177246,
+        "caes_hot_soc": 0.46936535835266113,
+        "caes_cold_soc": 0.3486105799674988
+      }
+    },
+    {
+      "start_hour": 6216,
+      "season": "autumn",
+      "l1": 0.07942908406298665,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8377964496612549,
+        "caes_hot_soc": 0.47325265407562256,
+        "caes_cold_soc": 0.3661869168281555
+      }
+    },
+    {
+      "start_hour": 2520,
+      "season": "spring",
+      "l1": 0.07808884791514767,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8357784748077393,
+        "caes_hot_soc": 0.5135473608970642,
+        "caes_cold_soc": 0.36258184909820557
+      }
+    },
+    {
+      "start_hour": 4368,
+      "season": "summer",
+      "l1": 0.0771247263121304,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8461750745773315,
+        "caes_hot_soc": 0.4771311581134796,
+        "caes_cold_soc": 0.34495338797569275
+      }
+    },
+    {
+      "start_hour": 1344,
+      "season": "winter",
+      "l1": 0.06995625151263803,
+      "main": "caes_gas_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8129775524139404,
+        "caes_hot_soc": 0.5073117613792419,
+        "caes_cold_soc": 0.4447278678417206
+      }
+    },
+    {
+      "start_hour": 5544,
+      "season": "summer",
+      "l1": 0.06848019850244232,
+      "main": "caes_gas_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.822436511516571,
+        "caes_hot_soc": 0.45730382204055786,
+        "caes_cold_soc": 0.5426961779594421
+      }
+    },
+    {
+      "start_hour": 6552,
+      "season": "autumn",
+      "l1": 0.06500173461091376,
+      "main": "caes_gas_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8152424097061157,
+        "caes_hot_soc": 0.463699072599411,
+        "caes_cold_soc": 0.4814017117023468
+      }
+    },
+    {
+      "start_hour": 168,
+      "season": "winter",
+      "l1": 0.06497621569763293,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8406811952590942,
+        "caes_hot_soc": 0.5375111699104309,
+        "caes_cold_soc": 0.41000261902809143
+      }
+    },
+    {
+      "start_hour": 672,
+      "season": "winter",
+      "l1": 0.06375346424149736,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8275314569473267,
+        "caes_hot_soc": 0.5184842348098755,
+        "caes_cold_soc": 0.4320400059223175
+      }
+    },
+    {
+      "start_hour": 5376,
+      "season": "summer",
+      "l1": 0.06331797724005794,
+      "main": "caes_gas_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8240569233894348,
+        "caes_hot_soc": 0.4623635709285736,
+        "caes_cold_soc": 0.537636399269104
+      }
+    },
+    {
+      "start_hour": 8568,
+      "season": "winter",
+      "l1": 0.06106547418180179,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8425983786582947,
+        "caes_hot_soc": 0.5288922786712646,
+        "caes_cold_soc": 0.4070795774459839
+      }
+    },
+    {
+      "start_hour": 8064,
+      "season": "winter",
+      "l1": 0.060765880769152875,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8317396640777588,
+        "caes_hot_soc": 0.5164360404014587,
+        "caes_cold_soc": 0.4265042841434479
+      }
+    },
+    {
+      "start_hour": 1176,
+      "season": "winter",
+      "l1": 0.0,
+      "main": "battery_soc",
+      "terminal": {
+        "battery_soc": 0.15000000596046448,
+        "caes_gas_soc": 0.8419075608253479,
+        "caes_hot_soc": 0.557928740978241,
+        "caes_cold_soc": 0.5550678372383118
+      }
+    },
+    {
+      "start_hour": 2688,
+      "season": "spring",
+      "l1": 0.0,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8375456929206848,
+        "caes_hot_soc": 0.4733208119869232,
+        "caes_cold_soc": 0.14875365793704987
+      }
+    },
+    {
+      "start_hour": 4032,
+      "season": "summer",
+      "l1": 0.0,
+      "main": "battery_soc",
+      "terminal": {
+        "battery_soc": 0.5414999723434448,
+        "caes_gas_soc": 0.8526365160942078,
+        "caes_hot_soc": 0.48032620549201965,
+        "caes_cold_soc": 0.5196738243103027
+      }
+    },
+    {
+      "start_hour": 4200,
+      "season": "summer",
+      "l1": 0.0,
+      "main": "battery_soc",
+      "terminal": {
+        "battery_soc": 0.5414999723434448,
+        "caes_gas_soc": 0.8516733050346375,
+        "caes_hot_soc": 0.48032620549201965,
+        "caes_cold_soc": 0.519673764705658
+      }
+    },
+    {
+      "start_hour": 7224,
+      "season": "autumn",
+      "l1": 0.0,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8371246457099915,
+        "caes_hot_soc": 0.4916468858718872,
+        "caes_cold_soc": 0.10194019973278046
+      }
+    },
+    {
+      "start_hour": 7896,
+      "season": "autumn",
+      "l1": 0.0,
+      "main": "caes_cold_soc",
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8363916277885437,
+        "caes_hot_soc": 0.4927612245082855,
+        "caes_cold_soc": 0.10530582815408707
+      }
+    }
+  ]
+}

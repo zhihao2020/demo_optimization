@@ -1,0 +1,48 @@
+# Hybrid-GiveSafe-TD3 配置。use_fallback 必须为 false。
+
+givesafe:
+  enabled: true
+  use_fallback: false
+  max_attempts_per_env_step: 64
+  advance_time_on_rejection: false
+  store_rejected_actions: true
+  use_shaped_constraint_reward: true
+
+  shadow_validation:
+    enabled: true
+    # always | near_boundary | disabled
+    mode: always
+    near_boundary_fraction: 0.15
+
+  constraint_reward:
+    base_rejection_cost: 1.0
+    weights:
+      battery_soc_high: 2.0
+      battery_soc_low: 2.0
+      caes_gas_soc_high: 2.0
+      caes_gas_soc_low: 2.0
+      caes_hot_soc_high: 1.5
+      caes_hot_soc_low: 1.5
+      caes_cold_soc_high: 1.5
+      caes_cold_soc_low: 1.5
+      caes_pressure_high: 2.0
+      caes_pressure_low: 2.0
+      caes_temperature_high: 1.0
+      caes_temperature_low: 1.0
+      thermal_ramp: 1.5
+      grid_capacity: 2.0
+      forbidden_mode: 3.0
+      shadow_fmu_rejection: 2.5
+      unknown: 1.0
+
+replay_sampling:
+  physical_fraction: 0.7
+  givesafe_fraction: 0.3
+
+phase_e_gates:
+  # 已完成探针验证，允许正式训练入口启动；训练结束仍按以下硬门控判定结果。
+  formal_default_blocked: false
+  max_post_step_hard_constraint_violations: 0
+  max_main_fmu_unsafe_executions: 0
+  max_no_safe_action_found_rate: 0.05
+  max_deterministic_rejection_rate: 0.02

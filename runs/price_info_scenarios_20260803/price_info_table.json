@@ -1,0 +1,24 @@
+{
+  "rows": [
+    {
+      "mode": "perfect",
+      "method": "ghtd3",
+      "episode_reward": 126.02303839089954,
+      "terminal_soc_satisfied": true,
+      "terminal_soc_l1": 0.04582831748548198,
+      "economic_reward": 116.95673938278277,
+      "thermal_mwh": 8957.50027924776
+    },
+    {
+      "mode": "predicted",
+      "method": "ghtd3",
+      "episode_reward": 117.20736877217797,
+      "terminal_soc_satisfied": true,
+      "terminal_soc_l1": 0.04582831748548198,
+      "economic_reward": 108.14106976406113,
+      "thermal_mwh": 8957.50027924776
+    }
+  ],
+  "ckpt": "runs/ghtd3_market_50k_annual_20260803/checkpoints/ghtd3.pt",
+  "start_time": 0.0
+}

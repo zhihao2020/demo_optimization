@@ -1,0 +1,21 @@
+C_ref: 96199.12664345714
+bonus: 15.984286276643054
+episodes:
+- failure: null
+  seed: 0
+  terminal_soc_l1: 0.041607738312361975
+  valid_steps: 168
+  week_raw: 10251162.532213729
+- failure: null
+  seed: 1
+  terminal_soc_l1: 0.041607738312361975
+  valid_steps: 168
+  week_raw: 10251162.532213729
+- failure: null
+  seed: 2
+  terminal_soc_l1: 0.041607738312361975
+  valid_steps: 168
+  week_raw: 10251162.532213729
+tolerance_loose: 0.1
+tolerance_medium: 0.05
+tolerance_strict: 0.041607738312361975

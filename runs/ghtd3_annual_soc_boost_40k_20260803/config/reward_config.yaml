@@ -1,0 +1,46 @@
+# 默认：FMU economic_cashflow_* 差分。market.available=true 时电网项改由分时电价 Python 结算替换。
+economic_source: Modelica_FMU_plus_optional_market_grid
+cost_reference:
+  value: 156539.83544146415
+  unit: CNY_per_step
+  source: rule_controller_seasonal_p95
+  computed_at: '2026-07-14'
+  trajectory: scripts/calibrate_reward_seasonal.py
+  n_samples: 1008
+  mean_week_raw_cost: 12345799.377755053
+  previous_value: 96199.12664345714
+terminal_soc:
+  enabled: true
+  period_hours: 168
+  mode: binary_bonus
+  bonus: 15.0
+  # 未达标终端罚：L1=0.42 时约 -12.6，与达标 bonus 同量级
+  fail_penalty_l1: 30.0
+  tolerance: 0.06
+  quadratic_weight: 1.0
+  weights:
+    # 能量主状态；热/冷为耦合副状态
+    battery_soc: 1.5
+    caes_gas_soc: 1.0
+    caes_hot_soc: 0.35
+    caes_cold_soc: 0.35
+  require_complete_episode: true
+  require_no_failure: true
+  tolerance_strict: 0.041607738312361975
+  tolerance_loose: 0.1
+  shaping:
+    enabled: true
+    mode: potential
+    coef: 5.0
+    absolute_coef: 0.08
+    # 与 env.soc_recovery_horizon 对齐；抬高 absolute 抑制周中 cold 漂移
+    recovery_horizon_steps: 40
+    recovery_coef_scale: 5.0
+    recovery_absolute_scale: 4.0
+gamma: 0.99
+episode_steps: 168
+reward_clip:
+  enabled: true
+  min: -25.0
+  max: 25.0
+parameter_status: 'market SOC recovery gas-first + last-40h shaping 2026-08-03'

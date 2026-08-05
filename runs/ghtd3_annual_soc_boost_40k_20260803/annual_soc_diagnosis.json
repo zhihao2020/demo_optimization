@@ -1,0 +1,326 @@
+{
+  "run_dir": "runs\\ghtd3_annual_soc_boost_40k_20260803",
+  "criterion": "energy_primary = battery + caes_gas (thermal tanks diagnostic only)",
+  "n_windows": 53,
+  "n_pass_energy": 51,
+  "n_pass_full": 17,
+  "pass_rate_energy": 0.9622641509433962,
+  "pass_rate_full": 0.32075471698113206,
+  "n_pass": 51,
+  "pass_rate": 0.9622641509433962,
+  "l1_mean": 0.05235720344309536,
+  "l1_p50": 0.0353443384170532,
+  "l1_p90": 0.04920021295547483,
+  "l1_full_mean": 0.09400502008227803,
+  "by_season": {
+    "winter": {
+      "n": 14,
+      "ok_energy": 12,
+      "ok_full": 5,
+      "pass_rate_energy": 0.8571428571428571,
+      "pass_rate_full": 0.35714285714285715,
+      "mean_l1_energy": 0.1012283499751772,
+      "mean_l1_full": 0.13501984359962602
+    },
+    "spring": {
+      "n": 13,
+      "ok_energy": 13,
+      "ok_full": 3,
+      "pass_rate_energy": 1.0,
+      "pass_rate_full": 0.23076923076923078,
+      "mean_l1_energy": 0.03746922566340517,
+      "mean_l1_full": 0.09093682625545906
+    },
+    "summer": {
+      "n": 13,
+      "ok_energy": 13,
+      "ok_full": 6,
+      "pass_rate_energy": 1.0,
+      "pass_rate_full": 0.46153846153846156,
+      "mean_l1_energy": 0.03267939640925478,
+      "mean_l1_full": 0.0655190389889937
+    },
+    "autumn": {
+      "n": 13,
+      "ok_energy": 13,
+      "ok_full": 3,
+      "pass_rate_energy": 1.0,
+      "pass_rate_full": 0.23076923076923078,
+      "mean_l1_energy": 0.03429252276053793,
+      "mean_l1_full": 0.08138938506062211
+    }
+  },
+  "fail_main_component_counts": {
+    "battery_soc": 2
+  },
+  "worst_10": [
+    {
+      "window": "window_1176h.csv",
+      "start_hour": 1176,
+      "season": "winter",
+      "soc_ok": false,
+      "soc_ok_full": false,
+      "l1": 0.5330924302339554,
+      "l1_full": 0.5726412326097489,
+      "l1_energy": 0.5330924302339554,
+      "terminal": {
+        "battery_soc": 0.15000000596046448,
+        "caes_gas_soc": 0.8419075608253479,
+        "caes_hot_soc": 0.557928740978241,
+        "caes_cold_soc": 0.5550678372383118
+      },
+      "component_weighted": {
+        "battery_soc": 0.5249999910593033,
+        "caes_gas_soc": 0.008092439174652077,
+        "caes_hot_soc": 0.020275059342384338,
+        "caes_cold_soc": 0.01927374303340912
+      },
+      "main_component": "battery_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_8736h.csv",
+      "start_hour": 8736,
+      "season": "winter",
+      "soc_ok": false,
+      "soc_ok_full": false,
+      "l1": 0.5320035129785537,
+      "l1_full": 0.5622197419404984,
+      "l1_energy": 0.5320035129785537,
+      "terminal": {
+        "battery_soc": 0.15000000596046448,
+        "caes_gas_soc": 0.8429964780807495,
+        "caes_hot_soc": 0.5261020064353943,
+        "caes_cold_soc": 0.4397699236869812
+      },
+      "component_weighted": {
+        "battery_soc": 0.5249999910593033,
+        "caes_gas_soc": 0.007003521919250466,
+        "caes_hot_soc": 0.009135702252388,
+        "caes_cold_soc": 0.02108052670955658
+      },
+      "main_component": "battery_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_3024h.csv",
+      "start_hour": 3024,
+      "season": "spring",
+      "soc_ok": true,
+      "soc_ok_full": false,
+      "l1": 0.0568938612937927,
+      "l1_full": 0.11553140580654142,
+      "l1_energy": 0.0568938612937927,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8041355609893799,
+        "caes_hot_soc": 0.4791603684425354,
+        "caes_cold_soc": 0.35330379009246826
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.045864439010620095,
+        "caes_hot_soc": 0.007293871045112609,
+        "caes_cold_soc": 0.0513436734676361
+      },
+      "main_component": "caes_cold_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_2184h.csv",
+      "start_hour": 2184,
+      "season": "spring",
+      "soc_ok": true,
+      "soc_ok_full": false,
+      "l1": 0.05155733823776243,
+      "l1_full": 0.11576252728700635,
+      "l1_energy": 0.05155733823776243,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8094720840454102,
+        "caes_hot_soc": 0.4790031611919403,
+        "caes_cold_soc": 0.3375534415245056
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.04052791595458982,
+        "caes_hot_soc": 0.007348893582820892,
+        "caes_cold_soc": 0.05685629546642303
+      },
+      "main_component": "caes_cold_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_2520h.csv",
+      "start_hour": 2520,
+      "season": "spring",
+      "soc_ok": true,
+      "soc_ok_full": false,
+      "l1": 0.049604511260986306,
+      "l1_full": 0.08832415789365766,
+      "l1_energy": 0.049604511260986306,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8114249110221863,
+        "caes_hot_soc": 0.499099463224411,
+        "caes_cold_soc": 0.39027297496795654
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.0385750889778137,
+        "caes_hot_soc": 0.0003151878714561462,
+        "caes_cold_soc": 0.038404458761215204
+      },
+      "main_component": "caes_gas_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_3528h.csv",
+      "start_hour": 3528,
+      "season": "spring",
+      "soc_ok": true,
+      "soc_ok_full": false,
+      "l1": 0.049347317218780495,
+      "l1_full": 0.08789975792169569,
+      "l1_energy": 0.049347317218780495,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8116821050643921,
+        "caes_hot_soc": 0.4708050489425659,
+        "caes_cold_soc": 0.4190451204776764
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.03831789493560789,
+        "caes_hot_soc": 0.010218232870101929,
+        "caes_cold_soc": 0.02833420783281326
+      },
+      "main_component": "caes_gas_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_4872h.csv",
+      "start_hour": 4872,
+      "season": "summer",
+      "soc_ok": true,
+      "soc_ok_full": false,
+      "l1": 0.048611795902252175,
+      "l1_full": 0.0760680943727493,
+      "l1_energy": 0.048611795902252175,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8124176263809204,
+        "caes_hot_soc": 0.44899776577949524,
+        "caes_cold_soc": 0.47255566716194153
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.03758237361907957,
+        "caes_hot_soc": 0.017850781977176666,
+        "caes_cold_soc": 0.009605516493320464
+      },
+      "main_component": "caes_gas_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_1344h.csv",
+      "start_hour": 1344,
+      "season": "winter",
+      "soc_ok": true,
+      "soc_ok_full": false,
+      "l1": 0.048051869869232156,
+      "l1_full": 0.06995623260736464,
+      "l1_energy": 0.048051869869232156,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.8129775524139404,
+        "caes_hot_soc": 0.5073117613792419,
+        "caes_cold_soc": 0.4447278678417206
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.03702244758605955,
+        "caes_hot_soc": 0.00255911648273468,
+        "caes_cold_soc": 0.019345246255397797
+      },
+      "main_component": "caes_gas_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_7896h.csv",
+      "start_hour": 7896,
+      "season": "autumn",
+      "soc_ok": true,
+      "soc_ok_full": false,
+      "l1": 0.0474554657936096,
+      "l1_full": 0.11303059607744215,
+      "l1_energy": 0.0474554657936096,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.813573956489563,
+        "caes_hot_soc": 0.486403226852417,
+        "caes_cold_soc": 0.3262392580509186
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.03642604351043699,
+        "caes_hot_soc": 0.004758870601654052,
+        "caes_cold_soc": 0.06081625968217849
+      },
+      "main_component": "caes_cold_soc",
+      "week_reward_sum": null
+    },
+    {
+      "window": "window_6552h.csv",
+      "start_hour": 6552,
+      "season": "autumn",
+      "soc_ok": true,
+      "soc_ok_full": false,
+      "l1": 0.046555852890014626,
+      "l1_full": 0.06545472294092176,
+      "l1_energy": 0.046555852890014626,
+      "terminal": {
+        "battery_soc": 0.5073529481887817,
+        "caes_gas_soc": 0.814473569393158,
+        "caes_hot_soc": 0.46323153376579285,
+        "caes_cold_soc": 0.48277169466018677
+      },
+      "component_weighted": {
+        "battery_soc": 0.011029422283172607,
+        "caes_gas_soc": 0.03552643060684202,
+        "caes_hot_soc": 0.012868963181972504,
+        "caes_cold_soc": 0.006029906868934631
+      },
+      "main_component": "caes_gas_soc",
+      "week_reward_sum": null
+    }
+  ],
+  "fail_windows": [
+    {
+      "start_hour": 1176,
+      "season": "winter",
+      "l1_energy": 0.5330924302339554,
+      "l1_full": 0.5726412326097489,
+      "main": "battery_soc",
+      "terminal": {
+        "battery_soc": 0.15000000596046448,
+        "caes_gas_soc": 0.8419075608253479,
+        "caes_hot_soc": 0.557928740978241,
+        "caes_cold_soc": 0.5550678372383118
+      }
+    },
+    {
+      "start_hour": 8736,
+      "season": "winter",
+      "l1_energy": 0.5320035129785537,
+      "l1_full": 0.5622197419404984,
+      "main": "battery_soc",
+      "terminal": {
+        "battery_soc": 0.15000000596046448,
+        "caes_gas_soc": 0.8429964780807495,
+        "caes_hot_soc": 0.5261020064353943,
+        "caes_cold_soc": 0.4397699236869812
+      }
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+{
+  "requested_valid_steps": 5000,
+  "status": "completed",
+  "formal": false,
+  "valid_steps": 5000,
+  "stats": {
+    "forbidden_action_attempts": 0,
+    "precheck_rejections": 0,
+    "post_step_constraint_failures": 190,
+    "fmu_numerical_failures": 0,
+    "fmi_failures": 0,
+    "valid_transition_count": 5000,
+    "rejected_transition_count": 190,
+    "caes_mode_counts": {
+      "0": 3145,
+      "1": 250,
+      "2": 1605
+    }
+  },
+  "replay_size": 5000,
+  "replay_rejected": 190,
+  "replay_invalid_transition_count": 190,
+  "eval": {
+    "steps": 24,
+    "valid_steps": 23,
+    "episode_reward": -19.304595076559487,
+    "weekly_episode_reward": -19.304595076559487,
+    "weekly_discounted_return": -17.55317909009259,
+    "weekly_raw_total_cost": 1857085.1865706057,
+    "weekly_terminal_soc_bonus": 0.0,
+    "terminal_soc_satisfied": false,
+    "cost_terms": {
+      "raw_grid_cost": 765085.1801333036,
+      "raw_thermal_cost": 1092000.0064373016,
+      "raw_battery_cost": 0.0,
+      "raw_caes_cost": 0.0,
+      "raw_curtailment_cost": 0.0,
+      "raw_unserved_cost": 0.0,
+      "raw_ramp_cost": 0.0,
+      "raw_total_cost": 1857085.1865706057,
+      "cost_reference": 96199.12664345714,
+      "cost_reference_missing": 0.0,
+      "normalized_cost": 19.304595076559487,
+      "terminal_soc_bonus": 0.0,
+      "reward": -19.304595076559487,
+      "terminal_soc_l1_error": 10.246458958679463,
+      "terminal_soc_l2_error": 1.9938585032201654,
+      "terminal_soc_tolerance": 0.05,
+      "terminal_soc_satisfied": 0.0
+    },
+    "metrics": {
+      "curtailment_energy_mwh": 2.980232238769531e-14,
+      "unserved_energy_mwh": 0.0,
+      "battery_throughput_mwh": 2256.6235214471817,
+      "caes_throughput_mwh": 2997.0,
+      "thermal_generation_mwh": 2870.000007748604,
+      "max_thermal_ramp_mw": 22.50000089406967
+    },
+    "terminal_soc": {
+      "battery_soc": 0.15752941440133406,
+      "caes_gas_soc": 0.6259344479921629,
+      "caes_hot_soc": 0.38747611981564184,
+      "caes_cold_soc": 0.612523880184358
+    },
+    "initial_soc": {
+      "battery_soc": 0.5,
+      "caes_gas_soc": 0.85,
+      "caes_hot_soc": 0.5,
+      "caes_cold_soc": 0.5
+    },
+    "fmu_failure_count": 1,
+    "forbidden_action_count": 0,
+    "invalid_transition_count": 1,
+    "action_violation_count": 0,
+    "gamma": 0.99
+  },
+  "rule": {
+    "steps": 168,
+    "valid_steps": 168,
+    "episode_reward": -90.57762223431064,
+    "weekly_episode_reward": -90.57762223431064,
+    "weekly_discounted_return": -49.13218950839352,
+    "weekly_raw_total_cost": 10251162.532213729,
+    "weekly_terminal_soc_bonus": 15.984286276643054,
+    "terminal_soc_satisfied": true,
+    "cost_terms": {
+      "raw_grid_cost": 171162.53221372346,
+      "raw_thermal_cost": 10080000.0,
+      "raw_battery_cost": 0.0,
+      "raw_caes_cost": 0.0,
+      "raw_curtailment_cost": 0.0,
+      "raw_unserved_cost": 0.0,
+      "raw_ramp_cost": 0.0,
+      "raw_total_cost": 10251162.532213729,
+      "cost_reference": 96199.12664345714,
+      "cost_reference_missing": 0.0,
+      "normalized_cost": 106.56190851095369,
+      "terminal_soc_bonus": 15.984286276643054,
+      "reward": -90.57762223431064,
+      "terminal_soc_l1_error": 7.617045346737152,
+      "terminal_soc_l2_error": 0.3695076015025139,
+      "terminal_soc_tolerance": 0.05,
+      "terminal_soc_satisfied": 99.0
+    },
+    "metrics": {
+      "curtailment_energy_mwh": 0.0,
+      "unserved_energy_mwh": 0.0,
+      "battery_throughput_mwh": 0.0,
+      "caes_throughput_mwh": 0.0,
+      "thermal_generation_mwh": 25200.0,
+      "max_thermal_ramp_mw": 0.0
+    },
+    "terminal_soc": {
+      "battery_soc": 0.5,
+      "caes_gas_soc": 0.808392261687638,
+      "caes_hot_soc": 0.5,
+      "caes_cold_soc": 0.5
+    },
+    "initial_soc": {
+      "battery_soc": 0.5,
+      "caes_gas_soc": 0.85,
+      "caes_hot_soc": 0.5,
+      "caes_cold_soc": 0.5
+    },
+    "fmu_failure_count": 0,
+    "forbidden_action_count": 0,
+    "invalid_transition_count": 0,
+    "action_violation_count": 0,
+    "gamma": 0.99
+  },
+  "last_metrics": {
+    "critic_loss": 11753675776.0,
+    "actor_loss": 0.0,
+    "q1_mean": -1202091.875,
+    "q2_mean": -1238838.375
+  },
+  "episodes": 191
+}

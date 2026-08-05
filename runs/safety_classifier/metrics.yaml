@@ -1,0 +1,13 @@
+false_safe_rate: 0.0
+false_unsafe_rate: 0.93625
+gate_metric: false_safe_rate
+model_version: d5.1-logistic
+n_fail_train: 1
+n_safe: 800
+n_safe_train: 800
+n_unsafe: 1
+per_failure_type_recall:
+  caes_pressure_low: 1.0
+threshold: 0.99
+unsafe_precision: 0.0013333333333333333
+unsafe_recall: 1.0

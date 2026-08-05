@@ -1,0 +1,27 @@
+{
+  "status": "completed",
+  "valid_steps": 50000,
+  "episode_reward": 128.3591921858432,
+  "terminal_soc_satisfied": true,
+  "terminal_soc_l1": 0.04582831748548198,
+  "thermal_mwh": 8957.50027924776,
+  "economic_reward": 116.95885291721407,
+  "rule_reward": 67.58608216083053,
+  "price_rule_reward": 32.354607645710864,
+  "annual_episode_reward": 5252.793363410559,
+  "annual_mean_reward": 99.10930874359546,
+  "annual_soc_pass": 16,
+  "annual_windows": 53,
+  "annual_economic_cashflow": 834981224.5322485,
+  "innovations": {
+    "smdp_gamma_c": true,
+    "market_goal_prior": true,
+    "recovery_goal_horizon_steps": 40,
+    "price_aware_bootstrap": true,
+    "high_reward_normalize": true,
+    "hierarchical_bc_pretrain": true,
+    "givesafe_low_level": true,
+    "huber_q_clip_critics": true
+  },
+  "run_dir": "D:\\Code\\0622\\optimal_demo\\runs\\ghtd3_market_50k_annual_20260803"
+}

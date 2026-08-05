@@ -1,0 +1,249 @@
+[
+  {
+    "season": "summer",
+    "method": "b0",
+    "n_steps": 168,
+    "episode_reward": 13.302222958651862,
+    "net_cashflow_j": -84153.17702830271,
+    "market_buy_cost": 5487991.860734188,
+    "market_sell_revenue": 1155776.5403144045,
+    "terminal_soc_satisfied": true,
+    "terminal_soc_l1": 0.04002562821770406,
+    "terminal_soc": {
+      "battery_soc": 0.5,
+      "caes_gas_soc": 0.8099743723869324,
+      "caes_hot_soc": 0.4522401988506317,
+      "caes_cold_soc": 0.40714091062545776
+    },
+    "curtail_sum_w": 0.0,
+    "thermal_mean_w": 150000000.0
+  },
+  {
+    "season": "summer",
+    "method": "b1",
+    "n_steps": 168,
+    "episode_reward": 5.462376051414642,
+    "net_cashflow_j": -903610.109591581,
+    "market_buy_cost": 6602378.370431472,
+    "market_sell_revenue": 1562461.8753572255,
+    "terminal_soc_satisfied": true,
+    "terminal_soc_l1": 0.03174180125953885,
+    "terminal_soc": {
+      "battery_soc": 0.483086496591568,
+      "caes_gas_soc": 0.843628466129303,
+      "caes_hot_soc": 0.47397470474243164,
+      "caes_cold_soc": 0.5046365857124329
+    },
+    "curtail_sum_w": 8.940696716308594e-08,
+    "thermal_mean_w": 148425297.7142857
+  },
+  {
+    "season": "summer",
+    "method": "ghtd3",
+    "n_steps": 168,
+    "episode_reward": 80.29145642084006,
+    "net_cashflow_j": 11178943.073992074,
+    "market_buy_cost": 2162337.372899874,
+    "market_sell_revenue": 2997235.1276100213,
+    "terminal_soc_satisfied": true,
+    "terminal_soc_l1": 0.05053391836307175,
+    "terminal_soc": {
+      "battery_soc": 0.5073529481887817,
+      "caes_gas_soc": 0.8104954957962036,
+      "caes_hot_soc": 0.4525521993637085,
+      "caes_cold_soc": 0.4050765931606293
+    },
+    "curtail_sum_w": 0.0,
+    "thermal_mean_w": 58556547.952380955
+  },
+  {
+    "season": "summer",
+    "method": "hybrid",
+    "n_steps": 168,
+    "episode_reward": 83.73422904358738,
+    "net_cashflow_j": 11682624.36328116,
+    "market_buy_cost": 2108019.024378335,
+    "market_sell_revenue": 3095713.353732044,
+    "terminal_soc_satisfied": true,
+    "terminal_soc_l1": 0.04107775789386131,
+    "terminal_soc": {
+      "battery_soc": 0.5085294246673584,
+      "caes_gas_soc": 0.8217163681983948,
+      "caes_hot_soc": 0.4591144025325775,
+      "caes_cold_soc": 0.39122942090034485
+    },
+    "curtail_sum_w": 0.0,
+    "thermal_mean_w": 54419643.166666664
+  },
+  {
+    "season": "summer",
+    "method": "lp",
+    "n_steps": 11,
+    "episode_reward": -2.8353502949010214,
+    "net_cashflow_j": 20919.51812467203,
+    "market_buy_cost": 256938.53925526497,
+    "market_sell_revenue": 63143.297092050154,
+    "terminal_soc_satisfied": false,
+    "terminal_soc_l1": 0.0,
+    "terminal_soc": {
+      "battery_soc": 0.8555999994277954,
+      "caes_gas_soc": 0.8885704278945923,
+      "caes_hot_soc": 0.5,
+      "caes_cold_soc": 0.5
+    },
+    "curtail_sum_w": 0.0,
+    "thermal_mean_w": 148620853.8181818
+  },
+  {
+    "season": "transition",
+    "method": "b0",
+    "n_steps": 168,
+    "episode_reward": 58.630390012354574,
+    "net_cashflow_j": 6883404.533749985,
+    "market_buy_cost": 2066092.843644449,
+    "market_sell_revenue": 1845965.0108799983,
+    "terminal_soc_satisfied": true,
+    "terminal_soc_l1": 0.010396368877547912,
+    "terminal_soc": {
+      "battery_soc": 0.5,
+      "caes_gas_soc": 0.8396036028862,
+      "caes_hot_soc": 0.5,
+      "caes_cold_soc": 0.5
+    },
+    "curtail_sum_w": 0.0,
+    "thermal_mean_w": 150000000.0
+  },
+  {
+    "season": "transition",
+    "method": "b1",
+    "n_steps": 168,
+    "episode_reward": 53.27310457670619,
+    "net_cashflow_j": 6615450.125626817,
+    "market_buy_cost": 2143379.2541783056,
+    "market_sell_revenue": 2003059.4323141982,
+    "terminal_soc_satisfied": true,
+    "terminal_soc_l1": 0.0393322017997787,
+    "terminal_soc": {
+      "battery_soc": 0.483086496591568,
+      "caes_gas_soc": 0.8360380530357361,
+      "caes_hot_soc": 0.5010977983474731,
+      "caes_cold_soc": 0.16922719776630402
+    },
+    "curtail_sum_w": 0.0,
+    "thermal_mean_w": 148687748.0952381
+  },
+  {
+    "season": "transition",
+    "method": "lp",
+    "n_steps": 14,
+    "episode_reward": 1.1551801038884026,
+    "net_cashflow_j": 619882.9571778126,
+    "market_buy_cost": 139102.51964571277,
+    "market_sell_revenue": 132737.32867254037,
+    "terminal_soc_satisfied": false,
+    "terminal_soc_l1": 0.0,
+    "terminal_soc": {
+      "battery_soc": 0.8555999994277954,
+      "caes_gas_soc": 0.8555058240890503,
+      "caes_hot_soc": 0.5,
+      "caes_cold_soc": 0.5
+    },
+    "curtail_sum_w": 0.0,
+    "thermal_mean_w": 148916385.14285713
+  },
+  {
+    "season": "winter",
+    "method": "b0",
+    "n_steps": 168,
+    "episode_reward": 67.47903658558717,
+    "net_cashflow_j": 8333189.446039211,
+    "market_buy_cost": 671748.6310778189,
+    "market_sell_revenue": 1654875.9152401558,
+    "terminal_soc_satisfied": true,
+    "terminal_soc_l1": 0.01403113377742482,
+    "terminal_soc": {
+      "battery_soc": 0.5,
+      "caes_gas_soc": 0.8359688520431519,
+      "caes_hot_soc": 0.5183632969856262,
+      "caes_cold_soc": 0.48465344309806824
+    },
+    "curtail_sum_w": 0.0,
+    "thermal_mean_w": 150000000.0
+  },
+  {
+    "season": "winter",
+    "method": "b1",
+    "n_steps": 168,
+    "episode_reward": 52.069827268225374,
+    "net_cashflow_j": 6435551.816747157,
+    "market_buy_cost": 3202982.3741696132,
+    "market_sell_revenue": 2778159.2252660375,
+    "terminal_soc_satisfied": true,
+    "terminal_soc_l1": 0.02824593885058324,
+    "terminal_soc": {
+      "battery_soc": 0.5079411864280701,
+      "caes_gas_soc": 0.8336658477783203,
+      "caes_hot_soc": 0.5218496322631836,
+      "caes_cold_soc": 0.4197947084903717
+    },
+    "curtail_sum_w": 1.4901161193847656e-07,
+    "thermal_mean_w": 147661788.57142857
+  },
+  {
+    "season": "winter",
+    "method": "ghtd3",
+    "n_steps": 168,
+    "episode_reward": 126.77891452819286,
+    "net_cashflow_j": 18308388.736751027,
+    "market_buy_cost": 15127.30061868517,
+    "market_sell_revenue": 4463235.690900106,
+    "terminal_soc_satisfied": true,
+    "terminal_soc_l1": 0.01807664189590552,
+    "terminal_soc": {
+      "battery_soc": 0.5073529481887817,
+      "caes_gas_soc": 0.8570472598075867,
+      "caes_hot_soc": 0.5322819948196411,
+      "caes_cold_soc": 0.4529915153980255
+    },
+    "curtail_sum_w": 1.1920928955078125e-07,
+    "thermal_mean_w": 53318452.547619045
+  },
+  {
+    "season": "winter",
+    "method": "hybrid",
+    "n_steps": 168,
+    "episode_reward": 128.09583253260854,
+    "net_cashflow_j": 18508971.876261484,
+    "market_buy_cost": 0.0,
+    "market_sell_revenue": 4507924.313954292,
+    "terminal_soc_satisfied": true,
+    "terminal_soc_l1": 0.018627885591160853,
+    "terminal_soc": {
+      "battery_soc": 0.5085294246673584,
+      "caes_gas_soc": 0.8558337688446045,
+      "caes_hot_soc": 0.5315349698066711,
+      "caes_cold_soc": 0.4650229215621948
+    },
+    "curtail_sum_w": 2.9802322387695312e-08,
+    "thermal_mean_w": 51175595.38095238
+  },
+  {
+    "season": "winter",
+    "method": "lp",
+    "n_steps": 6,
+    "episode_reward": 0.34609225117552433,
+    "net_cashflow_j": 507908.8596306157,
+    "market_buy_cost": 0.0,
+    "market_sell_revenue": 158398.2259774418,
+    "terminal_soc_satisfied": false,
+    "terminal_soc_l1": 0.0,
+    "terminal_soc": {
+      "battery_soc": 0.8555999994277954,
+      "caes_gas_soc": 0.8236575126647949,
+      "caes_hot_soc": 0.5153444409370422,
+      "caes_cold_soc": 0.46292948722839355
+    },
+    "curtail_sum_w": 2.9802322387695312e-08,
+    "thermal_mean_w": 147471565.33333334
+  }
+]

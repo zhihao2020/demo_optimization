@@ -1,0 +1,33 @@
+{
+  "status": "completed",
+  "valid_steps": 12000,
+  "episode_reward": 47.598957171069145,
+  "terminal_soc_satisfied": false,
+  "terminal_soc_l1": 0.06009378663910881,
+  "thermal_mwh": 25087.500017881393,
+  "economic_reward": 53.695023589026505,
+  "rule_reward": 67.58608216083053,
+  "price_rule_reward": 32.354607645710864,
+  "annual_episode_reward": null,
+  "annual_mean_reward": null,
+  "annual_soc_pass": null,
+  "annual_windows": null,
+  "annual_economic_cashflow": null,
+  "innovations": {
+    "smdp_gamma_c": true,
+    "market_goal_prior": true,
+    "recovery_goal_horizon_steps": 0,
+    "price_aware_bootstrap": true,
+    "high_reward_normalize": true,
+    "hierarchical_bc_pretrain": true,
+    "givesafe_low_level": true,
+    "huber_q_clip_critics": true
+  },
+  "run_dir": "D:\\Code\\0622\\optimal_demo\\runs\\ghtd3_ablation_no_recovery_goal_12000",
+  "name": "no_recovery_goal",
+  "description": "去掉上层回收 goal（环境硬回收仍在）",
+  "overrides": {
+    "recovery_goal_horizon_steps": 0,
+    "recovery_prior_weight": 0.0
+  }
+}
