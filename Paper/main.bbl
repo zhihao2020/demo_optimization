@@ -1,0 +1,119 @@
+\begin{thebibliography}{10}
+\expandafter\ifx\csname url\endcsname\relax
+  \def\url#1{\texttt{#1}}\fi
+\expandafter\ifx\csname urlprefix\endcsname\relax\def\urlprefix{URL }\fi
+\expandafter\ifx\csname href\endcsname\relax
+  \def\href#1#2{#2} \def\path#1{#1}\fi
+
+\bibitem{zhou2023iesdrl}
+X.~Zhou, J.~Wang, X.~Wang, S.~Chen, Optimal dispatch of integrated energy
+  system based on deep reinforcement learning, Energy ReportsPII
+  S2352484723013987 (2023).
+\newblock \href {https://doi.org/10.1016/j.egyr.2023.09.146}
+  {\path{doi:10.1016/j.egyr.2023.09.146}}.
+
+\bibitem{yang2024planning}
+X.~Yang, Y.~Tao, L.~Li, Decentralized coordinated planning model for integrated
+  energy systems under seasonal distribution and source--load uncertainties: A
+  two-stage multi-layer robust optimization and {Nash} bargaining approach,
+  EnergySeasonal uncertainty and coordinated IES planning (2024).
+
+\bibitem{ndrc2021tou}
+{National Development and Reform Commission of China}, Notice on further
+  improving the time-of-use electricity price mechanism, nDRC Price [2021] No.
+  1093 (2021).
+
+\bibitem{shandong2023tou}
+{Shandong Provincial Development and Reform Commission}, Notice on further
+  optimizing industrial and commercial time-of-use electricity prices, lu Fa
+  Gai Price [2023] No. 914 (2023).
+
+\bibitem{cui2025ghtd3}
+F.~Cui, D.~An, H.~Xi, Z.~Ren, Collaborative scheduling optimization of
+  hydrogen-enhanced integrated energy system via goal-conditioned hierarchical
+  reinforcement learning, Energy 338 (2025) 138768, article number / pages may
+  vary by publisher final; PII S0360544225044895.
+\newblock \href {https://doi.org/10.1016/j.energy.2025.138768}
+  {\path{doi:10.1016/j.energy.2025.138768}}.
+
+\bibitem{sutton2018rl}
+R.~S. Sutton, A.~G. Barto, Reinforcement Learning: An Introduction, 2nd
+  Edition, MIT Press, Cambridge, MA, 2018.
+
+\bibitem{fujimoto2018td3}
+S.~Fujimoto, H.~van Hoof, D.~Meger, Addressing function approximation error in
+  actor-critic methods, in: Proceedings of the 35th International Conference on
+  Machine Learning, Vol.~80 of Proceedings of Machine Learning Research, PMLR,
+  2018, pp. 1587--1596.
+
+\bibitem{haarnoja2018sac}
+T.~Haarnoja, A.~Zhou, P.~Abbeel, S.~Levine, Soft actor-critic: Off-policy
+  maximum entropy deep reinforcement learning with a stochastic actor, in:
+  Proceedings of the 35th International Conference on Machine Learning, Vol.~80
+  of Proceedings of Machine Learning Research, PMLR, 2018, pp. 1861--1870.
+
+\bibitem{jendoubi2023hier}
+I.~Jendoubi, F.~Bouffard, Multi-agent hierarchical reinforcement learning for
+  energy management, Applied Energy 332 (2023) 120500.
+\newblock \href {https://doi.org/10.1016/j.apenergy.2022.120500}
+  {\path{doi:10.1016/j.apenergy.2022.120500}}.
+
+\bibitem{ochoa2024bidding}
+T.~Ochoa, E.~Gil, A.~Angulo, C.~Valle, Multi-agent deep reinforcement learning
+  for efficient multi-timescale bidding of a hybrid power plant in day-ahead
+  and real-time markets, Applied EnergyMulti-timescale market bidding with
+  multi-agent DRL (2024).
+
+\bibitem{garcia2015safe}
+J.~Garc{\'i}a, F.~Fern{\'a}ndez, A comprehensive survey on safe reinforcement
+  learning, Journal of Machine Learning Research 16 (2015) 1437--1480.
+
+\bibitem{garcia2012safe}
+J.~Garc{\'i}a, F.~Fern{\'a}ndez, Safe exploration of state and action spaces in
+  reinforcement learning, Journal of Artificial Intelligence Research 45 (2012)
+  515--564.
+
+\bibitem{sun2024constrained}
+Q.~Sun, X.~Wang, Z.~Liu, W.~Lin, J.~He, W.~Pei, Dynamic energy dispatch
+  strategy for integrated energy system based on constrained reinforcement
+  learning, CSEE Journal of Power and Energy Systems (2022).
+\newblock \href {https://doi.org/10.17775/CSEEJPES.2021.08770}
+  {\path{doi:10.17775/CSEEJPES.2021.08770}}.
+
+\bibitem{wachi2023safe}
+A.~Wachi, X.~Shen, W.~Hashimoto, K.~Hashimoto, Safe exploration in
+  reinforcement learning: A generalized formulation and algorithms, in:
+  Advances in Neural Information Processing Systems, 2023.
+
+\bibitem{emmanuel2020market}
+M.~I. Emmanuel, P.~Denholm, A market feedback framework for improved estimates
+  of the arbitrage value of energy storage using price-taker models, Applied
+  EnergyPrice-taker storage valuation with market feedback (2022).
+
+\bibitem{pei2024pricetaker}
+Z.~Pei, J.~Fang, Z.~Zhang, J.~Chen, S.~Hong, Z.~Peng, Optimal price-taker
+  bidding strategy of distributed energy storage systems in the electricity
+  spot market, Frontiers in Energy Research 12 (2024) 1463286.
+\newblock \href {https://doi.org/10.3389/fenrg.2024.1463286}
+  {\path{doi:10.3389/fenrg.2024.1463286}}.
+
+\bibitem{lin2019laes}
+B.~Lin, W.~Wu, M.~Bai, C.~Xie, J.~Radcliffe, Liquid air energy storage: Price
+  arbitrage operations and sizing optimization in the {GB} real-time
+  electricity market, Energy Conversion and ManagementReceived May 2018;
+  available online Dec 2018 (2019).
+
+\bibitem{shandong2026tou}
+{State Grid Shandong Electric Power Company}, Announcement of industrial and
+  commercial time-of-use electricity prices for 2026 (2025).
+
+\bibitem{ndrc2023td}
+{National Development and Reform Commission of China}, Provincial grid
+  transmission and distribution tariffs for the fourth regulatory cycle (2023).
+
+\bibitem{ai4e2025}
+{World Scientific Intelligence Competition Organizing Committee}, {AI4E} track
+  dataset: Mengxi system boundaries and real-time nodal prices, competition
+  data; NWP by TJ Weather (2025).
+
+\end{thebibliography}

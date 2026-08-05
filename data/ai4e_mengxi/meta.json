@@ -1,0 +1,17 @@
+{
+  "source": "AI4E World Scientific Intelligence Competition (AI+Energy)",
+  "region": "Mengxi system-level anonymized",
+  "year": 2025,
+  "native_resolution": "15min",
+  "export_resolution": "1h mean",
+  "price": "real-time nodal price A",
+  "boundary_path": "E:\\ai4Science\\AI4E\\初赛\\src\\data\\train\\mengxi_boundary_anon_filtered.csv",
+  "price_path": "E:\\ai4Science\\AI4E\\初赛\\src\\data\\train\\mengxi_node_price_selected.csv",
+  "scales_train_q995": {
+    "wind_act": 1.561791809364804,
+    "pv_act": 1.2268000442805775,
+    "load_act": 3.1686732937802016,
+    "re_act": 2.1869250281688952
+  },
+  "note": "Domain B only — not FMU plant physics. Cross-domain robustness of forecast-then-constrained storage scheduling. Acknowledge AI4E organizers and TJ Weather (NWP) in paper."
+}

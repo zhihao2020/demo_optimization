@@ -1,0 +1,23 @@
+{
+  "da_definition": "persistence-24h",
+  "n": 8761,
+  "channels": [
+    "wind",
+    "irradiance",
+    "ambient_temperature",
+    "planned_load"
+  ],
+  "sources": {
+    "wind": "data/winds.csv",
+    "irradiance": "data/Gstc.csv",
+    "ambient_temperature": "data/environment.csv",
+    "planned_load": "data/load.csv"
+  },
+  "note": "realized = FMU-aligned CSV truth; DA = lag persistence; BiLSTM predicts eps; predicted obs = DA + eps_hat. Physics stays FMU.",
+  "mae_da": {
+    "wind": 1.515481965529049,
+    "irradiance": 43.45602566297607,
+    "ambient_temperature": 2.447678156983601,
+    "planned_load": 14945149.297401361
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "train": {
+    "train_mse": 92143997499492.11,
+    "val_mse": 40072913092608.0,
+    "epoch": 20.0
+  },
+  "export": {
+    "mae_pred_wind": 1.3271506847366803,
+    "mae_da_wind": 1.5269801000814616,
+    "improvement_vs_da_wind": 0.19982941534478127,
+    "mae_pred_irradiance": 45.25165805854488,
+    "mae_da_irradiance": 43.829210985686025,
+    "improvement_vs_da_irradiance": -1.4224470728588585,
+    "mae_pred_ambient_temperature": 1.9431533897018958,
+    "mae_da_ambient_temperature": 2.4630513208425464,
+    "improvement_vs_da_ambient_temperature": 0.5198979311406506,
+    "mae_pred_planned_load": 14959010.736236198,
+    "mae_da_planned_load": 14959011.725322938,
+    "improvement_vs_da_planned_load": 0.989086739718914,
+    "out_dir": "D:\\Code\\0622\\optimal_demo\\data\\resource_predicted"
+  },
+  "checkpoint": "D:\\Code\\0622\\optimal_demo\\data\\forecast_models\\resource_bilstm.pt"
+}
