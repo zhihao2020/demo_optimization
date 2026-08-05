@@ -9,43 +9,49 @@
 | `sell_yuan_per_kwh` | 余电上网结算价 | 元/kWh |
 | `band` | 分时档位 | S 尖峰 / P 高峰 / F 平 / V 低谷 / D 深谷 |
 
-元数据见 `price_tou_meta.json`。重建脚本：`scripts/build_price_tou_shandong.py`。
+元数据：`price_tou_meta.json`。  
+重建脚本：`scripts/build_price_tou_shandong.py`。
+
+> 风光荷为 FMU `TypicalScene` **典型场景年**（温带北方算例），**未绑定山东气象站**。  
+> 论文表述建议：典型场景资源边界 + 山东容积分时电价；勿写「山东实测风光荷」。
+
+可选价区脚本（非默认）：`scripts/build_price_tou_mengxi.py`（蒙西）。  
+备份：`price_tou_shandong_backup.csv` 与恢复时使用的同名备份。
+
+---
 
 ## 数据出处
 
 | 项 | 内容 |
 |----|------|
 | 时段与浮动比例 | 国网山东省电力公司 **2026 年工商业分时电价公告**；框架依据《关于进一步优化工商业分时电价政策的通知》（鲁发改价格〔2023〕914 号） |
-| 整理入口 | 介子九维智能微电网测算工具公开编译表 `priceData.tou.provinces[shandong]`（[smart-microgrid](https://www.jiezijiuwei.com/tools/smart-microgrid)） |
-| 代理购电与加项参数 | 同工具 `REFERENCE_INPUTS`（山东园区算例）：`proxy_price`、`capacity_comp`、`line_loss`、`sys_op`、`td_energy`、`fund` |
-| 输配电度价 | 国家发展改革委 **第四监管周期** 省级输配电价表，算例取山东 **110 kV** 电度电价 0.106 元/kWh |
+| 整理入口 | 介子九维 smart-microgrid / 本仓库 `build_price_tou_shandong.py` |
+| 代理购电与加项 | 算例参数：`proxy_price`、`capacity_comp`、`line_loss`、`sys_op`、`td_energy`、`fund` |
+| 输配电度价 | 第四监管周期 · 山东 **110 kV = 0.106 元/kWh**（[介子九维输配电查询](https://www.jiezijiuwei.com/tools/transmission-tariffs) / NDRC 表） |
 
 ### 官方 PDF / 网页（核对用）
 
 | 核对对象 | 链接 |
 |----------|------|
-| **鲁发改价格〔2023〕914 号**（浮动比例框架） | https://www.shandong.gov.cn/module/download/downfile.jsp?classid=0&filename=b373ac6b7f11438abf4c9ff6c1bb4d0e.pdf |
-| **2026 年工商业分时电价公告**（时段表，济南发改转发） | https://jndpc.jinan.gov.cn/col2191/art/2025/art_2191_4789557.html |
-| 2026 分时公告摘录（第三方，便于对照时段） | https://www.pvmeng.com/2025/11/29/50325/ |
-| **代理购电价格表**（按月变；示例 PDF） | http://www.jiyang.gov.cn/resources/public/20251121/692033cb2e3aee8561e64264.pdf |
-| **输配电价** NDRC 通知页（下载附件核山东 110kV） | https://www.ndrc.gov.cn/xxgk/zcfb/tz/202305/t20230515_1356603.html |
+| 鲁发改价格〔2023〕914 号 | https://www.shandong.gov.cn/module/download/downfile.jsp?classid=0&filename=b373ac6b7f11438abf4c9ff6c1bb4d0e.pdf |
+| 2026 工商业分时公告（济南发改转发） | https://jndpc.jinan.gov.cn/col2191/art/2025/art_2191_4789557.html |
+| 输配电价查询 | https://www.jiezijiuwei.com/tools/transmission-tariffs |
+| NDRC 第四周期省级输配电价 | https://www.ndrc.gov.cn/xxgk/zcfb/tz/202607/P020260710613207914509.pdf |
 
-**核对顺序建议**：① 2026 公告时段 → ② 914 浮动比例 → ③ 当月代理购电分项 vs 本表 `0.4/0.0705/…`（算例可简化）→ ④ NDRC 附件 110kV 是否 0.106。  
-仓库 `proxy_price=0.4` 等为**算例参数**，非全年法定单一目录价；正式写作请注明 “illustrative proxy-purchase composition”。
+---
 
 ## 购电价公式
 
 参与浮动基数：
 
 \[
-B = \lambda^{\mathrm{proxy}} + \lambda^{\mathrm{capcomp}} + \lambda^{\mathrm{lloss}} + \lambda^{\mathrm{sys}}
-= 0.4 + 0.0705 + 0.01 + 0.0209 = 0.5014
+B = 0.4 + 0.0705 + 0.01 + 0.0209 = 0.5014
 \]
 
 不参与浮动：
 
 \[
-A = \lambda^{\mathrm{td}} + \lambda^{\mathrm{fund}} = 0.106 + 0.02717 = 0.13317
+A = 0.106 + 0.02717 = 0.13317
 \]
 
 分时比例：尖峰 2.0、高峰 1.7、平 1.0、低谷 0.3、深谷 0.1。
@@ -62,7 +68,7 @@ A = \lambda^{\mathrm{td}} + \lambda^{\mathrm{fund}} = 0.106 + 0.02717 = 0.13317
 | 低谷 V | 0.3 | 0.28359 |
 | 深谷 D | 0.1 | 0.18331 |
 
-全年按 **2026 非闰年** 分月时段表展开为 8760 点（1–2 月与 12 月、3–5 月、6 月、7–8 月、9–11 月五套 24h 模板）。
+全年按 **2026 非闰年** 分月时段表展开为 8760 点。
 
 ## 售电价
 
@@ -70,11 +76,11 @@ A = \lambda^{\mathrm{td}} + \lambda^{\mathrm{fund}} = 0.106 + 0.02717 = 0.13317
 \lambda^{\mathrm{sell}} = 0.5\times 0.225 + 0.5\times 0.15 = 0.1875\ \mathrm{元/kWh}
 \]
 
-（机制电价与上网市场均价各半；与分时档位无关。）
+（算例平坦售电价。）
 
 ## 使用注意
 
-1. **代理购电路径**，适用于电网代理购电工商业用户叙事；直接参与现货的用户电能量价由市场形成，不可直接套用本表绝对水平，但峰谷时段仍可能参照省规。
-2. 电压等级改变时，请改 `td_energy_price` 后重跑 `scripts/build_price_tou_shandong.py`。
-3. **不做电网出清**；本文件仅作 price-taker 外生电价。
-4. 正式对外发表前建议与国网山东当年公告原文、接入电压及项目结算单再核对一次。
+1. 代理购电路径 price-taker；不做电网出清。  
+2. 改电压等级：改 `td_energy_price` 后重跑 `build_price_tou_shandong.py`。  
+3. 改价后重跑 `build_price_residual_series.py` + `train_price_bilstm.py`（若用预测价）。  
+4. 在蒙西价下训过的实验需按山东价 **重评/重训** 后再入主表。  

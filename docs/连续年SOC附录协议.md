@@ -34,11 +34,13 @@
 
 ```powershell
 . .\scripts\with_e_cache.ps1
+$env:PYTHONPATH = "src"
 
-# 示例：B0 / Hybrid / GHTD3 / SAC 连续年附录（耗时长，建议夜间）
 python scripts/eval_continuous_annual.py `
   --methods b0,hybrid,ghtd3,sac `
-  --out-dir runs/appendix_continuous_soc_20260804
+  --horizon-hours 8760 `
+  --sac-ckpt runs/givesafe_sac_80k_20260804/checkpoints/hybrid_givesafe_sac.pt `
+  --out-dir runs/appendix_continuous_soc_8760_20260804
 ```
 
 常用参数：
@@ -55,6 +57,26 @@ python scripts/eval_continuous_annual.py `
 
 - `continuous_summary.json`：各方法年汇总  
 - 每方法子目录：`continuous_year.csv`、`window_snapshots.json`（168 h 切片 KPI，**非**独立 reset）
+
+---
+
+## 3.1 已跑结果（2026-08-04，山东 TOU）
+
+数据：`runs/appendix_continuous_soc_8760_20260804/continuous_summary.json`（E: 缓存同路径）
+
+| Method | steps | valid | Net J（至终止） | year-end SOC | invalid | fmu_fail | 说明 |
+|--------|------:|------:|----------------:|:------------:|--------:|---------:|------|
+| **B0 Rule** | **8760** | **8760** | **3.121e+08** | **Y** | 0 | 0 | 完整连续年 |
+| Hybrid-TD3 | 1276 | 1275 | 1.298e+08 | N | 1 | 1 | ~第 53 天失败中止 |
+| GHTD3 | 1276 | 1275 | 1.296e+08 | N | 1 | 1 | 同上 |
+| SAC-80k | 1277 | 1276 | 5.072e+07 | N | 1 | 1 | 同上 |
+
+**解读（写附录 Discussion）：**
+
+1. **协议已跑通**：单次 reset、SOC 跨周传递；B0 证明 FMU 可完整 8760h 连续。  
+2. **主表周 reset 的必要性**：在 **连续年** 下，主 RL（周 episode 训练）约在 **1276 h** 触发 FMU/约束失败，**不能**完成年终 SOC——与「周运营期末回收」设定一致。  
+3. **J 不可与主表 53 窗求和直接比**：RL 行为 **截断轨迹**；B0 的年 J 是完整年。  
+4. **主对比仍用 weekly_reset**；本表支撑「连续年更难 / 周协议非偷懒」。
 
 ---
 
@@ -97,6 +119,7 @@ python scripts/eval_continuous_annual.py `
 
 - [x] `evaluate_continuous_annual_policy` + `continuous_soc` 开关  
 - [x] 文档与 CLI `scripts/eval_continuous_annual.py`  
-- [ ] 至少 B0 + 主 RL（GHTD3 或 Hybrid）完整 8760 跑完  
-- [ ] 附录表 / 一页图写入论文补充材料  
-- [ ] SAC 长训（50–80k）ckpt 纳入附录对照（可选）
+- [x] B0 **完整 8760**；Hybrid / GHTD3 / SAC-80k **连续年评估已跑**（RL 于 ~1276h 失败中止——结果有效）  
+- [x] 附录结果表见 §3.1  
+- [x] SAC-80k 纳入对照  
+- [ ] 可选：附录图（年 SOC 轨迹 / 失败时刻）

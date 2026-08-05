@@ -180,8 +180,9 @@ def finalize_training_run(
     if extra_result:
         result.update(extra_result)
 
+    (run_dir / "train").mkdir(parents=True, exist_ok=True)
     (run_dir / "train" / "step_log.json").write_text(
-        json.dumps(step_log[-500:], ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(step_log, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     (run_dir / "summary.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
@@ -197,15 +198,16 @@ def write_summary_and_report(
     Args:
         run_dir: 训练运行目录。
         result: 待写入的 summary 内容。
-        step_log: 可选训练步日志，写入 train/step_log.json。
+        step_log: 可选训练步日志，写入 train/step_log.json（完整周期采样，不截断尾窗）。
 
     Returns:
         可能含 ``report_path`` 或 ``report_error`` 的 result 字典。
     """
     run_dir = Path(run_dir)
     if step_log is not None:
+        (run_dir / "train").mkdir(parents=True, exist_ok=True)
         (run_dir / "train" / "step_log.json").write_text(
-            json.dumps(step_log[-500:], ensure_ascii=False, indent=2), encoding="utf-8"
+            json.dumps(step_log, ensure_ascii=False, indent=2), encoding="utf-8"
         )
     (run_dir / "summary.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8"

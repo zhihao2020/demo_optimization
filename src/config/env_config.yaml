@@ -9,7 +9,9 @@ fmu:
 
 # 仅供策略使用的日前时序观测；FMU 仍使用其内嵌的同源表作为物理边界与真值。
 # 每小时特征顺序：wind, irradiance, ambient_temperature, planned_load。
-# mode=perfect：CSV 完美前瞻（主表默认）；mode=noisy：有误差日前预报（仅污染 obs）。
+# mode=perfect：CSV 完美前瞻（主表默认）
+# mode=noisy：乘性噪声日前（仅污染 obs）
+# mode=predicted：residual BiLSTM 导出序列（data/resource_predicted/）
 forecast:
   enabled: true
   mode: perfect
@@ -28,6 +30,12 @@ forecast:
     - {name: irradiance, path: data/Gstc.csv, offset: 0.0, scale: 1000.0}
     - {name: ambient_temperature, path: data/environment.csv, offset: 273.15, scale: 40.0}
     - {name: planned_load, path: data/load.csv, offset: 0.0, scale: 3.0e8}
+  # mode=predicted 时使用（与 sources 同 offset/scale，value 为物理单位）
+  predicted_sources:
+    - {name: wind, path: data/resource_predicted/winds.csv, offset: 0.0, scale: 15.0}
+    - {name: irradiance, path: data/resource_predicted/Gstc.csv, offset: 0.0, scale: 1000.0}
+    - {name: ambient_temperature, path: data/resource_predicted/environment.csv, offset: 273.15, scale: 40.0}
+    - {name: planned_load, path: data/resource_predicted/load.csv, offset: 0.0, scale: 3.0e8}
 
 # FMU modelDescription 没有为 input 给出 min/max；以下边界来自同一实例的 Modelica 参数和设备启机约束。
 # 三个值均为 FMU 原生无量纲调度指令，绝非 Python 侧的归一化或 W 到标幺的转换。
@@ -99,4 +107,4 @@ market:
   # 末段强制回收：gas 用 horizon；battery 默认可 +16h 更早介入
   soc_recovery_horizon: 40
   soc_recovery_battery_horizon: 56
-  note: "山东2026代理购电分时；obs 可接预测价，结算用实现价；末段 SOC 强制回收；不做电网出清。"
+  note: "山东工商业代理购电分时+110kV输配电度价算例；obs可接预测价，结算用实现价；末段SOC回收；不做电网出清。"

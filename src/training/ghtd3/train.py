@@ -27,9 +27,14 @@ from .goals import (
     blend_goal_with_prior,
     extract_soc,
     extract_soc_from_obs,
+    extract_plant_state,
     goal_transition,
-    intrinsic_reward,
+    goal_transition_intent,
+    plant_intent_vector,
+    structured_intrinsic_reward,
     market_conditioned_goal_prior,
+    residual_scale_from_goal,
+    achieved_goal_from_cycle,
 )
 
 
@@ -41,7 +46,7 @@ def load_ghtd3_config(path: str | Path | None = None) -> dict[str, Any]:
 
 
 class GHTD3PolicyWrapper:
-    """评估：分层 goal + 市场/回收先验 + GiveSafe 底层。"""
+    """评估：5 维 Modelica goal + Hybrid 锚定残差 + GiveSafe。"""
 
     def __init__(self, agent: GHTD3Agent, env: PowerSystemEnv, controller: GiveSafeController, cfg: dict):
         self.agent = agent
@@ -51,10 +56,12 @@ class GHTD3PolicyWrapper:
         self.c = int(cfg.get("subgoal_interval", 8))
         self.step_in_cycle = 0
         self.goal = np.zeros(agent.goal_dim, dtype=np.float32)
+        self._pending_intent = None
 
     def on_episode_reset(self, info: dict[str, Any]) -> None:
         self.step_in_cycle = 0
         self.goal = np.zeros(self.agent.goal_dim, dtype=np.float32)
+        self._pending_intent = None
 
     def _select_goal_with_prior(self, obs: np.ndarray) -> np.ndarray:
         goal = self.agent.select_goal(obs, deterministic=True, random=False)
@@ -66,12 +73,16 @@ class GHTD3PolicyWrapper:
                 buy, _ = self.env.price_profile.prices_at(float(self.env.adapter.time))
             except Exception:
                 buy = None
-        soc_now = extract_soc_from_obs(obs, self.agent.goal_dim)
+        soc_now = extract_soc_from_obs(obs, 2)
         soc_init = None
         if self.env.initial_soc is not None:
-            soc_init = extract_soc(self.env.initial_soc, DEFAULT_SOC_KEYS[: self.agent.goal_dim])
+            soc_init = extract_soc(self.env.initial_soc, DEFAULT_SOC_KEYS)
         rem = int(self.env.episode_steps - self.env.step_index)
         recovery = rem <= int(self.cfg.get("recovery_goal_horizon_steps", 36) or 0)
+        th_mean = None
+        outs = self.env.last_outputs or {}
+        if outs:
+            th_mean = 0.5 * (float(outs.get("caes_hot_soc", 0.5)) + float(outs.get("caes_cold_soc", 0.5)))
         prior = market_conditioned_goal_prior(
             buy,
             soc_now,
@@ -82,8 +93,9 @@ class GHTD3PolicyWrapper:
             discharge_threshold=float(self.cfg.get("discharge_threshold", 0.90)),
             recovery=recovery,
             strength=float(self.cfg.get("market_prior_strength", 0.14)),
+            th_mean=th_mean,
         )
-        w = float(self.cfg.get("market_prior_weight", 0.45))
+        w = float(self.cfg.get("market_prior_weight_end", self.cfg.get("market_prior_weight", 0.2)))
         if recovery:
             w = max(w, float(self.cfg.get("recovery_prior_weight", 0.92)))
         return blend_goal_with_prior(
@@ -104,7 +116,9 @@ class GHTD3PolicyWrapper:
             }
 
         def propose():
-            return self.agent.select_low_action(obs, self.goal, feasible, deterministic=deterministic)
+            return self.agent.select_composed_action(
+                obs, self.goal, feasible, deterministic=deterministic
+            )
 
         try:
             gs = self.controller.select_safe_action(
@@ -123,21 +137,21 @@ class GHTD3PolicyWrapper:
                 "caes_magnitude": np.asarray([0.0], dtype=np.float32),
             }
         self.step_in_cycle += 1
-        # goal 在 env.step 后应转移；评估时在 on_transition 更新
-        self._pending_obs = obs
+        outs0 = self.env.last_outputs or {}
+        self._pending_intent = plant_intent_vector(outs0) if outs0 else None
         return action
 
     def on_transition(self, info: dict[str, Any]) -> None:
         if not info.get("transition_valid"):
             return
         outs = info.get("observations") or self.env.last_outputs or {}
-        if not outs or not hasattr(self, "_pending_obs"):
+        if not outs or self._pending_intent is None:
             return
-        soc_t = extract_soc_from_obs(self._pending_obs, self.agent.goal_dim)
-        soc_tp1 = extract_soc(outs, DEFAULT_SOC_KEYS[: self.agent.goal_dim])
-        self.goal = goal_transition(
-            soc_t, self.goal, soc_tp1, self.agent.goal_low, self.agent.goal_high
+        intent1 = plant_intent_vector(outs)
+        self.goal = goal_transition_intent(
+            self._pending_intent, self.goal, intent1, self.agent.goal_low, self.agent.goal_high
         )
+        self._pending_intent = intent1
 
 
 def run_ghtd3_training(
@@ -155,7 +169,10 @@ def run_ghtd3_training(
     root = Path(__file__).resolve().parents[3]
     full_cfg = load_ghtd3_config(config_path)
     cfg = dict(full_cfg.get("ghtd3") or full_cfg)
-    shutil.copy2(root / "src/config/ghtd3_config.yaml", run_dir / "config" / "ghtd3_config.yaml")
+    cfg_src = Path(config_path) if config_path else (root / "src/config/ghtd3_config.yaml")
+    if not cfg_src.is_file():
+        cfg_src = root / "src/config/ghtd3_config.yaml"
+    shutil.copy2(cfg_src, run_dir / "config" / "ghtd3_config.yaml")
     for name in ("env_config.yaml", "reward_config.yaml", "givesafe_config.yaml", "device_params.yaml"):
         src = root / "src/config" / name
         if src.exists():
@@ -168,9 +185,32 @@ def run_ghtd3_training(
     gs_cfg = load_givesafe_config(root / "src/config/givesafe_config.yaml")
     controller = GiveSafeController(oracle=env.oracle, shadow=None, config=gs_cfg)
 
+    # Hybrid 锚定（冻结 raw-obs 执行器）
+    hybrid_path = cfg.get("hybrid_anchor_path")
+    if bool(cfg.get("hybrid_anchor", True)) and hybrid_path:
+        hp = Path(hybrid_path)
+        if not hp.is_file():
+            hp = root / hybrid_path
+        if hp.is_file():
+            from .hybrid_anchor import HybridAnchor
+
+            anchor = HybridAnchor(obs_dim, hp, device=str(agent.device))
+            # action_residual：永不移植绝对头；仅 hybrid_init_low 时移植（旧路径）
+            _mode = str(cfg.get("execution_mode", "action_residual")).lower()
+            do_tx = bool(cfg.get("hybrid_init_low", False)) and _mode not in ("action_residual", "tea")
+            trep = agent.attach_hybrid_anchor(anchor, transplant=do_tx)
+            print(f"[hybrid-init] {trep}")
+        else:
+            print(f"[warn] hybrid_anchor_path missing: {hybrid_path}; fallback pure residual low")
+            agent.hybrid_anchor_enabled = False
+
     bc_summary: dict[str, Any] | None = None
     if resume_from:
-        agent.load(resume_from)
+        try:
+            agent.load(resume_from, strict=False)
+        except Exception as exc:
+            print(f"[warn] resume load partial: {exc}")
+            agent.load(resume_from, strict=False)
         skip_bc = True
     if bool(cfg.get("bc_pretrain", True)) and not skip_bc:
         from .bc_pretrain import (
@@ -187,23 +227,57 @@ def run_ghtd3_training(
             price_aware=True,
             cfg=cfg,
         )
-        low_bc = behavior_clone_low_actor(
-            agent,
-            demos,
-            epochs=int(cfg.get("bc_epochs_low", 30)),
-        )
-        high_bc = bc_pretrain_high_goals(
-            agent,
-            demos,
-            epochs=int(cfg.get("bc_epochs_high", 20)),
-        )
-        bc_summary = {"low": low_bc, "high": high_bc, "n_demos": int(demos["obs"].shape[0])}
+        low_bc = None
+        mle_stats = None
+        # 逆动力学残差 MLE（推荐，action_residual）
+        if (
+            str(cfg.get("execution_mode", "")).lower() in ("action_residual", "tea")
+            and bool(cfg.get("mle_pretrain_residual", True))
+            and agent._hybrid_anchor is not None
+        ):
+            from .residual_mle import collect_residual_mle_demos, mle_pretrain_residual
+
+            mle_demos = collect_residual_mle_demos(
+                env,
+                agent,
+                n_windows=int(cfg.get("mle_windows", cfg.get("bc_windows", 4))),
+                seed=seed,
+                cfg=cfg,
+            )
+            mle_stats = mle_pretrain_residual(
+                agent,
+                mle_demos,
+                epochs=int(cfg.get("mle_epochs", 25)),
+                fit_mode=bool(cfg.get("mle_fit_mode", False)),
+            )
+            print(f"[residual-mle] {mle_stats}")
+        elif bool(cfg.get("bc_pretrain_low", not agent.hybrid_anchor_enabled)):
+            low_bc = behavior_clone_low_actor(
+                agent,
+                demos,
+                epochs=int(cfg.get("bc_epochs_low", 30)),
+            )
+        high_bc = None
+        if bool(cfg.get("bc_pretrain_high", True)):
+            high_bc = bc_pretrain_high_goals(
+                agent,
+                demos,
+                epochs=int(cfg.get("bc_epochs_high", 20)),
+            )
+        bc_summary = {
+            "low": low_bc,
+            "high": high_bc,
+            "residual_mle": mle_stats,
+            "n_demos": int(demos["obs"].shape[0]),
+            "execution_mode": str(cfg.get("execution_mode")),
+        }
         (run_dir / "train" / "bc_summary.json").write_text(
-            json.dumps(bc_summary, ensure_ascii=False, indent=2), encoding="utf-8"
+            json.dumps(bc_summary, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
         )
 
     c = int(cfg.get("subgoal_interval", 8))
-    alpha = float(cfg.get("intrinsic_alpha", 0.3))
+    alpha0 = float(cfg.get("intrinsic_alpha", 0.35))
+    alpha1 = float(cfg.get("intrinsic_alpha_end", cfg.get("intrinsic_alpha", 0.25)))
     eps0 = float(cfg.get("epsilon_start", 0.3))
     eps1 = float(cfg.get("epsilon_end", 0.05))
     learn_lo = int(cfg.get("learning_starts_low", 512))
@@ -211,32 +285,85 @@ def run_ghtd3_training(
     bs_lo = int(cfg.get("low_batch_size", 128))
     bs_hi = int(cfg.get("high_batch_size", 64))
     n_grad_lo = int(cfg.get("gradient_steps_low", 2))
-    n_grad_hi = int(cfg.get("gradient_steps_high", 1))
+    n_grad_hi = int(cfg.get("gradient_steps_high", 3))
+    # 两阶段：前 phase_a_steps 仅 prior/随机高层目标，不更新高层网络
+    # 续训时默认跳过 Phase-A（底层已稳），除非配置 force_phase_a_on_resume
+    phase_a_steps = int(cfg.get("phase_a_steps", 0) or 0)
+    if resume_from and not bool(cfg.get("force_phase_a_on_resume", False)):
+        phase_a_steps = 0
+    prior_w0 = float(cfg.get("market_prior_weight", 0.55))
+    prior_w1 = float(cfg.get("market_prior_weight_end", 0.15))
+    prior_anneal_start = float(cfg.get("market_prior_anneal_start", 0.30))  # progress 之后开始退火
+    goal_dropout = float(cfg.get("goal_dropout", 0.0) or 0.0)
+    log_every = int(cfg.get("log_every", 500) or 500)
+    residual_train_start = int(cfg.get("residual_train_start", 0) or 0)
+    intrinsic_weights = cfg.get("intrinsic_weights") or [1.5, 1.2, 0.25, 0.4]
+    # residual 可用更小 lr
+    if agent.hybrid_anchor_enabled:
+        for g in agent.lo_actor_opt.param_groups:
+            g["lr"] = float(cfg.get("residual_actor_lr", cfg.get("actor_lr", 1e-4)))
 
     valid_steps = 0
     episode = 0
+    cycle_idx_ep = 0
     step_log: list[dict] = []
+    # 续训合并完整训练曲线
+    if resume_from:
+        for cand in (
+            run_dir / "train" / "step_log.json",
+            Path(resume_from).resolve().parents[1] / "train" / "step_log.json",
+        ):
+            if cand.is_file():
+                try:
+                    prev = json.loads(cand.read_text(encoding="utf-8"))
+                    if isinstance(prev, list) and prev:
+                        step_log = list(prev)
+                        break
+                except Exception:
+                    pass
+    log_resume_base = max((int(r.get("valid_step", 0)) for r in step_log), default=0)
     stats = {
         "high_goal_count": 0,
         "low_step_count": 0,
         "givesafe_reject": 0,
         "physical_ok": 0,
+        "her_mix": str(cfg.get("goal_relabel_mode", "her_mix")),
+        "phase_a_steps": phase_a_steps,
     }
 
     def reset_ep(idx: int):
+        nonlocal cycle_idx_ep
         start = annual_episode_start_seconds(env.config["fmu"], env.episode_steps, idx)
         obs, info = env.reset(seed=seed + idx, options={"start_time": start})
+        cycle_idx_ep = 0
         return obs, info
+
+    def scheduled_prior_weight(progress: float, *, recovery: bool) -> float:
+        if recovery:
+            return max(prior_w0, float(cfg.get("recovery_prior_weight", 0.92)))
+        if progress <= prior_anneal_start:
+            return prior_w0
+        # 线性退火 prior_w0 → prior_w1
+        t = (progress - prior_anneal_start) / max(1e-6, 1.0 - prior_anneal_start)
+        t = float(np.clip(t, 0.0, 1.0))
+        return float(prior_w0 + (prior_w1 - prior_w0) * t)
+
+    def scheduled_alpha(progress: float) -> float:
+        return float(alpha0 + (alpha1 - alpha0) * progress)
 
     obs, _ = reset_ep(episode)
     goal = np.zeros(agent.goal_dim, dtype=np.float32)
     cycle_ext = 0.0
     cycle_start_obs = obs.copy()
-    cycle_soc_seq: list[np.ndarray] = [extract_soc_from_obs(obs, agent.goal_dim)]
+    outs_i = env.last_outputs or {}
+    cycle_soc_seq: list[np.ndarray] = [
+        plant_intent_vector(outs_i) if outs_i else extract_soc_from_obs(obs, 2)
+    ]
     cycle_act_seq: list[dict] = []
+    cycle_u_tp: list[float] = []
+    cycle_u_tp_h: list[float] = []
     steps_in_cycle = 0
     cycle_goal = goal.copy()
-
     result: dict[str, Any] = {
         "status": "running",
         "algorithm": "SafeMarketGHTD3",
@@ -249,6 +376,15 @@ def run_ghtd3_training(
     try:
         while valid_steps < total_valid_steps:
             progress = valid_steps / max(total_valid_steps, 1)
+            # TEA：课程扩张 ρ(t) + mode 解锁
+            agent.set_progress(progress)
+            try:
+                agent.set_episode_context(
+                    rem_steps=int(env.episode_steps - env.step_index),
+                    episode_steps=int(env.episode_steps),
+                )
+            except Exception:
+                pass
             eps = eps0 + (eps1 - eps0) * progress
 
             try:
@@ -263,10 +399,18 @@ def run_ghtd3_training(
                 cycle_act_seq = []
                 continue
 
-            # 高层：周期起点采样 goal（市场先验 + 回收目标，对齐论文分层并创新）
+            # 高层：周期起点采样 5 维 Modelica goal
             if steps_in_cycle == 0:
-                random_goal = (valid_steps < learn_lo) or (np.random.rand() < eps)
-                goal = agent.select_goal(obs, deterministic=False, random=random_goal)
+                in_phase_a = valid_steps < phase_a_steps
+                random_goal = (
+                    in_phase_a
+                    or (valid_steps < learn_lo)
+                    or (np.random.rand() < eps)
+                )
+                if in_phase_a and bool(cfg.get("market_goal_prior", True)):
+                    goal = np.zeros(agent.goal_dim, dtype=np.float32)
+                else:
+                    goal = agent.select_goal(obs, deterministic=False, random=random_goal)
                 if bool(cfg.get("market_goal_prior", True)):
                     buy = None
                     if getattr(env, "price_profile", None) is not None:
@@ -274,12 +418,18 @@ def run_ghtd3_training(
                             buy, _ = env.price_profile.prices_at(float(env.adapter.time))
                         except Exception:
                             buy = None
-                    soc_now = extract_soc_from_obs(obs, agent.goal_dim)
+                    soc_now = extract_soc_from_obs(obs, 2)
                     soc_init = None
                     if env.initial_soc is not None:
-                        soc_init = extract_soc(env.initial_soc, DEFAULT_SOC_KEYS[: agent.goal_dim])
+                        soc_init = extract_soc(env.initial_soc, DEFAULT_SOC_KEYS)
                     rem = int(env.episode_steps - env.step_index)
                     recovery = rem <= int(cfg.get("recovery_goal_horizon_steps", 36) or 0)
+                    outs0 = env.last_outputs or {}
+                    th_mean = None
+                    if outs0:
+                        th_mean = 0.5 * (
+                            float(outs0.get("caes_hot_soc", 0.5)) + float(outs0.get("caes_cold_soc", 0.5))
+                        )
                     prior = market_conditioned_goal_prior(
                         buy,
                         soc_now,
@@ -290,32 +440,79 @@ def run_ghtd3_training(
                         discharge_threshold=float(cfg.get("discharge_threshold", 0.90)),
                         recovery=recovery,
                         strength=float(cfg.get("market_prior_strength", 0.14)),
+                        th_mean=th_mean,
                     )
-                    w = float(cfg.get("market_prior_weight", 0.45))
-                    if recovery:
-                        w = max(w, float(cfg.get("recovery_prior_weight", 0.92)))
+                    w = scheduled_prior_weight(progress, recovery=recovery)
+                    if in_phase_a:
+                        w = max(w, 0.85)
                     goal = blend_goal_with_prior(
                         goal, prior, prior_weight=w, goal_low=agent.goal_low, goal_high=agent.goal_high
                     )
                 cycle_goal = goal.copy()
                 cycle_start_obs = obs.copy()
                 cycle_ext = 0.0
-                cycle_soc_seq = [extract_soc_from_obs(obs, agent.goal_dim)]
+                outs0 = env.last_outputs or {}
+                cycle_soc_seq = [plant_intent_vector(outs0) if outs0 else extract_soc_from_obs(obs, 2)]
                 cycle_act_seq = []
+                cycle_u_tp = []
+                cycle_u_tp_h = []
                 stats["high_goal_count"] += 1
 
             obs_before = obs.copy()
-            soc_before = extract_soc_from_obs(obs_before, agent.goal_dim)
+            outs_before = env.last_outputs or {}
+            intent_before = plant_intent_vector(outs_before) if outs_before else extract_soc_from_obs(obs_before, 2)
             g_before = goal.copy()
+            rem = int(env.episode_steps - env.step_index)
+            recovery_now = rem <= int(cfg.get("recovery_goal_horizon_steps", 36) or 0)
+            gd = 0.0 if recovery_now else goal_dropout
+            if gd > 0 and np.random.rand() < gd:
+                g_exec = np.zeros_like(g_before)
+            else:
+                g_exec = g_before
+
+            # Hybrid 基线动作（用于 u_tp 跟踪与 α_res=0 下界）
+            a_h_scalars = None
+            if agent._hybrid_anchor is not None:
+                try:
+                    a_h_scalars = agent._hybrid_anchor.act_scalars(obs_before, feasible, deterministic=True)
+                except Exception:
+                    a_h_scalars = None
+            u_tp_h = float(a_h_scalars["u_tp"]) if a_h_scalars else 0.7
 
             def propose():
-                if valid_steps < learn_lo and np.random.rand() < 0.5:
-                    # 冷启动：市场峰谷规则（非 idle），对齐 price-taker 套利
+                if (
+                    not agent.hybrid_anchor_enabled
+                    and valid_steps < learn_lo
+                    and np.random.rand() < 0.5
+                ):
                     if bool(cfg.get("price_aware_bootstrap", True)) and getattr(env, "market_enabled", False):
                         return PriceAwareRuleController(env).predict(obs_before)
                     return RuleBasedController(env).predict(obs_before)
-                return agent.select_low_action(obs_before, g_before, feasible, deterministic=False)
-
+                # goal_conditioned：始终 a=π(s,g)；blend 模式才用 residual_scale
+                scale = None
+                if str(cfg.get("execution_mode", "action_residual")).lower() == "blend":
+                    if valid_steps < residual_train_start:
+                        scale = 0.0
+                    else:
+                        scale = residual_scale_from_goal(
+                            g_exec,
+                            alpha0=float(cfg.get("residual_alpha0", 0.0)),
+                            alpha_max=float(cfg.get("residual_alpha_max", 0.28)),
+                        )
+                # 价差门控 β：把当前买电价挂到 agent
+                if bool(cfg.get("residual_beta_price_gate", False)) and getattr(env, "price_profile", None) is not None:
+                    try:
+                        bp, _ = env.price_profile.prices_at(float(env.adapter.time))
+                        agent._last_buy_price = float(bp) if bp is not None else None
+                    except Exception:
+                        agent._last_buy_price = None
+                return agent.select_composed_action(
+                    obs_before,
+                    g_exec,
+                    feasible,
+                    deterministic=False,
+                    residual_scale=scale,
+                )
             def _on_rej(*_args):
                 stats["givesafe_reject"] += 1
 
@@ -345,10 +542,55 @@ def run_ghtd3_training(
                 continue
 
             outs = info.get("observations") or env.last_outputs or {}
-            soc_after = extract_soc(outs, DEFAULT_SOC_KEYS[: agent.goal_dim])
-            r_int, shape_terms = intrinsic_reward(soc_before, g_before, soc_after, float(r_ext), alpha)
-            goal_next = goal_transition(soc_before, g_before, soc_after, agent.goal_low, agent.goal_high)
-
+            intent_after = plant_intent_vector(outs) if outs else intent_before
+            alpha = scheduled_alpha(progress)
+            try:
+                u_tp_act = float(np.asarray(action["u_tp"]).reshape(-1)[0])
+            except Exception:
+                u_tp_act = float(u_tp_h)
+            r_int, shape_terms = structured_intrinsic_reward(
+                intent_before,
+                g_before,
+                intent_after,
+                u_tp_act,
+                u_tp_h,
+                float(r_ext),
+                alpha=alpha,
+                weights=intrinsic_weights,
+            )
+            # TEA 安全：相对 Hybrid 的 CAES 幅度偏离惩罚，抑制无意义过吞吐
+            thr_pen = float(cfg.get("tea_mag_dev_penalty", 0.0) or 0.0)
+            if thr_pen > 0.0 and a_h_scalars is not None:
+                try:
+                    mag_act = float(np.asarray(action["caes_magnitude"]).reshape(-1)[0])
+                    mag_h = float(a_h_scalars["caes_magnitude"])
+                    mode_act = int(action["caes_mode"])
+                    mode_h = int(a_h_scalars["caes_mode"])
+                    dev = abs(mag_act - mag_h) + (0.35 if mode_act != mode_h else 0.0)
+                    r_int = float(r_int) - thr_pen * dev
+                    shape_terms = {**shape_terms, "mag_dev_penalty": thr_pen * dev}
+                except Exception:
+                    pass
+            # 终端 SOC 软屏障：回收窗内惩罚偏离初始能量库存（根因：多种子 SOC 门控失败）
+            soc_pen_w = float(cfg.get("tea_terminal_soc_penalty", 0.0) or 0.0)
+            if soc_pen_w > 0.0:
+                try:
+                    H = int(cfg.get("recovery_goal_horizon_steps", 40) or 40)
+                    rem_now = int(env.episode_steps - env.step_index)
+                    if rem_now <= H and env.initial_soc is not None:
+                        soc_now = extract_soc_from_obs(np.asarray(next_obs, dtype=np.float32), 2)
+                        soc_init = extract_soc(env.initial_soc, DEFAULT_SOC_KEYS)
+                        n = min(soc_now.size, soc_init.size, 2)
+                        err = float(np.sum(np.abs(soc_now[:n] - soc_init[:n])))
+                        w = 1.0 - float(rem_now) / max(H, 1)
+                        pen = soc_pen_w * w * err
+                        r_int = float(r_int) - pen
+                        shape_terms = {**shape_terms, "terminal_soc_penalty": pen}
+                except Exception:
+                    pass
+            goal_next = goal_transition_intent(
+                intent_before, g_before, intent_after, agent.goal_low, agent.goal_high
+            )
             bounds = {
                 "u_tp_low": float(info.get("u_tp_dynamic_low", feasible.u_tp_low)),
                 "u_tp_high": float(info.get("u_tp_dynamic_high", feasible.u_tp_high)),
@@ -399,8 +641,13 @@ def run_ghtd3_training(
             stats["physical_ok"] += 1
             valid_steps += 1
             cycle_ext += float(r_ext)
-            cycle_soc_seq.append(soc_after.copy())
+            cycle_soc_seq.append(intent_after.copy())
             cycle_act_seq.append(dict(hybrid))
+            try:
+                cycle_u_tp.append(u_tp_act)
+                cycle_u_tp_h.append(u_tp_h)
+            except NameError:
+                pass
             steps_in_cycle += 1
             goal = goal_next
             obs = next_obs
@@ -412,6 +659,22 @@ def run_ghtd3_training(
                     hi_r = float(cycle_ext) / float(steps_in_cycle)
                 else:
                     hi_r = float(cycle_ext)
+                ach = None
+                if len(cycle_soc_seq) >= 2:
+                    thr = 0.0
+                    for ha in cycle_act_seq:
+                        thr += abs(float(ha.get("u_battery", 0.0))) + abs(float(ha.get("caes_magnitude", 0.0)))
+                    mu_tp = float(np.mean(cycle_u_tp)) if cycle_u_tp else u_tp_act
+                    mu_h = float(np.mean(cycle_u_tp_h)) if cycle_u_tp_h else u_tp_h
+                    ach = achieved_goal_from_cycle(
+                        cycle_soc_seq[0],
+                        cycle_soc_seq[-1],
+                        mu_tp,
+                        mu_h,
+                        thr,
+                        goal_low=agent.goal_low,
+                        goal_high=agent.goal_high,
+                    )
                 agent.hi_buffer.add(
                     HighTransition(
                         observation=np.asarray(cycle_start_obs, dtype=np.float32),
@@ -421,31 +684,54 @@ def run_ghtd3_training(
                         terminated=done_flag,
                         soc_seq=list(cycle_soc_seq),
                         action_seq=list(cycle_act_seq),
+                        episode_id=int(episode),
+                        cycle_idx=int(cycle_idx_ep),
+                        achieved_delta=ach,
                     )
                 )
+                cycle_idx_ep += 1
                 steps_in_cycle = 0
+                cycle_u_tp = []
+                cycle_u_tp_h = []
 
-            # 更新
+            # 更新：residual 开训前只训高层；之后 lo+hi
             metrics: dict[str, float] = {}
-            if len(agent.lo_buffer) >= learn_lo:
+            in_phase_a = valid_steps < phase_a_steps
+            # goal_conditioned：底层始终更新（Hybrid 移植后小 lr 微调）
+            # blend：residual_train_start 之后才更新 lo
+            train_lo = (
+                str(cfg.get("execution_mode", "action_residual")).lower() != "blend"
+                or valid_steps >= residual_train_start
+            )
+            if train_lo and len(agent.lo_buffer) >= learn_lo:
                 for _ in range(n_grad_lo):
                     metrics.update(agent.update_low(min(bs_lo, len(agent.lo_buffer))))
-            if len(agent.hi_buffer) >= learn_hi and (valid_steps % c == 0):
-                for _ in range(n_grad_hi):
+            if (
+                not in_phase_a
+                and len(agent.hi_buffer) >= learn_hi
+                and (valid_steps % c == 0)
+            ):
+                hi_grads = n_grad_hi
+                for _ in range(hi_grads):
                     metrics.update(agent.update_high(min(bs_hi, len(agent.hi_buffer))))
 
-            if valid_steps % 500 == 0 or valid_steps == total_valid_steps:
-                step_log.append(
-                    {
-                        "valid_step": valid_steps,
-                        "r_ext": float(r_ext),
-                        "r_int": float(r_int),
-                        "goal": goal.tolist(),
-                        "eps": eps,
-                        **metrics,
-                    }
-                )
-
+            if valid_steps % log_every == 0 or valid_steps == total_valid_steps:
+                display_step = int(log_resume_base) + int(valid_steps)
+                entry = {
+                    "valid_step": int(display_step),
+                    "r_ext": float(r_ext),
+                    "r_int": float(r_int),
+                    "goal": goal.tolist(),
+                    "eps": eps,
+                    "prior_w": scheduled_prior_weight(progress, recovery=False),
+                    "alpha": alpha,
+                    "phase_a": bool(in_phase_a),
+                    **metrics,
+                }
+                if step_log and int(step_log[-1].get("valid_step", -1)) == int(display_step):
+                    step_log[-1] = entry
+                else:
+                    step_log.append(entry)
             if done_flag:
                 episode += 1
                 obs, _ = reset_ep(episode)
@@ -483,13 +769,22 @@ def run_ghtd3_training(
         result["price_rule"] = price_rule_res
         result["innovations"] = {
             "smdp_gamma_c": True,
+            "modelica_goal_dim": int(agent.goal_dim),
+            "hybrid_anchor": bool(agent.hybrid_anchor_enabled),
             "market_goal_prior": bool(cfg.get("market_goal_prior", True)),
+            "market_prior_annealing": True,
+            "her_mix_goal_relabel": str(cfg.get("goal_relabel_mode", "her_mix")),
+            "phase_a_steps": phase_a_steps,
+            "residual_train_start": residual_train_start,
+            "intrinsic_alpha_schedule": [alpha0, alpha1],
             "recovery_goal_horizon_steps": int(cfg.get("recovery_goal_horizon_steps", 36) or 0),
             "price_aware_bootstrap": bool(cfg.get("price_aware_bootstrap", True)),
             "high_reward_normalize": bool(cfg.get("high_reward_normalize", True)),
             "hierarchical_bc_pretrain": bool(cfg.get("bc_pretrain", True)),
             "givesafe_low_level": True,
             "huber_q_clip_critics": True,
+            "full_step_log": True,
+            "obs_norm": bool(cfg.get("obs_norm", True)),
         }
         if annual_evaluation:
             from training.evaluate_td3 import evaluate_annual_policy
@@ -507,8 +802,9 @@ def run_ghtd3_training(
     finally:
         env.close()
 
+    (run_dir / "train").mkdir(parents=True, exist_ok=True)
     (run_dir / "train" / "step_log.json").write_text(
-        json.dumps(step_log[-200:], ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(step_log, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     (run_dir / "summary.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8"

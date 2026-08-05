@@ -23,6 +23,12 @@ from .goals import (
     extract_soc,
     extract_soc_from_obs,
     market_conditioned_goal_prior,
+    plant_intent_vector,
+    G_BAT,
+    G_GAS,
+    G_TH,
+    G_UTP,
+    G_ARB,
 )
 
 
@@ -65,7 +71,9 @@ def collect_hierarchical_demos(
             except Exception:
                 break
             action = ctrl.predict(obs, deterministic=True)
-            soc0 = extract_soc_from_obs(obs, agent.goal_dim)
+            outs0 = env.last_outputs or {}
+            intent0 = plant_intent_vector(outs0) if outs0 else extract_soc_from_obs(obs, 2)
+            soc0 = extract_soc_from_obs(obs, 2)
 
             buy = None
             if getattr(env, "price_profile", None) is not None:
@@ -75,9 +83,10 @@ def collect_hierarchical_demos(
                     buy = None
             soc_init = None
             if env.initial_soc is not None:
-                soc_init = extract_soc(env.initial_soc, DEFAULT_SOC_KEYS[: agent.goal_dim])
+                soc_init = extract_soc(env.initial_soc, DEFAULT_SOC_KEYS)
             rem = int(env.episode_steps - env.step_index)
             recovery = rem <= int(cfg.get("recovery_goal_horizon_steps", 36) or 0)
+            th_mean = float(intent0[2]) if intent0.size > 2 else None
             prior = market_conditioned_goal_prior(
                 buy,
                 soc0,
@@ -88,16 +97,27 @@ def collect_hierarchical_demos(
                 discharge_threshold=float(cfg.get("discharge_threshold", 0.90)),
                 recovery=recovery,
                 strength=float(cfg.get("market_prior_strength", 0.14)),
+                th_mean=th_mean,
             )
 
             next_obs, _, term, trunc, info = env.step(action)
             if not info.get("transition_valid", True):
                 break
             outs = info.get("observations") or env.last_outputs or {}
-            soc1 = extract_soc(outs, DEFAULT_SOC_KEYS[: agent.goal_dim])
-            delta = clip_goal(soc1 - soc0, agent.goal_low, agent.goal_high)
-            # 创新：BC goal = 0.5 * 实际 ΔSoC + 0.5 * 市场 prior（可跟踪且含价格语义）
-            goal = clip_goal(0.5 * delta + 0.5 * prior, agent.goal_low, agent.goal_high)
+            intent1 = plant_intent_vector(outs) if outs else intent0
+            # 5 维 hindsight：Δintent + u_tp bias=0 + 弱 arb
+            goal = np.zeros(agent.goal_dim, dtype=np.float32)
+            d = intent1 - intent0
+            n = min(3, d.size, goal.size)
+            goal[:n] = d[:n]
+            if goal.size > G_UTP:
+                goal[G_UTP] = 0.0
+            if goal.size > G_ARB:
+                thr = abs(float(np.asarray(action.get("u_battery", 0)).reshape(-1)[0])) + abs(
+                    float(np.asarray(action.get("caes_magnitude", 0)).reshape(-1)[0])
+                )
+                goal[G_ARB] = float(np.clip(thr, 0.0, 1.0))
+            goal = clip_goal(0.5 * goal + 0.5 * prior, agent.goal_low, agent.goal_high)
 
             obs_l.append(np.asarray(obs, dtype=np.float32).ravel())
             goal_l.append(goal.astype(np.float32))

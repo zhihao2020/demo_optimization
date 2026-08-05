@@ -652,8 +652,9 @@ def run_hybrid_training(
             shadow.close()
         env.close()
 
+    (run_dir / "train").mkdir(parents=True, exist_ok=True)
     (run_dir / "train" / "step_log.json").write_text(
-        json.dumps(step_log[-500:], ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(step_log, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     result.setdefault("algo", "hybrid_givesafe_td3")
     (run_dir / "summary.json").write_text(

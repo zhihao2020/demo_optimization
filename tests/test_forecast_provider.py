@@ -90,3 +90,21 @@ def test_noisy_mode_differs_from_perfect_and_is_reproducible():
     assert np.all(a_mat[:, 0] >= 0.0)
     assert np.all(a_mat[:, 1] >= 0.0)
     assert np.all(a_mat[:, 3] >= 0.0)
+
+
+def test_predicted_mode_loads_when_csvs_exist():
+    """若 resource_predicted 存在，mode=predicted 可加载且维度正确。"""
+    pred = ROOT / "data/resource_predicted/winds.csv"
+    if not pred.is_file():
+        pytest.skip("resource_predicted not built")
+    config = yaml.safe_load((ROOT / "src/config/env_config.yaml").read_text(encoding="utf-8"))
+    fc = dict(config["forecast"])
+    kwargs = dict(
+        annual_horizon_hours=config["fmu"]["annual_horizon_hours"],
+        step_seconds=config["fmu"]["decision_interval_seconds"],
+    )
+    provider = ForecastProvider(ROOT, fc, mode="predicted", **kwargs)
+    feats = provider.at_time(0.0)
+    assert provider.mode == "predicted"
+    assert feats.shape == (FORECAST_FEATURE_DIM,)
+    assert np.all(np.isfinite(feats))

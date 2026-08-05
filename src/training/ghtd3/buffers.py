@@ -34,6 +34,10 @@ class HighTransition:
     # relabel 用：周期内逐步 SoC 与动作
     soc_seq: list[np.ndarray] = field(default_factory=list)
     action_seq: list[dict[str, Any]] = field(default_factory=list)
+    # HER-mix / future strategy
+    episode_id: int = 0
+    cycle_idx: int = 0
+    achieved_delta: np.ndarray | None = None
 
 
 class RingBuffer:

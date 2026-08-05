@@ -26,6 +26,7 @@ def main() -> None:
     p.add_argument("--annual-eval", action="store_true")
     p.add_argument("--resume", type=str, default=None, help="从 ghtd3.pt 续训")
     p.add_argument("--skip-bc", action="store_true", help="跳过分层 BC 预热")
+    p.add_argument("--config", type=str, default=None, help="ghtd3 yaml（默认 src/config/ghtd3_config.yaml）")
     args = p.parse_args()
 
     if args.mode == "smoke":
@@ -46,6 +47,7 @@ def main() -> None:
         annual_evaluation=args.annual_eval,
         resume_from=args.resume,
         skip_bc=bool(args.skip_bc or args.resume),
+        config_path=args.config,
     )
     # 精简打印
     summary = {

@@ -53,6 +53,7 @@ class ForecastProvider:
     - ``mode=perfect``：CSV 真值完美前瞻（默认主表）
     - ``mode=noisy``：对真值乘性噪声 + 可选时移，模拟有误差的日前预报；
       **仅污染观测**，不改变 FMU 物理真值与结算
+    - ``mode=predicted``：使用 residual BiLSTM 导出的 predicted CSV（``predicted_sources``）
     """
 
     def __init__(
@@ -74,7 +75,7 @@ class ForecastProvider:
             config: ``forecast`` 配置段（``horizon_hours``、``sources``、可选 ``mode``/``noise``）。
             annual_horizon_hours: 年度仿真小时数（与 FMU 一致）。
             step_seconds: 决策步长（秒），须与 CSV 时间网格一致。
-            mode: 覆盖配置的 ``perfect`` / ``noisy``。
+            mode: 覆盖配置的 ``perfect`` / ``noisy`` / ``predicted``。
             noise_seed: 覆盖噪声种子。
             noise_sigma: 覆盖各通道乘性误差标准差。
             lag_hours: 覆盖预报时移（小时，正=滞后）。
@@ -113,8 +114,10 @@ class ForecastProvider:
 
         noise_cfg = dict(config.get("noise") or {})
         self.mode = str(mode if mode is not None else config.get("mode", "perfect")).lower()
-        if self.mode not in ("perfect", "noisy"):
-            raise ForecastDataError(f"未知 forecast.mode={self.mode!r}（支持 perfect|noisy）")
+        if self.mode not in ("perfect", "noisy", "predicted"):
+            raise ForecastDataError(
+                f"未知 forecast.mode={self.mode!r}（支持 perfect|noisy|predicted）"
+            )
         self.noise_seed = int(
             noise_seed if noise_seed is not None else noise_cfg.get("seed", 0)
         )
@@ -142,8 +145,52 @@ class ForecastProvider:
         self._perfect_values = perfect
         if self.mode == "perfect":
             self._values = perfect
-        else:
+        elif self.mode == "noisy":
             self._values = self._build_noisy_values(perfect)
+        else:
+            self._values = self._load_predicted_values(config, base_sources=self.sources)
+
+    def _load_predicted_values(
+        self, config: Mapping[str, Any], *, base_sources: tuple[ForecastSource, ...]
+    ) -> np.ndarray:
+        """读取 residual BiLSTM 导出的 predicted CSV（物理单位，再按 base offset/scale 缩放）。"""
+        raw_pred = config.get("predicted_sources")
+        if not isinstance(raw_pred, list) or not raw_pred:
+            # 默认路径：data/resource_predicted/ 与主 sources 同名文件
+            default_paths = {
+                "wind": "data/resource_predicted/winds.csv",
+                "irradiance": "data/resource_predicted/Gstc.csv",
+                "ambient_temperature": "data/resource_predicted/environment.csv",
+                "planned_load": "data/resource_predicted/load.csv",
+            }
+            pred_sources = []
+            for base in base_sources:
+                pred_sources.append(
+                    ForecastSource(
+                        base.name,
+                        self.root / default_paths[base.name],
+                        base.offset,
+                        base.scale,
+                    )
+                )
+        else:
+            by_name = {str(item["name"]): item for item in raw_pred}
+            pred_sources = []
+            for base in base_sources:
+                raw = by_name.get(base.name)
+                if raw is None:
+                    raise ForecastDataError(f"predicted_sources 缺少通道 {base.name!r}")
+                pred_sources.append(
+                    ForecastSource(
+                        base.name,
+                        self.root / str(raw["path"]),
+                        float(raw.get("offset", base.offset)),
+                        float(raw.get("scale", base.scale)),
+                    )
+                )
+        if tuple(s.name for s in pred_sources) != FORECAST_CHANNELS:
+            raise ForecastDataError(f"predicted source 顺序必须为 {FORECAST_CHANNELS}")
+        return np.stack([self._read_source(s) for s in pred_sources], axis=1)
 
     def _build_noisy_values(self, perfect: np.ndarray) -> np.ndarray:
         """由完美序列构造可复现 noisy 日前预报序列。

@@ -195,16 +195,18 @@ def run_hybrid_sac_training(
                     metrics = agent.update(buffer, batch_size=min(batch_size, len(buffer)))
                 else:
                     metrics = {}
-                step_log.append(
-                    {
-                        "valid_step": valid_steps,
-                        "reward": reward,
-                        "attempts": info.get("givesafe_attempt_count"),
-                        "rejected": info.get("givesafe_rejected_attempts"),
-                        "mode": info.get("requested_caes_mode"),
-                        **metrics,
-                    }
-                )
+                # 与 TD3/GHTD3 一致：每 500 valid step 记一条，完整落盘（不截断尾窗）
+                if valid_steps % 500 == 0 or valid_steps == total_valid_steps:
+                    step_log.append(
+                        {
+                            "valid_step": valid_steps,
+                            "reward": reward,
+                            "attempts": info.get("givesafe_attempt_count"),
+                            "rejected": info.get("givesafe_rejected_attempts"),
+                            "mode": info.get("requested_caes_mode"),
+                            **metrics,
+                        }
+                    )
                 pbar.update(1)
                 pbar.set_postfix(
                     ep=episode,
