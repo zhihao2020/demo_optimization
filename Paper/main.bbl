@@ -64,6 +64,11 @@ T.~Haarnoja, A.~Zhou, P.~Abbeel, S.~Levine, Soft actor-critic: Off-policy
   Proceedings of the 35th International Conference on Machine Learning, Vol.~80
   of Proceedings of Machine Learning Research, PMLR, 2018, pp. 1861--1870.
 
+\bibitem{andrychowicz2017her}
+M.~Andrychowicz, F.~Wolski, A.~Ray, J.~Schneider, R.~Fong, P.~Welinder,
+  B.~McGrew, J.~Tobin, P.~Abbeel, W.~Zaremba, Hindsight experience replay, in:
+  Advances in Neural Information Processing Systems, Vol.~30, 2017.
+
 \bibitem{jendoubi2023hier}
 I.~Jendoubi, F.~Bouffard, Multi-agent hierarchical reinforcement learning for
   energy management, Applied Energy 332 (2023) 120500.

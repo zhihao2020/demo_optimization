@@ -28,7 +28,7 @@ plt.rcParams.update(
 
 
 def plot_main_bars() -> Path:
-    """Full method family: B0, linprog, PSO, TD3-scratch, Safe Market-GHTD3."""
+    """Full method family: B0, linprog, PSO, TD3-scratch, HMSD."""
     base = json.loads((ROOT / "runs/paper_baselines_or_pso.json").read_text(encoding="utf-8"))
     seasons = ["winter", "transition", "summer"]
     labels = ["Winter", "Transition", "Summer"]
@@ -44,7 +44,7 @@ def plot_main_bars() -> Path:
         "linprog": "linprog MPC",
         "PSO": "PSO",
         "TD3_scratch": "TD3-scratch",
-        "GHTD3": "Safe Market-GHTD3",
+        "GHTD3": "HMSD",
     }
     x = np.arange(len(seasons))
     n = len(methods)
@@ -68,7 +68,7 @@ def plot_main_bars() -> Path:
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylabel("Episode reward")
-    ax.set_title("Closed-loop weekly reward: rules, OR, PSO, single-layer TD3, hierarchical GHTD3")
+    ax.set_title("Closed-loop weekly reward: rules, OR, PSO, single-layer TD3, HMSD")
     ax.legend(frameon=False, ncol=3, loc="upper right", fontsize=8)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -96,7 +96,7 @@ def _load_step_log(path: Path) -> pd.DataFrame:
 
 def plot_training() -> Path | None:
     """Multi-seed mean ± std band (plus faint individual seeds)."""
-    series = {"TD3-scratch": [], "Safe Market-GHTD3": []}
+    series = {"TD3-scratch": [], "HMSD": []}
     for seed in (0, 1, 2):
         gp = ROOT / f"runs/ghtd3_abs_s{seed}_35k/train/step_log.json"
         tp = ROOT / f"runs/td3_scratch_s{seed}_35k/train/step_log.json"
@@ -110,7 +110,7 @@ def plot_training() -> Path | None:
         g = g.copy()
         g["reward"] = g["reward"].clip(-5, 5)
         series["TD3-scratch"].append(t)
-        series["Safe Market-GHTD3"].append(g)
+        series["HMSD"].append(g)
     if not series["TD3-scratch"]:
         return None
 
@@ -132,7 +132,7 @@ def plot_training() -> Path | None:
         return steps, M.mean(axis=0), M.std(axis=0)
 
     fig, ax = plt.subplots(figsize=(7.2, 3.6))
-    colors = {"TD3-scratch": "#5b8ff9", "Safe Market-GHTD3": "#5ad8a6"}
+    colors = {"TD3-scratch": "#5b8ff9", "HMSD": "#5ad8a6"}
     for name, dfs in series.items():
         # faint individuals
         for df in dfs:
@@ -184,7 +184,7 @@ def plot_algorithm_schematic() -> Path:
     ax.annotate("", xy=(8.0, 2.95), xytext=(7.7, 2.95), arrowprops=dict(arrowstyle="->", color="#333"))
     ax.annotate("", xy=(6.6, 1.6), xytext=(6.6, 2.4), arrowprops=dict(arrowstyle="->", color="#333"))
     ax.annotate("", xy=(8.8, 1.6), xytext=(8.8, 2.4), arrowprops=dict(arrowstyle="->", color="#333"))
-    ax.text(5.0, 3.7, "Safe Market-GHTD3 (absolute goal-conditioned, no hybrid teacher residual)", ha="center", fontsize=10)
+    ax.text(5.0, 3.7, "HMSD (absolute goal-conditioned, no hybrid teacher residual)", ha="center", fontsize=10)
     out = FIG / "fig_algorithm.png"
     fig.savefig(out)
     plt.close(fig)
@@ -218,7 +218,7 @@ def plot_soc_from_csv() -> Path | None:
     for path, name, color in [
         (rule, "B0", "#9aa0a6"),
         (td3 if td3.is_file() else None, "TD3-scratch", "#5b8ff9"),
-        (gh, "Safe Market-GHTD3", "#5ad8a6"),
+        (gh, "HMSD", "#5ad8a6"),
     ]:
         if path is None or not path.is_file():
             continue
@@ -254,7 +254,7 @@ def plot_delta_bars() -> Path:
     ax.axhline(0, color="#666", lw=0.8)
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
-    ax.set_ylabel("$\\Delta$ reward (GHTD3 $-$ TD3-scratch)")
+    ax.set_ylabel("$\\Delta$ reward (HMSD $-$ TD3-scratch)")
     ax.set_title("Paired multi-seed improvement over TD3-scratch")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
