@@ -28,6 +28,18 @@ X.~Yang, Y.~Tao, L.~Li, Decentralized coordinated planning model for integrated
   optimizing industrial and commercial time-of-use electricity prices, lu Fa
   Gai Price [2023] No. 914 (2023).
 
+\bibitem{emmanuel2020market}
+M.~I. Emmanuel, P.~Denholm, A market feedback framework for improved estimates
+  of the arbitrage value of energy storage using price-taker models, Applied
+  EnergyPrice-taker storage valuation with market feedback (2022).
+
+\bibitem{pei2024pricetaker}
+Z.~Pei, J.~Fang, Z.~Zhang, J.~Chen, S.~Hong, Z.~Peng, Optimal price-taker
+  bidding strategy of distributed energy storage systems in the electricity
+  spot market, Frontiers in Energy Research 12 (2024) 1463286.
+\newblock \href {https://doi.org/10.3389/fenrg.2024.1463286}
+  {\path{doi:10.3389/fenrg.2024.1463286}}.
+
 \bibitem{cui2025ghtd3}
 F.~Cui, D.~An, H.~Xi, Z.~Ren, Collaborative scheduling optimization of
   hydrogen-enhanced integrated energy system via goal-conditioned hierarchical
@@ -85,24 +97,6 @@ A.~Wachi, X.~Shen, W.~Hashimoto, K.~Hashimoto, Safe exploration in
   reinforcement learning: A generalized formulation and algorithms, in:
   Advances in Neural Information Processing Systems, 2023.
 
-\bibitem{emmanuel2020market}
-M.~I. Emmanuel, P.~Denholm, A market feedback framework for improved estimates
-  of the arbitrage value of energy storage using price-taker models, Applied
-  EnergyPrice-taker storage valuation with market feedback (2022).
-
-\bibitem{pei2024pricetaker}
-Z.~Pei, J.~Fang, Z.~Zhang, J.~Chen, S.~Hong, Z.~Peng, Optimal price-taker
-  bidding strategy of distributed energy storage systems in the electricity
-  spot market, Frontiers in Energy Research 12 (2024) 1463286.
-\newblock \href {https://doi.org/10.3389/fenrg.2024.1463286}
-  {\path{doi:10.3389/fenrg.2024.1463286}}.
-
-\bibitem{lin2019laes}
-B.~Lin, W.~Wu, M.~Bai, C.~Xie, J.~Radcliffe, Liquid air energy storage: Price
-  arbitrage operations and sizing optimization in the {GB} real-time
-  electricity market, Energy Conversion and ManagementReceived May 2018;
-  available online Dec 2018 (2019).
-
 \bibitem{shandong2026tou}
 {State Grid Shandong Electric Power Company}, Announcement of industrial and
   commercial time-of-use electricity prices for 2026 (2025).
@@ -110,10 +104,5 @@ B.~Lin, W.~Wu, M.~Bai, C.~Xie, J.~Radcliffe, Liquid air energy storage: Price
 \bibitem{ndrc2023td}
 {National Development and Reform Commission of China}, Provincial grid
   transmission and distribution tariffs for the fourth regulatory cycle (2023).
-
-\bibitem{ai4e2025}
-{World Scientific Intelligence Competition Organizing Committee}, {AI4E} track
-  dataset: Mengxi system boundaries and real-time nodal prices, competition
-  data; NWP by TJ Weather (2025).
 
 \end{thebibliography}

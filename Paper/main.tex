@@ -173,54 +173,113 @@ The plant is a price-taker under Shandong industrial/commercial TOU purchase pri
 \label{sec:problem}
 % =====================================================================
 
-Let $P_t^{\mathrm{th}},P_t^{\mathrm{bat}},P_t^{\mathrm{caes}},P_t^{\mathrm{w}},P_t^{\mathrm{pv}},P_t^{\mathrm{load}},P_t^{\mathrm{grid}}$ denote thermal, battery, CAES, wind, PV, load and grid powers (MW). Device-level dynamics are integrated inside the FMU twin; the following subsections state the modelling roles used by the optimiser and the RL interface.
+High-fidelity plant dynamics (thermal unit, battery, multi-tank CAES, renewables and grid interface) are advanced inside a Modelica--FMU twin with communication interval $\tau_s=1$~h. This section states the \emph{control-interface} models and constraints used by optimisers and RL agents. Component sets are
+\begin{equation}
+\begin{aligned}
+I_1&=\{\mathrm{w},\mathrm{pv}\},\quad
+I_2=\{\mathrm{th},\mathrm{caes}\},\quad
+I_3=\{\mathrm{bat},\mathrm{gas},\mathrm{hot},\mathrm{cold}\},\\
+I&=I_1\cup I_2\cup I_3.
+\end{aligned}
+\label{eq:sets}
+\end{equation}
 
 \subsection{Energy generation units}
 
 \subsubsection{Photovoltaics}
 
-Available PV power $P_t^{\mathrm{pv,avail}}$ is driven by irradiance and temperature tables (resource CSV) and realised through the FMU electrical interface as $P_t^{\mathrm{pv}}\le P_t^{\mathrm{pv,avail}}$. Curtailment is non-negative and absorbed in the twin balance. Learning agents observe irradiance-related features and optional short-horizon forecasts but do not override FMU conversion physics.
+Available PV power is driven by irradiance and temperature resource tables and realised by the twin as
+\begin{equation}
+0\le P_t^{\mathrm{pv}}\le P_t^{\mathrm{pv,avail}}(I_t,T_t),
+\label{eq:pv}
+\end{equation}
+where $I_t$ and $T_t$ denote irradiance and ambient temperature. Curtailment is non-negative and absorbed in the electric balance.
 
 \subsubsection{Wind turbines}
 
-Similarly, wind available power $P_t^{\mathrm{w,avail}}$ follows wind-speed tables; the FMU outputs actual wind injection $P_t^{\mathrm{w}}\le P_t^{\mathrm{w,avail}}$. Peak--valley TOU incentives interact with wind variability mainly through storage and thermal set-points rather than through direct redispatch of turbine pitch (not a free control in this twin).
+Wind available power follows wind-speed tables. The twin injects
+\begin{equation}
+0\le P_t^{\mathrm{w}}\le P_t^{\mathrm{w,avail}}(v_t),
+\label{eq:wt}
+\end{equation}
+with $v_t$ the wind speed. Turbine pitch is not a free decision variable in this twin.
 
 \subsection{Energy conversion units}
 
 \subsubsection{Thermal generation}
 
-The thermal unit is commanded by a continuous load rate $u_{\mathrm{tp},t}\in[u_{\min},u_{\max}]$ (scaled to physical MW in the decoder). The FMU enforces ramping, minimum load and fuel-related operating cost contributions to $C_t^{\mathrm{op}}$. High baseload thermal output is the hallmark of rule-level and under-acting single-layer policies that under-use storage.
+Thermal electric power is commanded by the continuous load rate $u_{\mathrm{tp},t}$:
+\begin{equation}
+P_t^{\mathrm{th}} = u_{\mathrm{tp},t}\, P_{\mathrm{cap}}^{\mathrm{th}},
+\qquad
+u_{\min}\le u_{\mathrm{tp},t}\le u_{\max},
+\label{eq:th}
+\end{equation}
+with $P_{\mathrm{cap}}^{\mathrm{th}}=150$~MW, $u_{\min}=P_{\min}^{\mathrm{th}}/P_{\mathrm{cap}}^{\mathrm{th}}=1/3$ and $u_{\max}=1$ (no shut-down). Ramping is constrained in~\eqref{eq:box}. Operating cost contributes to $C_t^{\mathrm{op}}$ in~\eqref{eq:dJ}.
 
 \subsubsection{CAES conversion}
 
-CAES is a hybrid conversion--storage plant: discrete mode $m_{\mathrm{caes},t}\in\{\mathrm{charge},\mathrm{idle},\mathrm{discharge}\}$ and continuous magnitude $\mu_{\mathrm{caes},t}\in[0,1]$ select compression/expansion power, subject to mode exclusivity and minimum-run locks in the FMU mode machine. Gas and thermal process states couple electrical power to inventory dynamics, which makes pure continuous Box MDPs inadequate and motivates hybrid actions.
+CAES is a hybrid conversion--storage unit. The discrete mode and continuous magnitude
+\begin{equation}
+m_{\mathrm{caes},t}\in\{\mathrm{charge},\mathrm{idle},\mathrm{discharge}\},\qquad
+\mu_{\mathrm{caes},t}\in[0,1]
+\label{eq:caes-cmd}
+\end{equation}
+map to a signed power command on capacity $P_{\mathrm{cap}}^{\mathrm{caes}}=150$~MW,
+\begin{equation}
+P_t^{\mathrm{caes}}
+=
+\begin{cases}
++\mu_{\mathrm{caes},t}\,P_{\mathrm{cap}}^{\mathrm{caes}}, & m=\mathrm{charge},\\
+0, & m=\mathrm{idle},\\
+-\mu_{\mathrm{caes},t}\,P_{\mathrm{cap}}^{\mathrm{caes}}, & m=\mathrm{discharge},
+\end{cases}
+\label{eq:caes-p}
+\end{equation}
+subject to minimum-run bands equivalent to $u_{\mathrm{caes}}\in[-1,-0.33]\cup\{0\}\cup[0.86,1]$ and mode locks in the FMU. Gas/thermal tank thermodynamics are integrated inside the twin; the RL interface only observes SoC inventories and electric power.
 
 \subsection{Energy storage units}
 
-The battery is commanded by continuous $u_{\mathrm{bat},t}\in[-1,1]$ (charge/discharge). Primary energy inventories for weekly recovery are battery SoC $s_{t,\mathrm{bat}}$ and CAES gas SoC $s_{t,\mathrm{gas}}$; CAES hot/cold inventories $s_{t,\mathrm{hot}},s_{t,\mathrm{cold}}$ are soft process states used in goals and shaping. All inventories obey box bounds in~\eqref{eq:socbox}.
+Battery power is commanded by $u_{\mathrm{bat},t}\in[-1,1]$ on capacity $P_{\mathrm{cap}}^{\mathrm{bat}}=100$~MW:
+\begin{equation}
+P_t^{\mathrm{bat}} = u_{\mathrm{bat},t}\, P_{\mathrm{cap}}^{\mathrm{bat}}.
+\label{eq:bat-p}
+\end{equation}
+The interface SoC recursion (charge positive) with efficiency $\eta$ and energy capacity $E_{\mathrm{cap}}$ is
+\begin{equation}
+s_{t+1,\mathrm{bat}}
+=
+s_{t,\mathrm{bat}}
++
+\tau_s\frac{\eta^{\mathrm{ch}}[P_t^{\mathrm{bat}}]_+ - [P_t^{\mathrm{bat}}]_-/\eta^{\mathrm{dis}}}{E_{\mathrm{cap}}},
+\label{eq:bat-soc}
+\end{equation}
+with $\eta^{\mathrm{ch}}=\eta^{\mathrm{dis}}=0.85$, $E_{\mathrm{cap}}=500$~MWh and $[x]_+=\max(x,0)$, $[x]_-=\max(-x,0)$. Primary energy inventories for weekly recovery are $s_{t,\mathrm{bat}}$ and CAES gas SoC $s_{t,\mathrm{gas}}$; hot/cold inventories $s_{t,\mathrm{hot}},s_{t,\mathrm{cold}}$ are process states used in goals and shaping. All inventories obey~\eqref{eq:socbox}.
 
 \subsection{System operation constraints}
 
-The twin enforces power balance
+Electric power balance, box/ramp limits, inventory bounds and grid exchange limits are
 \begin{equation}
 P_t^{\mathrm{th}}+P_t^{\mathrm{bat}}+P_t^{\mathrm{caes}}+P_t^{\mathrm{w}}+P_t^{\mathrm{pv}}+P_t^{\mathrm{grid}}=P_t^{\mathrm{load}},
 \label{eq:balance}
 \end{equation}
-together with device box and ramp limits
 \begin{equation}
 \underline{P}_{i}\le P_t^{i}\le \overline{P}_{i},\qquad
 \bigl|P_t^{i}-P_{t-1}^{i}\bigr|\le \Delta_i^{\max},
 \quad i\in\{\mathrm{th},\mathrm{bat}\},
 \label{eq:box}
 \end{equation}
-CAES mode exclusivity and minimum-run locks, and inventory bounds
 \begin{equation}
-0\le s_{t,i}\le 1,\qquad i\in\{\mathrm{bat},\mathrm{gas},\mathrm{hot},\mathrm{cold}\}.
+\underline{s}_{i}\le s_{t,i}\le \overline{s}_{i},\qquad i\in\{\mathrm{bat},\mathrm{gas},\mathrm{hot},\mathrm{cold}\},
 \label{eq:socbox}
 \end{equation}
-Actions that would violate~\eqref{eq:balance}--\eqref{eq:socbox} or mode locks lie outside the dynamic feasible set $\mathcal{F}(s_t)$ used by GiveSafe.
+\begin{equation}
+P_{\mathrm{grid}}^{\min}\le P_t^{\mathrm{grid}}\le P_{\mathrm{grid}}^{\max}.
+\label{eq:grid}
+\end{equation}
+Actions that would violate~\eqref{eq:balance}--\eqref{eq:grid} or CAES mode locks lie outside the dynamic feasible set $\mathcal{F}(s_t)$.
 
-Weekly operation further imposes an energy-SoC recovery gate on primary energy inventories (battery and CAES gas; thermal tanks are secondary diagnostics only),
+Weekly operation further imposes an energy-SoC recovery gate on primary inventories,
 \begin{equation}
 L_1^{\mathrm{e}}
 = w_{\mathrm{bat}}\bigl|s_{T,\mathrm{bat}}-s_{0,\mathrm{bat}}\bigr|
@@ -228,24 +287,26 @@ L_1^{\mathrm{e}}
 \le \varepsilon,
 \label{eq:soc}
 \end{equation}
-with $(w_{\mathrm{bat}},w_{\mathrm{gas}})=(1.5,1.0)$ and $\varepsilon=0.06$. Soft SoC shaping during the episode and a terminal bonus/penalty encourage~\eqref{eq:soc} without inventory dumping.
+with $(w_{\mathrm{bat}},w_{\mathrm{gas}})=(1.5,1.0)$ and $\varepsilon=0.06$.
 
 \subsection{Optimization objectives}
 
-Let $t=0,\ldots,T-1$ index hours in a weekly episode with $T=168$. Denote grid purchase/sale energies by $E_t^{\mathrm{buy}}$ and $E_t^{\mathrm{sell}}$ (MWh), TOU buy/sell prices by $\lambda_t^{\mathrm{buy}}$ and $\lambda_t^{\mathrm{sell}}$, and device operating costs by $C_t^{\mathrm{op}}$ (thermal fuel, storage cycling, etc.). The incremental market cash flow and weekly net objective are
+Let $t=0,\ldots,T-1$ index hours in a weekly episode ($T=168$). Denote purchase/sale energies by $E_t^{\mathrm{buy}},E_t^{\mathrm{sell}}$ (MWh), TOU prices by $\lambda_t^{\mathrm{buy}},\lambda_t^{\mathrm{sell}}$, and device operating costs by $C_t^{\mathrm{op}}$. The incremental cash flow and weekly objective are
 \begin{equation}
 \Delta J_t = \lambda_t^{\mathrm{sell}} E_t^{\mathrm{sell}} - \lambda_t^{\mathrm{buy}} E_t^{\mathrm{buy}} - C_t^{\mathrm{op}},
 \label{eq:dJ}
 \end{equation}
 \begin{equation}
-J = \sum_{t=0}^{T-1} \Delta J_t.
+\max\; J = \sum_{t=0}^{T-1} \Delta J_t
+\quad\text{s.t.}\quad
+\eqref{eq:balance}\text{--}\eqref{eq:soc}.
 \label{eq:J}
 \end{equation}
-Equation~\eqref{eq:J} is the primary economic KPI reported in closed-loop evaluation (sign convention: larger $J$ is better). Training maximises discounted extrinsic rewards built from $\Delta J_t$ and SoC shaping (Section~\ref{sec:reward}); evaluation still ranks policies by $J$ and gate~\eqref{eq:soc}.
+Closed-loop evaluation ranks policies by $J$ and gate~\eqref{eq:soc}; training maximises discounted extrinsic rewards built from $\Delta J_t$ and SoC shaping (Section~\ref{sec:reward}).
 
 \subsection{Hybrid-action MDP}
 
-We cast closed-loop control as an MDP $\mathcal{M}=\langle\mathcal{S},\mathcal{A},P,r,\gamma\rangle$ with discount $\gamma=0.99$. The state $s_t\in\mathcal{S}$ concatenates
+Closed-loop control is cast as an MDP $\mathcal{M}=\langle\mathcal{S},\mathcal{A},P,r,\gamma\rangle$ with $\gamma=0.99$. The state concatenates inventories, powers, prices and TOU features,
 \begin{equation}
 \begin{aligned}
 s_t=\bigl[&
@@ -257,29 +318,29 @@ P_t^{\mathrm{w}},P_t^{\mathrm{pv}},P_t^{\mathrm{load}},\\
 \end{aligned}
 \label{eq:state}
 \end{equation}
-normalised for the actor--critic networks. The hybrid action is
+and the hybrid action is
 \begin{equation}
 a_t = \bigl(u_{\mathrm{tp},t},\, u_{\mathrm{bat},t},\, m_{\mathrm{caes},t},\, \mu_{\mathrm{caes},t}\bigr)\in\mathcal{A},
 \label{eq:action}
 \end{equation}
-where $u_{\mathrm{tp}},u_{\mathrm{bat}},\mu_{\mathrm{caes}}\in[-1,1]$ (scaled to physical limits) and $m_{\mathrm{caes}}\in\{\mathrm{charge},\mathrm{idle},\mathrm{discharge}\}$. Transitions $P$ are induced by one FMU hour under GiveSafe-filtered actions. The scalar training reward is defined next; primary evaluation still reports physical $J$~\eqref{eq:J} and gate~\eqref{eq:soc}.
+with continuous channels scaled to physical limits and $m_{\mathrm{caes}}\in\{\mathrm{charge},\mathrm{idle},\mathrm{discharge}\}$. Transitions $P$ are induced by one FMU hour under GiveSafe-filtered actions.
 
 \subsection{Reward function for learning}
 \label{sec:reward}
 
-Let $C_{\mathrm{ref}}>0$ be a calibration constant (seasonal rule-controller $p_{95}$ step cash-flow magnitude, $C_{\mathrm{ref}}\approx1.565\times10^{5}$~CNY). The economic step reward is
+With calibration constant $C_{\mathrm{ref}}\approx1.565\times10^{5}$~CNY (rule-controller $p_{95}$ step cash-flow magnitude),
 \begin{equation}
 r_t^{\mathrm{econ}} = \frac{\Delta J_t}{C_{\mathrm{ref}}}.
 \label{eq:recon}
 \end{equation}
-Potential-based SoC shaping uses the full weighted inventory L1 distance $L_{1,t}$ (battery, gas, hot, cold) relative to the episode start:
+Potential-based inventory shaping uses the weighted L1 distance $L_{1,t}$ of (battery, gas, hot, cold) relative to episode start:
 \begin{equation}
 r_t^{\mathrm{shape}}
 = \kappa_t \bigl(L_{1,t-1}-L_{1,t}\bigr)
 - \kappa_t^{\mathrm{abs}} L_{1,t},
 \label{eq:shape}
 \end{equation}
-with base $\kappa=5$ and a small absolute penalty; in the last $H=40$~h both coefficients are linearly scaled up (recovery window) so that late inventory drift is strongly discouraged. At the final step of a completed, failure-free episode,
+with base $\kappa=5$ and a recovery-window scale-up over the last $H=40$~h. At a completed, failure-free terminal step,
 \begin{equation}
 r_T^{\mathrm{term}}
 =
@@ -289,7 +350,7 @@ B, & L_1^{\mathrm{e}}\le\varepsilon,\\
 \end{cases}
 \label{eq:term}
 \end{equation}
-with $B=15$ and $p=30$. The extrinsic reward used by both hierarchical layers is
+with $B=15$ and $p=30$. The extrinsic reward is
 \begin{equation}
 r_t^{\mathrm{ext}}
 = \mathrm{clip}\bigl(r_t^{\mathrm{econ}}+r_t^{\mathrm{shape}}+r_t^{\mathrm{term}},\, r_{\min},\, r_{\max}\bigr),
@@ -310,23 +371,27 @@ with $(r_{\min},r_{\max})=(-25,25)$. Figure~\ref{fig:reward} summarises the stac
 \label{sec:method}
 % =====================================================================
 
-\subsection{Overall framework of Safe Market-GHTD3}
-
-Safe Market-GHTD3 adopts the goal-conditioned hierarchical TD3 skeleton of multi-energy studies~\cite{cui2025ghtd3,fujimoto2018td3}, specialised to hybrid thermal--battery--CAES actions on an FMU twin under TOU settlement. Figure~\ref{fig:algorithm} summarises the stack: a high-level policy issues market- and recovery-aware intents; a low-level policy maps normalised observations and scaled goals to hybrid actions; GiveSafe projects proposals onto $\mathcal{F}(s)$ before each FMU step. Relative to a pure GHTD3 reimplementation, we emphasise MSGP, MS-HER, F-MLE on rule-feasible trajectories and absolute execution without a frozen hybrid teacher residual.
+The weekly scheduling task is modelled by two augmented MDPs and solved by Safe Market-GHTD3, a goal-conditioned hierarchical TD3 with market-structure priors, hindsight relabeling, feasibility-filtered pretraining and GiveSafe projection~\cite{cui2025ghtd3,fujimoto2018td3}. Figure~\ref{fig:algorithm} summarises the architecture.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\textwidth]{fig_algorithm}
-\caption{Safe Market-GHTD3 stack: high-level TD3 with MSGP, MS-HER buffer, absolute low-level policy, F-MLE warm-start, GiveSafe projection and FMU twin (no hybrid teacher residual). Regenerated schematic aligned with Section~\ref{sec:method}.}
+\caption{Safe Market-GHTD3: high-level TD3 with MSGP and MS-HER, absolute low-level policy with F-MLE warm-start, GiveSafe projection and FMU twin.}
 \label{fig:algorithm}
 \end{figure}
 \FloatBarrier
 
-\subsection{Hierarchical goal-conditioned control}
+\subsection{Two augmented MDPs}
 
-\subsubsection{Hierarchy of decision making}
+A standard one-step MDP is insufficient for week-scale inventory planning. We use a high-level semi-MDP (SMDP) $\langle\mathcal{S},\mathcal{G},P_c,R_c,\gamma^c\rangle$ that issues goals every $c$ steps, and a low-level goal-augmented MDP (GAMDP) $\langle\mathcal{S},\mathcal{A},\mathcal{G},P,R,\gamma\rangle$ that executes hybrid actions conditioned on the residual goal~\cite{cui2025ghtd3}. The high-level action is the goal
+\begin{equation}
+g=\bigl[g^{\Delta\mathrm{bat}},\,g^{\Delta\mathrm{gas}},\,g^{\Delta\mathrm{th}},\,g^{u_{\mathrm{tp}}},\,g^{\mathrm{arb}}\bigr]^{\top}
+\in [g_{\min},g_{\max}],
+\label{eq:goal}
+\end{equation}
+with box $[-0.30,0.30]\times[-0.12,0.12]\times[-0.10,0.10]\times[-0.20,0.20]\times[0,1]$. Low-level actions remain~\eqref{eq:action}.
 
-Every $c$ steps, a high-level policy $\mu^{\mathrm{hi}}$ issues a storage goal $g_t$ (intended battery/CAES inventory progress). A low-level policy $\pi_{\mathrm{lo}}$ selects hybrid actions conditioned on $(s_t,g_t)$. Between high-level decisions, residual goals are updated by a transition map $h(s_i,g_i,s_{i+1})$ so that the low level tracks remaining intent (Fig.~\ref{fig:cstep}). Twin critics, delayed actor updates and soft target networks stabilise both layers as in TD3~\cite{fujimoto2018td3}. High-level bootstrap uses the SMDP discount $\gamma^{c}$.
+\subsection{Hierarchy of decision making}
 
 \begin{figure}[!htbp]
 \centering
@@ -336,67 +401,125 @@ Every $c$ steps, a high-level policy $\mu^{\mathrm{hi}}$ issues a storage goal $
 \end{figure}
 \FloatBarrier
 
-The high-level action is a five-dimensional \emph{Modelica-aligned plant intent}
+Every $c$ steps, the high-level policy $\mu^{\mathrm{hi}}$ observes $s_t$ and issues $g_t$. For $i\in[t,t+c-1]$, the low-level policy $\pi_{\mathrm{lo}}$ maps $(s_i,g_i)$ to $a_i$, and residual goals are updated by
 \begin{equation}
-g=\bigl[g^{\Delta\mathrm{bat}},\,g^{\Delta\mathrm{gas}},\,g^{\Delta\mathrm{th}},\,g^{u_{\mathrm{tp}}},\,g^{\mathrm{arb}}\bigr]^{\top}
-\in [g_{\min},g_{\max}],
-\label{eq:goal}
+g_{i+1}=h(s_i,g_i,s_{i+1})
+= s_i^{\mathrm{int}}+g_i-s_{i+1}^{\mathrm{int}},
+\label{eq:h}
 \end{equation}
-with box $[-0.30,0.30]\times[-0.12,0.12]\times[-0.10,0.10]\times[-0.20,0.20]\times[0,1]$. \textbf{MSGP:} raw high-level outputs are blended with a market-conditioned prior (charge in valleys, discharge in peaks; annealed weight $0.55\rightarrow0.12$) and a recovery prior over the last $H=40$--$48$~h (weight up to $0.95$--$0.98$).
-
-Intrinsic rewards track residual intent errors $e=s^{\mathrm{int}}+g-s^{\mathrm{int}\prime}$~\cite{cui2025ghtd3}:
+where $s^{\mathrm{int}}$ denotes the inventory/intent subvector tracked by $g$. Intrinsic and layered training rewards follow~\cite{cui2025ghtd3}
 \begin{equation}
-r_t^{\mathrm{int}} = -\sqrt{\sum_i w_i e_{i,t}^{2}}+\alpha\, r_t^{\mathrm{ext}},
-\qquad \alpha\in[0.20,0.50],
+r_t^{\mathrm{int}}
+= -\Bigl(\sum_i w_i e_{i,t}^{2}\Bigr)^{1/2}+\alpha\, r_t^{\mathrm{ext}},
+\qquad
+e_t=s_t^{\mathrm{int}}+g_t-s_{t+1}^{\mathrm{int}},
 \label{eq:rint}
 \end{equation}
-while the low-/high-level training targets use
 \begin{equation}
 r_t^{\mathrm{lo}} = r_t^{\mathrm{int}}, \qquad
 R_k^{\mathrm{hi}} = \frac{1}{c}\sum_{j=0}^{c-1} r_{t+j}^{\mathrm{ext}},
 \label{eq:reward}
 \end{equation}
-with default subgoal interval $c=8$.
+with default $c=8$ and $\alpha\in[0.20,0.50]$. High-level bootstrapping uses discount $\gamma^{c}$.
 
-\subsubsection{Low-level execution and GiveSafe}
-
-Large-scale plant observations can saturate absolute actors so that $\partial a/\partial g\approx0$. We keep an absolute low-level map but enforce a non-vanishing goal pathway by (i)~$\mathrm{obs\_norm}$ via $\tanh(s/s_0)$ and (ii)~amplified goal inputs $g\leftarrow \kappa g$ ($\kappa=4$) before the encoder. Unsafe trial-and-error is unacceptable on the FMU twin; GiveSafe projects proposals onto the dynamic feasible set~\cite{garcia2012safe,sun2024constrained}:
+Market-structure goal priors (MSGP) blend the raw high-level output with a TOU prior $g^{\mathrm{mkt}}$ (charge in valleys, discharge in peaks) and a recovery prior $g^{\mathrm{rec}}$ over the last $H=40$--$48$~h:
 \begin{equation}
-a_t^{\star} = \Pi_{\mathcal{F}(s_t)}\!\big(\pi_{\mathrm{lo}}(s_{\mathrm{n}},\kappa g)+\mathrm{noise}\big),
+g \leftarrow (1-w_{\mathrm{m}}-w_{\mathrm{r}})\,\mu^{\mathrm{hi}}(s)
++ w_{\mathrm{m}}\,g^{\mathrm{mkt}}
++ w_{\mathrm{r}}\,g^{\mathrm{rec}},
+\label{eq:msgp}
+\end{equation}
+with annealed $w_{\mathrm{m}}:0.55\rightarrow0.12$ and recovery weight up to $w_{\mathrm{r}}\in[0.95,0.98]$.
+
+\subsection{Internal controllers (TD3)}
+
+Both layers use TD3~\cite{fujimoto2018td3}. Write $x^{\mathrm{hi}}=s$, $a^{\mathrm{hi}}=g$ and $x^{\mathrm{lo}}=[s_{\mathrm{n}},\kappa g]$, $a^{\mathrm{lo}}=a$, with observation normalisation $s_{\mathrm{n}}=\tanh(s/s_0)$ and goal scale $\kappa=4$. Each layer maintains twin critics $Q_{\theta_1},Q_{\theta_2}$, actor $\mu_{\phi}$ and target networks. Critic losses and targets are
+\begin{equation}
+L(\theta_j)=\mathbb{E}\bigl[\bigl(Q_{\theta_j}(x,a)-y\bigr)^2\bigr],\quad j=1,2,
+\label{eq:td3-L}
+\end{equation}
+\begin{equation}
+y=r+\gamma\min_{k=1,2}Q_{\bar\theta_k}\bigl(x',\tilde a'\bigr),
+\qquad
+\tilde a'=\mu_{\bar\phi}(x')+\mathrm{clip}\bigl(\mathcal{N}(0,\sigma),-\epsilon,\epsilon\bigr).
+\label{eq:td3-y}
+\end{equation}
+The actor follows the deterministic policy gradient
+\begin{equation}
+\nabla_{\phi}J
+=\mathbb{E}_{x\sim\mathcal{D}}
+\Bigl[
+\nabla_a Q_{\theta_1}(x,a)\big|_{a=\mu_{\phi}(x)}
+\nabla_{\phi}\mu_{\phi}(x)
+\Bigr],
+\label{eq:td3-pi}
+\end{equation}
+with delayed actor updates and soft targets $\bar\psi\leftarrow\tau\psi+(1-\tau)\bar\psi$.
+
+\subsection{GiveSafe projection}
+
+Executable actions are projected onto the dynamic feasible set before each FMU step~\cite{garcia2012safe,sun2024constrained}:
+\begin{equation}
+a_t^{\star}
+= \Pi_{\mathcal{F}(s_t)}\!\bigl(\pi_{\mathrm{lo}}(s_{\mathrm{n}},\kappa g)+\mathrm{noise}\bigr).
 \label{eq:givesafe}
 \end{equation}
-equivalently written as absolute execution
+Only transitions generated by $a_t^{\star}$ enter the replay buffers. Absolute (non-residual) low-level execution is
 \begin{equation}
-a = \Pi_{\mathcal{F}(s)}\!\big(\pi_{\mathrm{lo}}(s_{\mathrm{n}},\kappa g)\big).
+a = \Pi_{\mathcal{F}(s)}\!\bigl(\pi_{\mathrm{lo}}(s_{\mathrm{n}},\kappa g)\bigr).
 \label{eq:abs}
 \end{equation}
-Only transitions generated by $a_t^{\star}$ enter the economic replay buffers.
 
-\subsubsection{Historical goal relabeling for high-level learning}
+\subsection{Historical goal relabeling (MS-HER)}
 
-\textbf{MS-HER:} high-level transitions are relabelled with a mixture of original, achieved and future goals, reweighted by storage activity (TOU-related throughput proxy) and extrinsic return, with optional market-prior candidates. This extends standard HER-style relabeling~\cite{cui2025ghtd3} and avoids trivial $g\equiv\Delta s$ labels that provide no credit for intent tracking.
+High-level transitions $(s_t,g_t,R_{t:t+c-1}^{\mathrm{ext}},s_{t+c})$ become stale as $\pi_{\mathrm{lo}}$ evolves. Market-structured hindsight experience replay replaces $g_t$ by a candidate maximising a storage-activity-weighted log-likelihood under the current low-level policy~\cite{cui2025ghtd3},
+\begin{equation}
+\tilde g_t
+\in
+\arg\max_{g\in\mathcal{C}_t}
+\sum_{i=t}^{t+c-1}
+w_i^{\mathrm{act}}
+\log \pi_{\mathrm{lo}}(a_i\mid s_i,g_i),
+\label{eq:msher}
+\end{equation}
+where $\mathcal{C}_t$ mixes the original goal, achieved $\Delta s^{\mathrm{int}}$, future goals and optional market-prior candidates, and subsequent residuals follow~\eqref{eq:h}.
 
-\subsubsection{Policies learning}
+\subsection{Feasibility-filtered MLE pretraining (F-MLE)}
 
-\textbf{F-MLE} warm-starts $\pi_{\mathrm{lo}}$ and high-level goals by maximum-likelihood fitting on \emph{physically valid} price-aware/rule trajectories only---not a frozen hybrid teacher---so the hierarchical stack remains independent of a strong single-layer residual anchor. Algorithm~\ref{alg:ghtd3} summarises Safe Market-GHTD3. Both layers use TD3 with twin critics, delayed policy updates and target smoothing~\cite{fujimoto2018td3}. Key hyperparameters are listed in Table~\ref{tab:hyper}.
+Before RL, low-level (and high-level goal) parameters are warm-started by maximum likelihood on \emph{physically valid} price-aware/rule trajectories only:
+\begin{equation}
+\phi^{\star}
+\in
+\arg\max_{\phi}
+\sum_{(s,g,a)\in\mathcal{D}_{\mathrm{demo}}}
+\log \pi_{\phi}(a\mid s_{\mathrm{n}},\kappa g)
+\quad\text{s.t.}\quad
+a\in\mathcal{F}(s).
+\label{eq:fmle}
+\end{equation}
+No frozen hybrid teacher residual is used at runtime.
+
+\subsection{Policy learning}
+
+Algorithm~\ref{alg:ghtd3} summarises the training loop; Table~\ref{tab:hyper} lists main hyperparameters.
 
 \begin{algorithm}[!htbp]
-\caption{Safe Market-GHTD3 (sketch)}
+\caption{Safe Market-GHTD3}
 \label{alg:ghtd3}
 \begin{algorithmic}[1]
-\State Initialise high/low actors--critics, targets, buffers $\mathcal{D}^{\mathrm{hi}},\mathcal{D}^{\mathrm{lo}}$
+\State Initialise $\mu^{\mathrm{hi}},\pi_{\mathrm{lo}}$, critics, targets; buffers $\mathcal{D}^{\mathrm{hi}},\mathcal{D}^{\mathrm{lo}}$; F-MLE warm-start~\eqref{eq:fmle}
 \For{episode $=1,2,\ldots$}
   \State Reset FMU; $s\leftarrow s_0$; clear residual goal
   \For{$t=0$ to $T-1$}
     \If{$t \bmod c = 0$}
-      \State Sample/issue $g$ from $\mu^{\mathrm{hi}}$; blend market \& recovery priors
+      \State Issue $g\leftarrow\mu^{\mathrm{hi}}(s)$; apply MSGP~\eqref{eq:msgp}
     \EndIf
-    \State $\tilde a \leftarrow \pi_{\mathrm{lo}}(s_{\mathrm{n}},\kappa g)+\mathrm{noise}$; $a\leftarrow \Pi_{\mathcal{F}(s)}(\tilde a)$ \Comment{GiveSafe}
-    \State Step FMU with $a$; observe $s'$, $\Delta J$, compute $r^{\mathrm{ext}},r^{\mathrm{int}}$ by~\eqref{eq:rext}--\eqref{eq:reward}
-    \State Store low-level transition in $\mathcal{D}^{\mathrm{lo}}$; update residual goal $g\leftarrow h(s,g,s')$
-    \If{$t \bmod c = c-1$} store high-level transition in $\mathcal{D}^{\mathrm{hi}}$ (optional relabel)
+    \State $\tilde a \leftarrow \pi_{\mathrm{lo}}(s_{\mathrm{n}},\kappa g)+\mathrm{noise}$; $a\leftarrow \Pi_{\mathcal{F}(s)}(\tilde a)$
+    \State Step FMU; observe $s'$, $\Delta J$; compute $r^{\mathrm{ext}},r^{\mathrm{int}}$ by~\eqref{eq:rext}--\eqref{eq:reward}
+    \State Store low-level transition in $\mathcal{D}^{\mathrm{lo}}$; $g\leftarrow h(s,g,s')$
+    \If{$t \bmod c = c-1$} store high-level transition in $\mathcal{D}^{\mathrm{hi}}$
     \EndIf
-    \State TD3 updates on $\mathcal{D}^{\mathrm{lo}}$ each step; on $\mathcal{D}^{\mathrm{hi}}$ every $c$ steps with $\gamma^{c}$ and MS-HER relabel
+    \State TD3 update on $\mathcal{D}^{\mathrm{lo}}$; every $c$ steps, MS-HER relabel~\eqref{eq:msher} and TD3 update on $\mathcal{D}^{\mathrm{hi}}$ with $\gamma^{c}$
     \State $s\leftarrow s'$
   \EndFor
 \EndFor

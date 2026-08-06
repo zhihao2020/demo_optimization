@@ -147,10 +147,13 @@ def plot_training() -> Path | None:
     ax.legend(frameon=False, loc="lower right")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    out = FIG / "fig_training.png"
-    fig.savefig(out)
+    # Write both formats: pdflatex prefers .pdf over .png for \\includegraphics{fig_training}
+    out_png = FIG / "fig_training.png"
+    out_pdf = FIG / "fig_training.pdf"
+    fig.savefig(out_png)
+    fig.savefig(out_pdf)
     plt.close(fig)
-    return out
+    return out_pdf
 
 
 def plot_algorithm_schematic() -> Path:
