@@ -1,0 +1,49 @@
+{
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "pairing": "same_seed_td3_vs_ghtd3",
+  "multi_seed": {
+    "winter": {
+      "ghtd3_mean": 113.66185169963553,
+      "ghtd3_std": 8.479197894094508,
+      "td3_mean": 99.646417498802,
+      "td3_std": 8.239903174964853,
+      "delta_mean": 14.01543420083353,
+      "delta_std": 16.461922914907124,
+      "ghtd3_soc_pass": 3,
+      "td3_soc_pass": 3,
+      "n": 3,
+      "wins": 2
+    },
+    "transition": {
+      "ghtd3_mean": 98.36442566252721,
+      "ghtd3_std": 5.691086189634586,
+      "td3_mean": 42.24894369595429,
+      "td3_std": 33.04092274322332,
+      "delta_mean": 56.11548196657293,
+      "delta_std": 27.35738191474799,
+      "ghtd3_soc_pass": 3,
+      "td3_soc_pass": 1,
+      "n": 3,
+      "wins": 3
+    },
+    "summer": {
+      "ghtd3_mean": 73.57273660703594,
+      "ghtd3_std": 12.433622133578256,
+      "td3_mean": 37.110270751549,
+      "td3_std": 20.588496183248566,
+      "delta_mean": 36.46246585548693,
+      "delta_std": 19.83218947573139,
+      "ghtd3_soc_pass": 2,
+      "td3_soc_pass": 2,
+      "n": 3,
+      "wins": 3
+    }
+  },
+  "mean_delta_all": 35.53112734096447,
+  "all_ghtd3_soc_pass": false,
+  "all_td3_soc_pass": false
+}

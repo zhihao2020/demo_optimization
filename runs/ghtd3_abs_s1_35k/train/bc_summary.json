@@ -1,0 +1,42 @@
+{
+  "low": {
+    "n_demos": 525.0,
+    "epochs": 25.0,
+    "final_loss": 336025998677.3333,
+    "mae_u_tp": 0.13989898562431335,
+    "mae_u_battery": 0.6774042248725891,
+    "mode_accuracy": 0.8114285469055176
+  },
+  "high": {
+    "n_demos": 525.0,
+    "epochs": 25.0,
+    "final_loss": 0.11540659020344417
+  },
+  "residual_mle": null,
+  "f_mle": {
+    "principle": "F-MLE",
+    "demo_source": "price_aware_or_rule_feasible_only",
+    "hybrid_teacher": false,
+    "n_demos": 525,
+    "low": {
+      "n_demos": 525.0,
+      "epochs": 25.0,
+      "final_loss": 336025998677.3333,
+      "mae_u_tp": 0.13989898562431335,
+      "mae_u_battery": 0.6774042248725891,
+      "mode_accuracy": 0.8114285469055176
+    },
+    "high": {
+      "n_demos": 525.0,
+      "epochs": 25.0,
+      "final_loss": 0.11540659020344417
+    }
+  },
+  "n_demos": 525,
+  "execution_mode": "goal_conditioned",
+  "principles": {
+    "F-MLE": true,
+    "MSGP": true,
+    "MS-HER": true
+  }
+}

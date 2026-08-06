@@ -40,9 +40,11 @@ from training.ghtd3.goals import GOAL_NAMES, residual_scale_from_goal  # noqa: E
 from training.ghtd3.hybrid_anchor import HybridAnchor  # noqa: E402
 
 
-def _load_cfg() -> dict[str, Any]:
-    path = ROOT / "src/config/ghtd3_config.yaml"
-    with open(path, encoding="utf-8") as f:
+def _load_cfg(path: str | Path | None = None) -> dict[str, Any]:
+    p = Path(path) if path else ROOT / "src/config/ghtd3_config.yaml"
+    if not p.is_file():
+        p = ROOT / p
+    with open(p, encoding="utf-8") as f:
         full = yaml.safe_load(f) or {}
     return dict(full.get("ghtd3") or full)
 
@@ -308,21 +310,25 @@ def _build_agent(
     if not hp.is_file():
         hp = ROOT / str(cfg.get("hybrid_anchor_path") or "")
     mode = str(local_cfg.get("execution_mode", "action_residual")).lower()
-    if hp.is_file():
+    use_anchor = bool(local_cfg.get("hybrid_anchor", False)) and hp.is_file()
+    if use_anchor:
         anchor = HybridAnchor(obs_dim, hp, device=str(agent.device))
         # action_residual：永不移植；goal_conditioned 仅 fresh+transplant 标志时移植
-        do_tx = bool(transplant) and mode != "action_residual" and ckpt is None
+        do_tx = bool(transplant) and mode not in ("action_residual", "tea") and ckpt is None
         meta = agent.attach_hybrid_anchor(anchor, transplant=do_tx)
         meta["hybrid_path"] = str(hp)
         meta["execution_mode"] = mode
+    else:
+        meta["execution_mode"] = mode
+        meta["hybrid_path"] = None
     if ckpt is not None and ckpt.is_file():
         agent.load(ckpt, strict=False)
         agent.execution_mode = mode
-        if mode == "action_residual":
-            agent.low_use_raw_obs = False
+        if mode in ("action_residual", "tea", "goal_conditioned"):
+            agent.low_use_raw_obs = bool(local_cfg.get("low_use_raw_obs", False))
         else:
             agent.low_use_raw_obs = bool(local_cfg.get("low_use_raw_obs", True))
-        if agent._hybrid_anchor is None and hp.is_file():
+        if use_anchor and agent._hybrid_anchor is None and hp.is_file():
             agent._hybrid_anchor = HybridAnchor(obs_dim, hp, device=str(agent.device))
             agent.hybrid_anchor_enabled = True
         meta["ckpt"] = str(ckpt)
@@ -589,17 +595,38 @@ def main() -> None:
         default=[],
         help="可选 ghtd3.pt；可多次指定。默认额外扫 modelica_ft / her 若存在",
     )
+    p.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="ghtd3 yaml（默认 src/config/ghtd3_config.yaml；abs 用 ghtd3_config_abs.yaml）",
+    )
     p.add_argument("--out", type=str, default="runs/diagnose_goal_sensitivity.json")
     p.add_argument("--n-grid", type=int, default=11)
     p.add_argument("--no-default-ckpts", action="store_true")
+    p.add_argument(
+        "--fresh-only",
+        action="store_true",
+        help="只诊断随机初始化（门禁 abs/GC 用，不扫旧 ckpt）",
+    )
     args = p.parse_args()
 
-    cfg = _load_cfg()
-    # 默认诊断当前推荐路径 action_residual
-    cfg.setdefault("execution_mode", "action_residual")
-    cfg["hybrid_init_low"] = False
-    cfg["low_use_raw_obs"] = False
-    cfg["residual_init"] = True
+    cfg = _load_cfg(args.config)
+    mode = str(cfg.get("execution_mode", "action_residual")).lower()
+    # 未指定 config 时保持旧 residual 默认；指定 abs 则尊重 yaml
+    if args.config is None:
+        cfg.setdefault("execution_mode", "action_residual")
+        cfg["hybrid_init_low"] = False
+        cfg["low_use_raw_obs"] = False
+        cfg["residual_init"] = True
+        mode = "action_residual"
+    else:
+        cfg.setdefault("low_use_raw_obs", False)
+        if mode == "goal_conditioned":
+            cfg.setdefault("residual_init", False)
+            cfg.setdefault("hybrid_anchor", False)
+            cfg.setdefault("goal_input_scale", 4.0)
+            cfg.setdefault("obs_norm", True)
 
     print("[diag] building env for one obs ...")
     env = PowerSystemEnv(run_id="diag_goal_sens", forecast_enabled=True)
@@ -608,13 +635,15 @@ def main() -> None:
     obs_dim = int(obs.shape[0])
     feasible = env.get_feasible_action_spec()
     print(f"[diag] obs_dim={obs_dim}  feasible u_tp=[{feasible.u_tp_low:.3g},{feasible.u_tp_high:.3g}]")
-    print(f"[diag] execution_mode={cfg.get('execution_mode')}")
+    print(f"[diag] execution_mode={cfg.get('execution_mode')} hybrid_anchor={cfg.get('hybrid_anchor')}")
 
     cases: list[tuple[str, bool, Path | None]] = [
-        ("fresh_action_residual", False, None),
+        (f"fresh_{mode}", False, None),
     ]
     ckpts: list[Path] = [Path(c) for c in args.ckpt]
-    if not args.no_default_ckpts:
+    if args.fresh_only or args.no_default_ckpts:
+        ckpts = [Path(c) for c in args.ckpt if Path(c).is_file()]
+    elif not args.no_default_ckpts:
         for rel in (
             "runs/ghtd3_gc_hybrid_35k/checkpoints/ghtd3.pt",
             "runs/ghtd3_modelica_ft_30k/checkpoints/ghtd3.pt",

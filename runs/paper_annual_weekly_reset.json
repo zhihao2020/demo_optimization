@@ -1,0 +1,1324 @@
+{
+  "protocol": "weekly_reset_sliding",
+  "annual_horizon_hours": 8760,
+  "note": "Each 168h window resets FMU/SoC; same protocol as main seasonal table.",
+  "methods": {
+    "b0": {
+      "method": "b0",
+      "protocol": "weekly_reset_sliding",
+      "n_windows": 53,
+      "reward_mean": 50.55982998950979,
+      "reward_std": 18.155848306507913,
+      "reward_sum": 2679.6709894440187,
+      "reward_p25": 40.65373249255898,
+      "reward_p50": 55.33550501693345,
+      "reward_p75": 65.8630699126503,
+      "soc_pass": 51,
+      "soc_pass_rate": 0.9622641509433962,
+      "windows": [
+        {
+          "start_hour": 0,
+          "hours": 168,
+          "episode_reward": 67.47903658558717,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 168,
+          "hours": 168,
+          "episode_reward": 45.11751158312373,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 336,
+          "hours": 168,
+          "episode_reward": 55.351577526289255,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 504,
+          "hours": 168,
+          "episode_reward": 68.52505489156995,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 672,
+          "hours": 168,
+          "episode_reward": 65.49410320411388,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 840,
+          "hours": 168,
+          "episode_reward": 65.71251034335823,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1008,
+          "hours": 168,
+          "episode_reward": 39.4866377070155,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1176,
+          "hours": 168,
+          "episode_reward": 54.833135828418676,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1344,
+          "hours": 168,
+          "episode_reward": 57.04474203522668,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1512,
+          "hours": 168,
+          "episode_reward": 66.42777270939223,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1680,
+          "hours": 168,
+          "episode_reward": 53.65211439337676,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1848,
+          "hours": 168,
+          "episode_reward": 59.48455085077285,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2016,
+          "hours": 168,
+          "episode_reward": 56.6200267791455,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2184,
+          "hours": 168,
+          "episode_reward": 52.74132403535289,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2352,
+          "hours": 168,
+          "episode_reward": 44.24122036599853,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2520,
+          "hours": 168,
+          "episode_reward": 56.96454686265526,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2688,
+          "hours": 168,
+          "episode_reward": 62.19263087914675,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2856,
+          "hours": 168,
+          "episode_reward": 58.002651475552696,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 3024,
+          "hours": 168,
+          "episode_reward": 22.985742147511978,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 3192,
+          "hours": 168,
+          "episode_reward": 42.769224365759726,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 3360,
+          "hours": 168,
+          "episode_reward": 55.33550501693345,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 3528,
+          "hours": 168,
+          "episode_reward": 43.152806718215636,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 3696,
+          "hours": 168,
+          "episode_reward": 50.98739192472453,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 3864,
+          "hours": 168,
+          "episode_reward": 39.085171894645,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4032,
+          "hours": 168,
+          "episode_reward": 23.973118930754442,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 130,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4200,
+          "hours": 168,
+          "episode_reward": 23.042295760687516,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 131,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4368,
+          "hours": 168,
+          "episode_reward": 20.733669250066544,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4536,
+          "hours": 168,
+          "episode_reward": 11.40066848697508,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4704,
+          "hours": 168,
+          "episode_reward": 24.19674949709135,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4872,
+          "hours": 168,
+          "episode_reward": 26.136433740879504,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5040,
+          "hours": 168,
+          "episode_reward": 17.524465960154494,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5208,
+          "hours": 168,
+          "episode_reward": 34.72015068548164,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5376,
+          "hours": 168,
+          "episode_reward": 25.060710748857264,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5544,
+          "hours": 168,
+          "episode_reward": 41.37562805563532,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5712,
+          "hours": 168,
+          "episode_reward": 40.65373249255898,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5880,
+          "hours": 168,
+          "episode_reward": 48.450096823605634,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6048,
+          "hours": 168,
+          "episode_reward": 46.45343415786983,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6216,
+          "hours": 168,
+          "episode_reward": 44.05893171708502,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6384,
+          "hours": 168,
+          "episode_reward": 56.69055029438518,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6552,
+          "hours": 168,
+          "episode_reward": 62.68797272183318,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6720,
+          "hours": 168,
+          "episode_reward": 68.14939646171723,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6888,
+          "hours": 168,
+          "episode_reward": 67.67500014605451,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 7056,
+          "hours": 168,
+          "episode_reward": 65.8630699126503,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 7224,
+          "hours": 168,
+          "episode_reward": 73.57456447266725,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 7392,
+          "hours": 168,
+          "episode_reward": 73.79284574000924,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 7560,
+          "hours": 168,
+          "episode_reward": 75.23334066757552,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 7728,
+          "hours": 168,
+          "episode_reward": 72.51318581477966,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 7896,
+          "hours": 168,
+          "episode_reward": 66.1893182644812,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 8064,
+          "hours": 168,
+          "episode_reward": 61.64480614306907,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 8232,
+          "hours": 168,
+          "episode_reward": 68.42428315668579,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 8400,
+          "hours": 168,
+          "episode_reward": 78.96374495011149,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 8568,
+          "hours": 168,
+          "episode_reward": 68.16596235928878,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 8736,
+          "hours": 24,
+          "episode_reward": 8.635871907120196,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 24,
+          "fmu_failure_count": 0
+        }
+      ]
+    },
+    "td3": {
+      "method": "td3",
+      "protocol": "weekly_reset_sliding",
+      "n_windows": 53,
+      "reward_mean": 56.7146694634324,
+      "reward_std": 31.888771329900823,
+      "reward_sum": 3005.877481561917,
+      "reward_p25": 32.13154551897147,
+      "reward_p50": 57.22416469593915,
+      "reward_p75": 85.90887121226095,
+      "soc_pass": 27,
+      "soc_pass_rate": 0.5094339622641509,
+      "windows": [
+        {
+          "start_hour": 0,
+          "hours": 168,
+          "episode_reward": 91.85429322170188,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 168,
+          "hours": 168,
+          "episode_reward": 61.22805932569695,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 336,
+          "hours": 168,
+          "episode_reward": 84.82529393807697,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 504,
+          "hours": 168,
+          "episode_reward": 94.1440325044576,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 672,
+          "hours": 168,
+          "episode_reward": 87.00899369144561,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 840,
+          "hours": 168,
+          "episode_reward": 109.43062919789729,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1008,
+          "hours": 168,
+          "episode_reward": 55.44830921801332,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1176,
+          "hours": 168,
+          "episode_reward": 97.52571316458197,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1344,
+          "hours": 168,
+          "episode_reward": 68.21300958844319,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1512,
+          "hours": 168,
+          "episode_reward": 91.36556554721567,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1680,
+          "hours": 168,
+          "episode_reward": 42.202393242028045,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 101,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 1848,
+          "hours": 168,
+          "episode_reward": 40.65931899712994,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 96,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 2016,
+          "hours": 168,
+          "episode_reward": 28.143579364074455,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 68,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 2184,
+          "hours": 168,
+          "episode_reward": 24.153049493795738,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 50,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 2352,
+          "hours": 168,
+          "episode_reward": 85.90887121226095,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2520,
+          "hours": 168,
+          "episode_reward": 93.55901445605838,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2688,
+          "hours": 168,
+          "episode_reward": 102.50409285232799,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2856,
+          "hours": 168,
+          "episode_reward": 7.361684673522997,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 24,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 3024,
+          "hours": 168,
+          "episode_reward": 66.27449328773416,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 3192,
+          "hours": 168,
+          "episode_reward": 61.57805385601615,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 150,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 3360,
+          "hours": 168,
+          "episode_reward": 94.6604584181271,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 3528,
+          "hours": 168,
+          "episode_reward": 7.45952227665784,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 51,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 3696,
+          "hours": 168,
+          "episode_reward": 11.840957860911175,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 52,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 3864,
+          "hours": 168,
+          "episode_reward": 15.096264412825462,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 54,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 4032,
+          "hours": 168,
+          "episode_reward": 10.894235249455063,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 47,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 4200,
+          "hours": 168,
+          "episode_reward": 40.9432683895183,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4368,
+          "hours": 168,
+          "episode_reward": 52.68700328723121,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4536,
+          "hours": 168,
+          "episode_reward": 38.8067125665926,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4704,
+          "hours": 168,
+          "episode_reward": 54.69803093980233,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4872,
+          "hours": 168,
+          "episode_reward": 57.22416469593915,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5040,
+          "hours": 168,
+          "episode_reward": 49.90054668654007,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5208,
+          "hours": 168,
+          "episode_reward": 64.52803057566742,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5376,
+          "hours": 168,
+          "episode_reward": 54.966285807035746,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5544,
+          "hours": 168,
+          "episode_reward": 66.4362492541815,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5712,
+          "hours": 168,
+          "episode_reward": 67.89658203187194,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5880,
+          "hours": 168,
+          "episode_reward": 75.03802708700161,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6048,
+          "hours": 168,
+          "episode_reward": 72.54699730505186,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6216,
+          "hours": 168,
+          "episode_reward": 32.448820760855405,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 95,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 6384,
+          "hours": 168,
+          "episode_reward": 32.13154551897147,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 73,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 6552,
+          "hours": 168,
+          "episode_reward": 69.49517636053362,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6720,
+          "hours": 168,
+          "episode_reward": 110.90374170175565,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6888,
+          "hours": 168,
+          "episode_reward": 48.048319081111316,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 100,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 7056,
+          "hours": 168,
+          "episode_reward": 92.6511767510685,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 7224,
+          "hours": 168,
+          "episode_reward": 5.824534333087856,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 23,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 7392,
+          "hours": 168,
+          "episode_reward": 22.087688012017907,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 49,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 7560,
+          "hours": 168,
+          "episode_reward": 37.14341609809676,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 75,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 7728,
+          "hours": 168,
+          "episode_reward": 7.3063863110851015,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 24,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 7896,
+          "hours": 168,
+          "episode_reward": 11.705507088392004,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 28,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 8064,
+          "hours": 168,
+          "episode_reward": 19.174986011452436,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 50,
+          "fmu_failure_count": 1
+        },
+        {
+          "start_hour": 8232,
+          "hours": 168,
+          "episode_reward": 81.195615975176,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 8400,
+          "hours": 168,
+          "episode_reward": 101.20668196694311,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 8568,
+          "hours": 168,
+          "episode_reward": 97.48105339957336,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 8736,
+          "hours": 24,
+          "episode_reward": 8.06104451490724,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 24,
+          "fmu_failure_count": 0
+        }
+      ]
+    },
+    "ghtd3": {
+      "method": "ghtd3",
+      "protocol": "weekly_reset_sliding",
+      "n_windows": 53,
+      "reward_mean": 99.06451898886577,
+      "reward_std": 17.6104769946972,
+      "reward_sum": 5250.419506409886,
+      "reward_p25": 88.22669311022793,
+      "reward_p50": 103.36755766933703,
+      "reward_p75": 111.22726524877429,
+      "soc_pass": 48,
+      "soc_pass_rate": 0.9056603773584906,
+      "windows": [
+        {
+          "start_hour": 0,
+          "hours": 168,
+          "episode_reward": 123.11628612112028,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 168,
+          "hours": 168,
+          "episode_reward": 107.07803197049628,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 336,
+          "hours": 168,
+          "episode_reward": 110.87747437531596,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 504,
+          "hours": 168,
+          "episode_reward": 116.09340751764523,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 672,
+          "hours": 168,
+          "episode_reward": 111.48717934192776,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 840,
+          "hours": 168,
+          "episode_reward": 103.7042867912088,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1008,
+          "hours": 168,
+          "episode_reward": 88.22669311022793,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1176,
+          "hours": 168,
+          "episode_reward": 103.36755766933703,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1344,
+          "hours": 168,
+          "episode_reward": 106.46507670792701,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1512,
+          "hours": 168,
+          "episode_reward": 114.53075569498012,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1680,
+          "hours": 168,
+          "episode_reward": 105.47900779934791,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 1848,
+          "hours": 168,
+          "episode_reward": 111.22726524877429,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2016,
+          "hours": 168,
+          "episode_reward": 96.02500872760106,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2184,
+          "hours": 168,
+          "episode_reward": 95.5219414865307,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2352,
+          "hours": 168,
+          "episode_reward": 92.88123651390408,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2520,
+          "hours": 168,
+          "episode_reward": 102.4201533859702,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2688,
+          "hours": 168,
+          "episode_reward": 106.60468950487882,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 2856,
+          "hours": 168,
+          "episode_reward": 109.39553298631233,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 3024,
+          "hours": 168,
+          "episode_reward": 74.6031264243878,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 3192,
+          "hours": 168,
+          "episode_reward": 87.4437015498042,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 3360,
+          "hours": 168,
+          "episode_reward": 102.73013990010202,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 3528,
+          "hours": 168,
+          "episode_reward": 90.11007168562891,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 3696,
+          "hours": 168,
+          "episode_reward": 83.62034057088465,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 3864,
+          "hours": 168,
+          "episode_reward": 95.10257818637822,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4032,
+          "hours": 168,
+          "episode_reward": 86.04577873931929,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4200,
+          "hours": 168,
+          "episode_reward": 88.39644978914694,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4368,
+          "hours": 168,
+          "episode_reward": 87.08668573620399,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4536,
+          "hours": 168,
+          "episode_reward": 77.63322220181666,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4704,
+          "hours": 168,
+          "episode_reward": 80.9966996645739,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 4872,
+          "hours": 168,
+          "episode_reward": 80.54400289711995,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5040,
+          "hours": 168,
+          "episode_reward": 82.72649104737486,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5208,
+          "hours": 168,
+          "episode_reward": 71.27516115872676,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5376,
+          "hours": 168,
+          "episode_reward": 88.11643689401755,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5544,
+          "hours": 168,
+          "episode_reward": 97.64279347529926,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5712,
+          "hours": 168,
+          "episode_reward": 98.68444414828501,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 5880,
+          "hours": 168,
+          "episode_reward": 97.89881597905814,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6048,
+          "hours": 168,
+          "episode_reward": 76.71791048171941,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6216,
+          "hours": 168,
+          "episode_reward": 105.62323168129659,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6384,
+          "hours": 168,
+          "episode_reward": 108.99768838492773,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6552,
+          "hours": 168,
+          "episode_reward": 111.57733785128079,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6720,
+          "hours": 168,
+          "episode_reward": 117.78081693541141,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 6888,
+          "hours": 168,
+          "episode_reward": 101.16562823241507,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 7056,
+          "hours": 168,
+          "episode_reward": 115.2265811607283,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 7224,
+          "hours": 168,
+          "episode_reward": 116.09528444529234,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 7392,
+          "hours": 168,
+          "episode_reward": 116.32459301420705,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 7560,
+          "hours": 168,
+          "episode_reward": 111.66671946486905,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 7728,
+          "hours": 168,
+          "episode_reward": 116.47234811278052,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 7896,
+          "hours": 168,
+          "episode_reward": 108.8355649781074,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 8064,
+          "hours": 168,
+          "episode_reward": 110.63360198053009,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 8232,
+          "hours": 168,
+          "episode_reward": 104.23446033314785,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 8400,
+          "hours": 168,
+          "episode_reward": 121.59643871824565,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 8568,
+          "hours": 168,
+          "episode_reward": 115.31135586471495,
+          "terminal_soc_satisfied": true,
+          "valid_steps": 168,
+          "fmu_failure_count": 0
+        },
+        {
+          "start_hour": 8736,
+          "hours": 24,
+          "episode_reward": 17.001419768577993,
+          "terminal_soc_satisfied": false,
+          "valid_steps": 24,
+          "fmu_failure_count": 0
+        }
+      ]
+    }
+  }
+}

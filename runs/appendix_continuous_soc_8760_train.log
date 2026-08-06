@@ -1,9 +1,0 @@
-=== continuous annual: b0 horizon=8760h ===
-  J=3.1215e+08 rew=1982.7630446498306 soc_ok=True wall=11.5s
-=== continuous annual: hybrid horizon=8760h ===
-  J=1.2978e+08 rew=771.3280976318091 soc_ok=False wall=2.7s
-=== continuous annual: ghtd3 horizon=8760h ===
-  J=1.2963e+08 rew=770.236664802799 soc_ok=False wall=2.8s
-=== continuous annual: sac horizon=8760h ===
-  J=5.0722e+07 rew=266.3324244651719 soc_ok=False wall=3.9s
-wrote E:\optimal_demo_cache\runs\appendix_continuous_soc_8760_20260804\continuous_summary.json

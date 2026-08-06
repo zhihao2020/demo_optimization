@@ -1,0 +1,56 @@
+{
+  "principle": "IDD",
+  "season": "summer",
+  "start_time": 15724800.0,
+  "goal_action_sensitivity": {
+    "alive_dims": 5,
+    "goal_dim": 5,
+    "per_dim": [
+      {
+        "dim": 0,
+        "max_L1": 0.5431457161903381,
+        "mean_L1": 0.20328516430324978
+      },
+      {
+        "dim": 1,
+        "max_L1": 1.3749418258666992,
+        "mean_L1": 0.37425747844907975
+      },
+      {
+        "dim": 2,
+        "max_L1": 0.2510643005371094,
+        "mean_L1": 0.09255366192923652
+      },
+      {
+        "dim": 3,
+        "max_L1": 0.4001994729042053,
+        "mean_L1": 0.18418120675616795
+      },
+      {
+        "dim": 4,
+        "max_L1": 0.19340890645980835,
+        "mean_L1": 0.08562533722983466
+      }
+    ]
+  },
+  "full": {
+    "episode_reward": 87.08672222186375,
+    "soc": true,
+    "mode": "full"
+  },
+  "freeze_high": {
+    "episode_reward": 91.32437234239747,
+    "soc": true,
+    "mode": "freeze_high_prior_only"
+  },
+  "freeze_low_random": {
+    "episode_reward": 38.03533436379402,
+    "soc": true,
+    "mode": "freeze_low_random"
+  },
+  "decoupling_score": {
+    "full_minus_freeze_high": -4.237650120533715,
+    "full_minus_freeze_low": 49.05138785806973,
+    "alive_goal_dims": 5
+  }
+}

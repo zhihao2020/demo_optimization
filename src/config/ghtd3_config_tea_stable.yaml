@@ -1,6 +1,10 @@
-# TEA Stable：安全可扩张（SOC 屏障 + 回收期回教师 + 中等 β_max）
-# 原理：参考调速器 — 仅在安全库存带内允许大残差；期末收缩到教师保 SoC 门控
-# 目标：多种子 mean 仍 ≥ Hybrid，SOC 全过
+# TEA Stable v2：更贴教师、更硬回收（多 seed SOC 优先，再谈扩张收益）
+# 变更相对 v1（s0/s1/s2 40k 失败诊断）：
+#   - β_max 再降一档（防 bat 过大漂移 / CAES 间接吞吐）
+#   - mag 几乎不扩张；mode 全程锁教师
+#   - 回收窗加长 + β floor 更低 + BC floor 更高
+#   - SOC 安全带收窄；mag 偏离罚抬高
+# 验收：3 seed × 3 季 SOC 全过；mean Δ≥0；CAES MWh ≤ Hybrid×1.2
 
 ghtd3:
   enabled: true
@@ -17,38 +21,38 @@ ghtd3:
   execution_mode: tea
   tea_expandable: true
   residual_init: true
-  residual_beta_tp: 0.12
-  residual_beta_bat: 0.28
-  residual_beta_mag: 0.08
-  # 中等扩张：小于 WS2 的 bat=1.0，大于 ares 固定小 β
-  tea_beta_max_tp: 0.42
-  tea_beta_max_bat: 0.55
-  tea_beta_max_mag: 0.05
-  tea_rho_start: 0.28
-  tea_rho_end: 0.92
+  residual_beta_tp: 0.10
+  residual_beta_bat: 0.22
+  residual_beta_mag: 0.04
+  # v2 小扩张：介于 ares 固定小 β 与 v1 中等扩张之间
+  tea_beta_max_tp: 0.28
+  tea_beta_max_bat: 0.38
+  tea_beta_max_mag: 0.02
+  tea_rho_start: 0.35
+  tea_rho_end: 0.82
   tea_adv_gate: true
-  tea_adv_temp: 0.55
+  tea_adv_temp: 0.65
   tea_mode_unlock_progress: 0.99
   tea_force_mode_lock: true
   tea_safe_expansion: true
-  tea_soc_lo: 0.20
-  tea_soc_hi: 0.90
-  tea_recovery_beta_floor: 0.10
-  tea_recovery_bc_floor: 0.32
-  tea_terminal_soc_penalty: 0.55
-  tea_mag_dev_penalty: 0.10
-  tea_teacher_bc_coef0: 0.42
-  tea_teacher_bc_coef1: 0.12
+  tea_soc_lo: 0.24
+  tea_soc_hi: 0.88
+  tea_recovery_beta_floor: 0.05
+  tea_recovery_bc_floor: 0.45
+  tea_terminal_soc_penalty: 0.85
+  tea_mag_dev_penalty: 0.22
+  tea_teacher_bc_coef0: 0.50
+  tea_teacher_bc_coef1: 0.18
   residual_mode_margin: 1.5
   residual_mode_override: false
   residual_logit_clip: 8.0
   residual_beta_from_arb: true
   residual_beta_price_gate: true
-  residual_price_gate_thr: 0.68
-  residual_price_gate_boost: 1.25
+  residual_price_gate_thr: 0.72
+  residual_price_gate_boost: 1.12
   goal_input_scale: 4.0
   residual_alpha0: 0.0
-  residual_alpha_max: 0.28
+  residual_alpha_max: 0.22
   residual_train_start: 0
   obs_norm_high_only: false
   low_use_raw_obs: false
@@ -56,15 +60,15 @@ ghtd3:
   mle_fit_mode: false
   mle_epochs: 25
   mle_windows: 4
-  high_explore_noise: 0.035
-  low_explore_noise: 0.035
-  epsilon_start: 0.16
-  epsilon_end: 0.04
+  high_explore_noise: 0.028
+  low_explore_noise: 0.028
+  epsilon_start: 0.14
+  epsilon_end: 0.035
   gamma: 0.99
   tau: 0.005
   policy_delay: 1
   actor_lr: 2.0e-4
-  residual_actor_lr: 1.0e-4
+  residual_actor_lr: 8.0e-5
   critic_lr: 3.0e-4
   target_noise: 0.2
   noise_clip: 0.5
@@ -92,11 +96,11 @@ ghtd3:
   market_prior_strength: 0.15
   charge_threshold: 0.40
   discharge_threshold: 0.90
-  recovery_goal_horizon_steps: 48
-  recovery_prior_weight: 0.97
+  recovery_goal_horizon_steps: 56
+  recovery_prior_weight: 0.98
   phase_a_steps: 0
   goal_dropout: 0.0
-  actor_bc_weight: 0.14
+  actor_bc_weight: 0.16
   obs_norm: true
   obs_scale: 1.0e6
   log_every: 500

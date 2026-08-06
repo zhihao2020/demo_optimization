@@ -14,7 +14,14 @@ build/
 reference_modelica_code/
 *.assets/
 outputs/
-# 训练、评估和检查点均为本地运行产物；源代码与配置仍应提交。
-# runs/  # tracked for experiment artifacts
+# 论文主线 runs/ 纳入版本库，便于其它机器复现表图与加载 ckpt。
+# 运维/会话脚本与重复 pull 不入库。
+_remote_*.py
+_check_*.py
+_inspect_*.py
+_pull_*.py
+_env_*.py
+runs/remote_pull*/
+runs/_remote_pull/
 *.log
 resources/

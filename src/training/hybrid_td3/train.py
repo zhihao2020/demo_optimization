@@ -728,3 +728,28 @@ def run_formal(total_valid_steps: int = 100000, **kwargs) -> dict[str, Any]:
         formal=True,
         **kwargs,
     )
+
+
+def run_td3_scratch(total_valid_steps: int = 35000, **kwargs) -> dict[str, Any]:
+    """论文典型单层 TD3：从零训练，无规则 BC 示范主导，GiveSafe 开启。
+
+    与 Hybrid-BC→RL 强教师路径区分：默认 rule_demo_fraction=0，
+    较高早期随机探索，run 目录命名 td3_scratch。
+
+    Args:
+        total_valid_steps: 有效步数目标。
+        **kwargs: 传给 ``run_hybrid_training`` 的额外参数。
+
+    Returns:
+        训练 summary 字典。
+    """
+    kwargs.setdefault("rule_demo_fraction", 0.0)
+    kwargs.setdefault("random_explore_start", 0.40)
+    kwargs.setdefault("random_explore_end", 0.05)
+    kwargs.setdefault("enable_shadow", False)
+    return run_hybrid_training(
+        total_valid_steps=total_valid_steps,
+        run_dir=kwargs.pop("run_dir", "runs/td3_scratch"),
+        formal=False,
+        **kwargs,
+    )

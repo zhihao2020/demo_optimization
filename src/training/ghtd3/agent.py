@@ -58,7 +58,8 @@ class GHTD3Agent:
         self.low_noise = float(cfg.get("low_explore_noise", 0.08))
         # 高层 reward = mean_ext over cycle（稳定 critic；相对论文 sum 的实现改进）
         self.high_reward_normalize = bool(cfg.get("high_reward_normalize", True))
-        self.hybrid_anchor_enabled = bool(cfg.get("hybrid_anchor", True))
+        # 默认 false：绝对 GC 主线无教师；残差路径 yaml 显式 hybrid_anchor: true
+        self.hybrid_anchor_enabled = bool(cfg.get("hybrid_anchor", False))
         # action_residual: a=a_H+β tanh Δ(s,g)（推荐）；goal_conditioned: 绝对头；blend: 旧混合
         self.execution_mode = str(cfg.get("execution_mode", "action_residual")).lower()
         self.residual_alpha0 = float(cfg.get("residual_alpha0", 0.0))
@@ -77,6 +78,15 @@ class GHTD3Agent:
         self.tea_enabled = self.execution_mode in ("tea", "action_residual") and bool(
             cfg.get("tea_expandable", self.execution_mode == "tea")
         )
+        # LTAR：Lagrangian 信任域（无 TEA 课程；λ 收紧 β）
+        self.ltar_enabled = bool(cfg.get("ltar_enabled", False)) or str(
+            cfg.get("execution_mode", "")
+        ).lower() in ("ltar", "ltar_td3")
+        # 高层-only λ-SoC（绝对 GC 可用；不启用动作信任域）
+        self.high_lambda_soc = bool(cfg.get("high_lambda_soc", False))
+        if self.ltar_enabled:
+            # 与 TEA 课程互斥：扩张只靠 \(\bar\beta\cdot\sigma\)，不靠 ρ(t)
+            self.tea_enabled = False
         self.tea_beta_max_tp = float(cfg.get("tea_beta_max_tp", cfg.get("residual_beta_tp", 0.15)))
         self.tea_beta_max_bat = float(cfg.get("tea_beta_max_bat", cfg.get("residual_beta_bat", 0.30)))
         self.tea_beta_max_mag = float(cfg.get("tea_beta_max_mag", cfg.get("residual_beta_mag", 0.20)))
@@ -91,6 +101,13 @@ class GHTD3Agent:
         self.beta_tp0 = float(cfg.get("residual_beta_tp", 0.15))
         self.beta_bat0 = float(cfg.get("residual_beta_bat", 0.30))
         self.beta_mag0 = float(cfg.get("residual_beta_mag", 0.20))
+        # Lagrangian dual for terminal inventory cost
+        self.lambda_soc = float(cfg.get("ltar_lambda_init", 0.0))
+        self.ltar_lambda_lr = float(cfg.get("ltar_lambda_lr", 0.15))
+        self.ltar_lambda_max = float(cfg.get("ltar_lambda_max", 8.0))
+        self.ltar_cost_tol = float(cfg.get("ltar_cost_tol", 0.0))
+        self.ltar_adv_gate = bool(cfg.get("ltar_adv_gate", True))
+        self.ltar_adv_temp = float(cfg.get("ltar_adv_temp", cfg.get("tea_adv_temp", 0.55)))
 
         gl = torch.as_tensor(self.goal_low, device=self.device)
         gh = torch.as_tensor(self.goal_high, device=self.device)
@@ -102,7 +119,13 @@ class GHTD3Agent:
             cfg.get("residual_init", self.hybrid_anchor_enabled)
         )
         residual_init = bool(cfg.get("residual_init", _default_res_init))
-        goal_scale = float(cfg.get("goal_input_scale", 4.0 if self.execution_mode == "action_residual" else 1.0))
+        # goal_conditioned / residual 均需放大 goal 通道，避免相对高维 obs_norm 被淹没
+        _default_gscale = (
+            4.0
+            if self.execution_mode in ("action_residual", "tea", "goal_conditioned")
+            else 1.0
+        )
+        goal_scale = float(cfg.get("goal_input_scale", _default_gscale))
         self.hi_actor = HighLevelActor(obs_dim, self.goal_dim).to(self.device)
         self.hi_actor_t = deepcopy(self.hi_actor).to(self.device)
         self.hi_critic = HighLevelCritic(obs_dim, self.goal_dim).to(self.device)
@@ -206,12 +229,46 @@ class GHTD3Agent:
     def set_progress(self, progress: float) -> None:
         """训练进度 ∈[0,1]：驱动 TEA 扩张课程与 mode 解锁。"""
         self._train_progress = float(np.clip(progress, 0.0, 1.0))
+        # LTAR / STFR / 信任域残差：mode 始终锁教师（模式因子化）
+        if (
+            self.ltar_enabled
+            or bool(self.cfg.get("stfr_enabled", False))
+            or str(self.cfg.get("high_level_mode", "")).lower()
+            in ("prior_only", "prior", "stfr_a", "stfr")
+        ):
+            self.mode_override = False
+            return
         if self.tea_enabled:
             if bool(self.cfg.get("tea_force_mode_lock", False)):
                 # 冬季安全：mode 全程跟教师，只扩连续维（防 CAES 炸吞吐）
                 self.mode_override = False
             else:
                 self.mode_override = self._train_progress >= self.tea_mode_unlock
+
+    def update_lambda_soc(self, cost: float) -> float:
+        """Lagrangian 对偶更新：cost = [‖z_T−z_0‖−ξ]_+ 或 1{SOC 失败}。"""
+        if not (self.ltar_enabled or getattr(self, "high_lambda_soc", False)):
+            return self.lambda_soc
+        c = float(max(0.0, cost - self.ltar_cost_tol))
+        self.lambda_soc = float(
+            np.clip(
+                self.lambda_soc + self.ltar_lambda_lr * c,
+                0.0,
+                self.ltar_lambda_max,
+            )
+        )
+        # 若本回合满足约束（cost≈0），缓慢松弛 λ，允许再探索
+        if c <= 1e-8:
+            self.lambda_soc = float(max(0.0, self.lambda_soc * 0.97))
+        self.last_metrics["lambda_soc"] = self.lambda_soc
+        self.last_metrics["ltar_cost"] = c
+        return self.lambda_soc
+
+    def lambda_beta_scale(self) -> float:
+        """σ_λ = 1/(1+λ)：违约越大，信任域越紧。"""
+        if not self.ltar_enabled:
+            return 1.0
+        return float(1.0 / (1.0 + max(0.0, self.lambda_soc)))
 
     def set_episode_context(self, *, rem_steps: int | None = None, episode_steps: int | None = None) -> None:
         """注入回合上下文：剩余步数用于回收期收缩残差（安全可扩张）。"""
@@ -231,6 +288,16 @@ class GHTD3Agent:
 
     def teacher_bc_weight(self) -> float:
         """actor 额外 ‖a−a_H‖² 权重：随进度退火；回收窗抬高（回教师保 SOC）。"""
+        if self.ltar_enabled:
+            w = float(self.cfg.get("actor_bc_weight", 0.20))
+            # λ 大 → 更贴教师
+            w = w + 0.08 * float(min(self.lambda_soc, self.ltar_lambda_max))
+            rem = getattr(self, "_rem_steps", None)
+            H = int(self.cfg.get("recovery_goal_horizon_steps", 40) or 40)
+            if rem is not None and rem <= H:
+                floor = float(self.cfg.get("tea_recovery_bc_floor", 0.40))
+                w = max(w, floor)
+            return float(min(w, 1.5))
         if not self.tea_enabled:
             return float(self.cfg.get("actor_bc_weight", 0.15))
         p = self._train_progress
@@ -331,6 +398,10 @@ class GHTD3Agent:
                 if adv_scale.numel() == 1:
                     adv_scale = adv_scale.expand(b)
             bt, bb, bm = bt * adv_scale, bb * adv_scale, bm * adv_scale
+        # LTAR：σ_λ 收紧信任域
+        if self.ltar_enabled:
+            ls = self.lambda_beta_scale()
+            bt, bb, bm = bt * ls, bb * ls, bm * ls
         return bt, bb, bm
 
     def _select_action_residual(
@@ -365,9 +436,13 @@ class GHTD3Agent:
             bb = bb * s_bat
             bm = bm * min(s_bat, s_tp)
             mask = torch.as_tensor(feasible.mode_mask.as_bool_array(), dtype=torch.bool, device=self.device).view(1, 3)
-            # TEA 优势门控：比较残差动作与 a_H 的 Q，更好则放大 β
+            # 优势门控（TEA 或 LTAR）：残差 Q 更好才放大 β
             adv_scale = None
-            if self.tea_enabled and self.tea_adv_gate and self._train_progress > self.tea_rho_start:
+            use_adv = (self.tea_enabled and self.tea_adv_gate and self._train_progress > self.tea_rho_start) or (
+                self.ltar_enabled and self.ltar_adv_gate
+            )
+            adv_temp = self.ltar_adv_temp if self.ltar_enabled else self.tea_adv_temp
+            if use_adv:
                 out_probe = self.lo_actor.residual_compose(
                     o,
                     g,
@@ -411,8 +486,13 @@ class GHTD3Agent:
                 )
                 # σ(ΔQ/T)：残差更好 → scale>1；更差 → scale≈0.7
                 delta = (q_r - q_h).clamp(-5.0, 5.0)
-                adv_scale = 0.7 + 0.6 * torch.sigmoid(delta / max(self.tea_adv_temp, 1e-3))
+                adv_scale = 0.7 + 0.6 * torch.sigmoid(delta / max(adv_temp, 1e-3))
                 bt, bb, bm = self._betas_from_goal(g, buy_price=buy_p, adv_scale=adv_scale)
+                # 安全尺度 + λ 已在 _betas_from_goal / 下方再次乘 soc scale
+                s_tp, s_bat = self._safe_expansion_scales(obs)
+                bt = bt * s_tp
+                bb = bb * s_bat
+                bm = bm * min(s_bat, s_tp)
             out = self.lo_actor.residual_compose(
                 o,
                 g,
@@ -780,12 +860,46 @@ class GHTD3Agent:
         other = pool[int(np.random.randint(0, len(pool)))]
         return self._achieved_delta(other)
 
+    def _ms_her_weights(self, tr: HighTransition) -> tuple[float, float]:
+        """MS-HER：价区/经济权重（相对均匀 HER-mix 的升级）。
+
+        Returns:
+            (w_tou, w_econ) 均 ≥ min_w，用于抬高 ach / future 采样。
+        """
+        min_w = float(self.cfg.get("ms_her_min_weight", 0.35))
+        max_w = float(self.cfg.get("ms_her_max_weight", 2.5))
+        # 经济：外在回报越高，future/ach 更可信
+        r = float(getattr(tr, "reward_ext_sum", 0.0) or 0.0)
+        w_econ = float(np.clip(0.6 + 0.15 * r, min_w, max_w))
+        # 价区：若窗内吞吐（代理套利活跃）高，抬高 ach
+        thr = 0.0
+        for ha in getattr(tr, "action_seq", None) or []:
+            thr += abs(float(ha.get("u_battery", 0.0) or 0.0)) + abs(
+                float(ha.get("caes_magnitude", 0.0) or 0.0)
+            )
+        n_act = max(len(getattr(tr, "action_seq", None) or []), 1)
+        thr_mean = thr / float(n_act)
+        w_tou = float(np.clip(0.5 + 1.2 * thr_mean, min_w, max_w))
+        return w_tou, w_econ
+
     def _relabel_goals(self, transitions: list[HighTransition]) -> np.ndarray:
-        """历史目标重放：HER-mix（原 goal / 本窗达成 / future 达成），避免「恒等于实际 Δ」的平凡 relabel。"""
+        """历史目标重放：HER-mix / MS-HER，避免「恒等于实际 Δ」的平凡 relabel。
+
+        - her_mix: 原 goal / 本窗达成 / future 均匀三类概率
+        - ms_her: 同上，但对 ach/future 按价区吞吐与外在回报加权；可选注入市场 prior 候选
+        """
         mode = str(self.cfg.get("goal_relabel_mode", "her_mix")).lower()
+        use_ms = mode in ("ms_her", "market_her", "ms-her") or bool(
+            self.cfg.get("ms_her_weighting", False)
+        )
+        if mode in ("ms_her", "market_her", "ms-her"):
+            mode = "her_mix"  # 分支逻辑同 her_mix，仅权重不同
         goals = []
         p_orig = float(self.cfg.get("relabel_p_orig", 0.4))
         p_ach = float(self.cfg.get("relabel_p_ach", 0.4))
+        p_mkt = float(self.cfg.get("relabel_p_mkt", 0.0))
+        if use_ms and p_mkt <= 0.0:
+            p_mkt = float(self.cfg.get("ms_her_p_mkt", 0.10))
         # remaining → future
         for tr in transitions:
             delta = self._achieved_delta(tr)
@@ -803,15 +917,39 @@ class GHTD3Agent:
                     best = min(cands, key=lambda g: float(np.linalg.norm(np.asarray(g) - delta)))
                     goals.append(clip_goal(np.asarray(best, dtype=np.float32), self.goal_low, self.goal_high))
                 continue
-            # her_mix (default)
-            u = float(np.random.rand())
-            if u < p_orig or delta is None:
-                g = np.asarray(tr.goal, dtype=np.float32)
-            elif u < p_orig + p_ach:
-                g = delta
+            # her_mix / ms_her
+            if use_ms:
+                w_tou, w_econ = self._ms_her_weights(tr)
+                # 归一化四类：orig, ach, fut, mkt
+                w_orig = max(p_orig, 1e-6)
+                w_a = max(p_ach * w_tou, 1e-6)
+                w_f = max((1.0 - p_orig - p_ach) * w_econ, 1e-6)
+                w_k = max(p_mkt, 0.0)
+                z = w_orig + w_a + w_f + w_k
+                u = float(np.random.rand()) * z
+                if u < w_orig or delta is None:
+                    g = np.asarray(tr.goal, dtype=np.float32)
+                elif u < w_orig + w_a:
+                    g = delta
+                elif u < w_orig + w_a + w_f:
+                    fut = self._sample_future_achieved(tr)
+                    g = fut if fut is not None else delta
+                else:
+                    # 市场 prior 候选：用原始 goal 与达成目标的凸组合近似 g^mkt
+                    base = np.asarray(tr.goal, dtype=np.float32)
+                    if delta is not None:
+                        g = 0.5 * base + 0.5 * np.asarray(delta, dtype=np.float32)
+                    else:
+                        g = base
             else:
-                fut = self._sample_future_achieved(tr)
-                g = fut if fut is not None else delta
+                u = float(np.random.rand())
+                if u < p_orig or delta is None:
+                    g = np.asarray(tr.goal, dtype=np.float32)
+                elif u < p_orig + p_ach:
+                    g = delta
+                else:
+                    fut = self._sample_future_achieved(tr)
+                    g = fut if fut is not None else delta
             goals.append(clip_goal(np.asarray(g, dtype=np.float32), self.goal_low, self.goal_high))
         return np.stack(goals).astype(np.float32)
 

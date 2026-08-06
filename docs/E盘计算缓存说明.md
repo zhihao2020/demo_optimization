@@ -45,7 +45,21 @@ Remove-Item -Recurse -Force D:\Code\0622\optimal_demo\runs_d_backup_*
 ## 代码入口
 
 - `src/config/paths.py`：`apply_process_cache_env()` / `resolve_run_dir()`  
-- `scripts/run_full_benchmark.py`、`scripts/train_ghtd3.py` 启动时自动应用  
+- `scripts/run_full_benchmark.py`、`scripts/train_ghtd3.py` 启动时自动应用
+
+## 多进程 FMU 隔离（并行训练）
+
+多 job 同时跑时，默认 **每 job 复制一份 `.fmu`**，解压到 **job 私有 TMP**，减轻 ZIP/DLL 争用：
+
+| 环境变量 | 含义 |
+|----------|------|
+| `OPTIMAL_DEMO_JOB_ID` | job 标签，如 `td3_s0` / `abs_s1` |
+| `OPTIMAL_DEMO_FMU_ISOLATE=1` | 复制到 `cache/fmu_copies/<job_id>/`（默认开） |
+| `OPTIMAL_DEMO_FMU_PATH` | 显式指定本进程 FMU（可选） |
+| `OPTIMAL_DEMO_TMP` | 本 job 临时目录（含 fmu 解压） |
+
+远程 bat（`_remote_bootstrap_tea.py`）已为每个 seed 设置独立 `JOB_ID` 与 `TMP`。
+代码：`config.paths.resolve_fmu_path`、`fmu.session` 解压到 job TMP。  
 
 覆盖路径：
 

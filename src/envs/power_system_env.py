@@ -34,6 +34,7 @@ from envs.failures import (
     PostStepHardConstraintViolation,
     StaticActionViolation,
 )
+from config.paths import resolve_fmu_path
 from fmu import FmuAdapter, FmuSolverError, build_registry
 from market.price_profile import PriceProfile
 from .observation_builder import ObservationBuilder
@@ -102,8 +103,10 @@ class PowerSystemEnv(gym.Env):
             "decision_interval_seconds"
         ]
         reward_config["episode_steps"] = int(self.config["fmu"]["episode_steps"])
+        # 并行 job：每进程/每 JOB_ID 独立 FMU 副本，减少 ZIP 争用
+        self.fmu_path = resolve_fmu_path(self.root / self.config["fmu"]["path"])
         self.registry = build_registry(
-            self.root / self.config["fmu"]["path"],
+            self.fmu_path,
             self.config,
             verify_metadata=adapter is None,
         )
@@ -174,7 +177,7 @@ class PowerSystemEnv(gym.Env):
             margins_path=self._resolve(margins_path),
         )
         self.adapter = adapter or FmuAdapter(
-            self.root / self.config["fmu"]["path"],
+            self.fmu_path,
             float(self.config["fmu"]["communication_step_seconds"]),
             self.registry,
         )

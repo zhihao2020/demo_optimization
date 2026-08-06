@@ -154,6 +154,61 @@ class GHTD3PolicyWrapper:
         self._pending_intent = intent1
 
 
+def _acquire_run_lock(run_dir: Path) -> object | None:
+    """同一 run_dir 仅允许一个训练进程（防 ComfyUI/venv 双开写坏）。
+
+    Returns:
+        保持打开的文件句柄；失败返回 None。
+    """
+    import os
+    import sys
+
+    lock_path = run_dir / "train" / "instance.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _pid_alive(pid: int) -> bool:
+        if pid <= 0:
+            return False
+        if sys.platform.startswith("win"):
+            try:
+                import ctypes
+
+                k = ctypes.windll.kernel32
+                h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+                if not h:
+                    return False
+                k.CloseHandle(h)
+                return True
+            except Exception:
+                return False
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    if lock_path.is_file():
+        try:
+            old = int((lock_path.read_text(encoding="utf-8") or "0").strip().split()[0])
+        except Exception:
+            old = 0
+        if _pid_alive(old) and old != os.getpid():
+            print(f"[single-instance] blocked: run_dir locked by pid={old}", flush=True)
+            return None
+        try:
+            lock_path.unlink()
+        except OSError:
+            pass
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, f"{os.getpid()}\n".encode("utf-8"))
+        # keep fd open for process lifetime
+        return os.fdopen(fd, "a", encoding="utf-8")
+    except FileExistsError:
+        print("[single-instance] blocked: lock race", flush=True)
+        return None
+
+
 def run_ghtd3_training(
     total_valid_steps: int = 10000,
     run_dir: str | Path = "runs/ghtd3_smoke",
@@ -163,9 +218,16 @@ def run_ghtd3_training(
     resume_from: str | Path | None = None,
     skip_bc: bool = False,
 ) -> dict[str, Any]:
-    run_dir = Path(run_dir)
+    run_dir = Path(run_dir).resolve()
     for name in ("config", "train", "checkpoints", "trajectories"):
         (run_dir / name).mkdir(parents=True, exist_ok=True)
+    _run_lock = _acquire_run_lock(run_dir)
+    if _run_lock is None:
+        return {
+            "status": "blocked_single_instance",
+            "run_dir": str(run_dir),
+            "error": "another train_ghtd3 holds instance.lock for this run_dir",
+        }
     root = Path(__file__).resolve().parents[3]
     full_cfg = load_ghtd3_config(config_path)
     cfg = dict(full_cfg.get("ghtd3") or full_cfg)
@@ -185,9 +247,9 @@ def run_ghtd3_training(
     gs_cfg = load_givesafe_config(root / "src/config/givesafe_config.yaml")
     controller = GiveSafeController(oracle=env.oracle, shadow=None, config=gs_cfg)
 
-    # Hybrid 锚定（冻结 raw-obs 执行器）
+    # Hybrid 锚定（冻结 raw-obs 执行器）；abs 主线 hybrid_anchor=false 跳过
     hybrid_path = cfg.get("hybrid_anchor_path")
-    if bool(cfg.get("hybrid_anchor", True)) and hybrid_path:
+    if bool(cfg.get("hybrid_anchor", False)) and hybrid_path:
         hp = Path(hybrid_path)
         if not hp.is_file():
             hp = root / hybrid_path
@@ -203,6 +265,13 @@ def run_ghtd3_training(
         else:
             print(f"[warn] hybrid_anchor_path missing: {hybrid_path}; fallback pure residual low")
             agent.hybrid_anchor_enabled = False
+    else:
+        agent.hybrid_anchor_enabled = False
+        agent._hybrid_anchor = None
+        print(
+            f"[abs-gc] no hybrid anchor; execution_mode={cfg.get('execution_mode')} "
+            f"her={cfg.get('goal_relabel_mode', 'her_mix')} goal_scale={cfg.get('goal_input_scale')}"
+        )
 
     bc_summary: dict[str, Any] | None = None
     if resume_from:
@@ -212,64 +281,89 @@ def run_ghtd3_training(
             print(f"[warn] resume load partial: {exc}")
             agent.load(resume_from, strict=False)
         skip_bc = True
+    # 预热：F-MLE（绝对 GC，无教师）优先；否则 residual MLE / 规则 BC
     if bool(cfg.get("bc_pretrain", True)) and not skip_bc:
-        from .bc_pretrain import (
-            behavior_clone_low_actor,
-            bc_pretrain_high_goals,
-            collect_hierarchical_demos,
-        )
-
-        demos = collect_hierarchical_demos(
-            env,
-            agent,
-            n_windows=int(cfg.get("bc_windows", 4)),
-            seed=seed,
-            price_aware=True,
-            cfg=cfg,
-        )
         low_bc = None
+        high_bc = None
         mle_stats = None
-        # 逆动力学残差 MLE（推荐，action_residual）
-        if (
-            str(cfg.get("execution_mode", "")).lower() in ("action_residual", "tea")
-            and bool(cfg.get("mle_pretrain_residual", True))
-            and agent._hybrid_anchor is not None
+        f_mle_stats = None
+        demos_n = 0
+        # F-MLE：可行规则轨迹逆动力学（Safe Market-GHTD3 主线）
+        if bool(cfg.get("f_mle_pretrain", False)) or (
+            str(cfg.get("execution_mode", "")).lower() == "goal_conditioned"
+            and bool(cfg.get("f_mle_pretrain", True))
+            and not bool(cfg.get("hybrid_anchor", False))
         ):
-            from .residual_mle import collect_residual_mle_demos, mle_pretrain_residual
+            from .feasible_mle import f_mle_pretrain
 
-            mle_demos = collect_residual_mle_demos(
+            f_mle_stats = f_mle_pretrain(env, agent, cfg=cfg, seed=seed)
+            demos_n = int(f_mle_stats.get("n_demos", 0))
+            low_bc = f_mle_stats.get("low")
+            high_bc = f_mle_stats.get("high")
+            print(f"[F-MLE] {f_mle_stats}")
+        else:
+            from .bc_pretrain import (
+                behavior_clone_low_actor,
+                bc_pretrain_high_goals,
+                collect_hierarchical_demos,
+            )
+
+            demos = collect_hierarchical_demos(
                 env,
                 agent,
-                n_windows=int(cfg.get("mle_windows", cfg.get("bc_windows", 4))),
+                n_windows=int(cfg.get("bc_windows", 4)),
                 seed=seed,
+                price_aware=True,
                 cfg=cfg,
             )
-            mle_stats = mle_pretrain_residual(
-                agent,
-                mle_demos,
-                epochs=int(cfg.get("mle_epochs", 25)),
-                fit_mode=bool(cfg.get("mle_fit_mode", False)),
-            )
-            print(f"[residual-mle] {mle_stats}")
-        elif bool(cfg.get("bc_pretrain_low", not agent.hybrid_anchor_enabled)):
-            low_bc = behavior_clone_low_actor(
-                agent,
-                demos,
-                epochs=int(cfg.get("bc_epochs_low", 30)),
-            )
-        high_bc = None
-        if bool(cfg.get("bc_pretrain_high", True)):
-            high_bc = bc_pretrain_high_goals(
-                agent,
-                demos,
-                epochs=int(cfg.get("bc_epochs_high", 20)),
-            )
+            demos_n = int(demos["obs"].shape[0])
+            # 逆动力学残差 MLE（action_residual + Hybrid 锚，非主线）
+            if (
+                str(cfg.get("execution_mode", "")).lower() in ("action_residual", "tea")
+                and bool(cfg.get("mle_pretrain_residual", True))
+                and agent._hybrid_anchor is not None
+            ):
+                from .residual_mle import collect_residual_mle_demos, mle_pretrain_residual
+
+                mle_demos = collect_residual_mle_demos(
+                    env,
+                    agent,
+                    n_windows=int(cfg.get("mle_windows", cfg.get("bc_windows", 4))),
+                    seed=seed,
+                    cfg=cfg,
+                )
+                mle_stats = mle_pretrain_residual(
+                    agent,
+                    mle_demos,
+                    epochs=int(cfg.get("mle_epochs", 25)),
+                    fit_mode=bool(cfg.get("mle_fit_mode", False)),
+                )
+                print(f"[residual-mle] {mle_stats}")
+            elif bool(cfg.get("bc_pretrain_low", not agent.hybrid_anchor_enabled)):
+                low_bc = behavior_clone_low_actor(
+                    agent,
+                    demos,
+                    epochs=int(cfg.get("bc_epochs_low", 30)),
+                )
+            if bool(cfg.get("bc_pretrain_high", True)) and f_mle_stats is None:
+                high_bc = bc_pretrain_high_goals(
+                    agent,
+                    demos,
+                    epochs=int(cfg.get("bc_epochs_high", 20)),
+                )
         bc_summary = {
             "low": low_bc,
             "high": high_bc,
             "residual_mle": mle_stats,
-            "n_demos": int(demos["obs"].shape[0]),
+            "f_mle": f_mle_stats,
+            "n_demos": demos_n,
             "execution_mode": str(cfg.get("execution_mode")),
+            "principles": {
+                "F-MLE": f_mle_stats is not None,
+                "MSGP": bool(cfg.get("market_goal_prior", True)),
+                "MS-HER": str(cfg.get("goal_relabel_mode", "")).lower() in ("ms_her", "her_mix")
+                or bool(cfg.get("ms_her_weighting", False)),
+            },
         }
         (run_dir / "train" / "bc_summary.json").write_text(
             json.dumps(bc_summary, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
@@ -364,9 +458,17 @@ def run_ghtd3_training(
     cycle_u_tp_h: list[float] = []
     steps_in_cycle = 0
     cycle_goal = goal.copy()
+    if bool(cfg.get("ltar_enabled", False)):
+        _algo = "LTAR-TD3"
+    elif bool(cfg.get("stfr_enabled", False)) or str(
+        cfg.get("high_level_mode", "")
+    ).lower() in ("prior_only", "prior", "stfr_a", "stfr"):
+        _algo = "STFR"
+    else:
+        _algo = "SafeMarketGHTD3"
     result: dict[str, Any] = {
         "status": "running",
-        "algorithm": "SafeMarketGHTD3",
+        "algorithm": _algo,
         "requested_valid_steps": total_valid_steps,
         "ghtd3": cfg,
         "observation_dim": obs_dim,
@@ -399,19 +501,27 @@ def run_ghtd3_training(
                 cycle_act_seq = []
                 continue
 
-            # 高层：周期起点采样 5 维 Modelica goal
+            # 高层：周期起点采样 goal
+            # STFR Stage A：high_level_mode=prior_only → 仅市场/回收 prior，不采样可学高层
+            high_level_mode = str(cfg.get("high_level_mode", "learned")).lower()
+            prior_only = high_level_mode in ("prior_only", "prior", "stfr_a", "stfr")
             if steps_in_cycle == 0:
                 in_phase_a = valid_steps < phase_a_steps
                 random_goal = (
-                    in_phase_a
-                    or (valid_steps < learn_lo)
-                    or (np.random.rand() < eps)
+                    (not prior_only)
+                    and (
+                        in_phase_a
+                        or (valid_steps < learn_lo)
+                        or (np.random.rand() < eps)
+                    )
                 )
-                if in_phase_a and bool(cfg.get("market_goal_prior", True)):
+                if prior_only:
+                    goal = np.zeros(agent.goal_dim, dtype=np.float32)
+                elif in_phase_a and bool(cfg.get("market_goal_prior", True)):
                     goal = np.zeros(agent.goal_dim, dtype=np.float32)
                 else:
                     goal = agent.select_goal(obs, deterministic=False, random=random_goal)
-                if bool(cfg.get("market_goal_prior", True)):
+                if bool(cfg.get("market_goal_prior", True)) or prior_only:
                     buy = None
                     if getattr(env, "price_profile", None) is not None:
                         try:
@@ -442,12 +552,21 @@ def run_ghtd3_training(
                         strength=float(cfg.get("market_prior_strength", 0.14)),
                         th_mean=th_mean,
                     )
-                    w = scheduled_prior_weight(progress, recovery=recovery)
-                    if in_phase_a:
-                        w = max(w, 0.85)
+                    if prior_only:
+                        w = 1.0
+                    else:
+                        w = scheduled_prior_weight(progress, recovery=recovery)
+                        if in_phase_a:
+                            w = max(w, 0.85)
                     goal = blend_goal_with_prior(
                         goal, prior, prior_weight=w, goal_low=agent.goal_low, goal_high=agent.goal_high
                     )
+                # STFR：库存意图维主导 — 可选清零非库存/非套利维，避免假 goal 维干扰
+                if bool(cfg.get("stfr_inventory_goal_focus", prior_only)) and goal.size >= 5:
+                    # 保留 bat, gas, arb；压低 th / u_tp 意图（由残差+教师承担）
+                    goal = goal.copy()
+                    goal[2] *= 0.25  # th_mean intent
+                    goal[3] *= 0.25  # u_tp bias intent
                 cycle_goal = goal.copy()
                 cycle_start_obs = obs.copy()
                 cycle_ext = 0.0
@@ -573,6 +692,11 @@ def run_ghtd3_training(
                     pass
             # 终端 SOC 软屏障：回收窗内惩罚偏离初始能量库存（根因：多种子 SOC 门控失败）
             soc_pen_w = float(cfg.get("tea_terminal_soc_penalty", 0.0) or 0.0)
+            # LTAR：乘上 λ，约束越紧惩罚越强
+            if bool(getattr(agent, "ltar_enabled", False)):
+                soc_pen_w = soc_pen_w + float(cfg.get("ltar_reward_cost_coef", 0.35)) * float(
+                    getattr(agent, "lambda_soc", 0.0)
+                )
             if soc_pen_w > 0.0:
                 try:
                     H = int(cfg.get("recovery_goal_horizon_steps", 40) or 40)
@@ -652,43 +776,62 @@ def run_ghtd3_training(
             goal = goal_next
             obs = next_obs
 
-            # 周期结束：写高层转移（SMDP 外在奖励；默认 mean 归一化稳定 γ^c critic）
+            # 周期结束：写高层转移（SMDP 外在奖励；prior_only 时跳过 hi buffer）
             cycle_done = steps_in_cycle >= c or done_flag
             if cycle_done:
-                if bool(cfg.get("high_reward_normalize", True)) and steps_in_cycle > 0:
-                    hi_r = float(cycle_ext) / float(steps_in_cycle)
-                else:
-                    hi_r = float(cycle_ext)
-                ach = None
-                if len(cycle_soc_seq) >= 2:
-                    thr = 0.0
-                    for ha in cycle_act_seq:
-                        thr += abs(float(ha.get("u_battery", 0.0))) + abs(float(ha.get("caes_magnitude", 0.0)))
-                    mu_tp = float(np.mean(cycle_u_tp)) if cycle_u_tp else u_tp_act
-                    mu_h = float(np.mean(cycle_u_tp_h)) if cycle_u_tp_h else u_tp_h
-                    ach = achieved_goal_from_cycle(
-                        cycle_soc_seq[0],
-                        cycle_soc_seq[-1],
-                        mu_tp,
-                        mu_h,
-                        thr,
-                        goal_low=agent.goal_low,
-                        goal_high=agent.goal_high,
+                _hl = str(cfg.get("high_level_mode", "learned")).lower()
+                _store_hi = _hl not in ("prior_only", "prior", "stfr_a", "stfr")
+                if _store_hi:
+                    if bool(cfg.get("high_reward_normalize", True)) and steps_in_cycle > 0:
+                        hi_r = float(cycle_ext) / float(steps_in_cycle)
+                    else:
+                        hi_r = float(cycle_ext)
+                    # λ-SoC 高层：仅在外在回报上扣库存对偶项（不改底层残差）
+                    if bool(getattr(agent, "high_lambda_soc", False)) or bool(
+                        cfg.get("high_lambda_soc", False)
+                    ):
+                        try:
+                            lam = float(getattr(agent, "lambda_soc", 0.0) or 0.0)
+                            if lam > 0.0 and env.initial_soc is not None:
+                                soc_now = extract_soc_from_obs(np.asarray(obs, dtype=np.float32), 2)
+                                soc_init = extract_soc(env.initial_soc, DEFAULT_SOC_KEYS)
+                                n = min(soc_now.size, soc_init.size, 2)
+                                err = float(np.sum(np.abs(soc_now[:n] - soc_init[:n])))
+                                hi_r = float(hi_r) - 0.15 * lam * err
+                        except Exception:
+                            pass
+                    ach = None
+                    if len(cycle_soc_seq) >= 2:
+                        thr = 0.0
+                        for ha in cycle_act_seq:
+                            thr += abs(float(ha.get("u_battery", 0.0))) + abs(
+                                float(ha.get("caes_magnitude", 0.0))
+                            )
+                        mu_tp = float(np.mean(cycle_u_tp)) if cycle_u_tp else u_tp_act
+                        mu_h = float(np.mean(cycle_u_tp_h)) if cycle_u_tp_h else u_tp_h
+                        ach = achieved_goal_from_cycle(
+                            cycle_soc_seq[0],
+                            cycle_soc_seq[-1],
+                            mu_tp,
+                            mu_h,
+                            thr,
+                            goal_low=agent.goal_low,
+                            goal_high=agent.goal_high,
+                        )
+                    agent.hi_buffer.add(
+                        HighTransition(
+                            observation=np.asarray(cycle_start_obs, dtype=np.float32),
+                            goal=cycle_goal.astype(np.float32),
+                            reward_ext_sum=hi_r,
+                            next_observation=np.asarray(obs, dtype=np.float32),
+                            terminated=done_flag,
+                            soc_seq=list(cycle_soc_seq),
+                            action_seq=list(cycle_act_seq),
+                            episode_id=int(episode),
+                            cycle_idx=int(cycle_idx_ep),
+                            achieved_delta=ach,
+                        )
                     )
-                agent.hi_buffer.add(
-                    HighTransition(
-                        observation=np.asarray(cycle_start_obs, dtype=np.float32),
-                        goal=cycle_goal.astype(np.float32),
-                        reward_ext_sum=hi_r,
-                        next_observation=np.asarray(obs, dtype=np.float32),
-                        terminated=done_flag,
-                        soc_seq=list(cycle_soc_seq),
-                        action_seq=list(cycle_act_seq),
-                        episode_id=int(episode),
-                        cycle_idx=int(cycle_idx_ep),
-                        achieved_delta=ach,
-                    )
-                )
                 cycle_idx_ep += 1
                 steps_in_cycle = 0
                 cycle_u_tp = []
@@ -706,10 +849,15 @@ def run_ghtd3_training(
             if train_lo and len(agent.lo_buffer) >= learn_lo:
                 for _ in range(n_grad_lo):
                     metrics.update(agent.update_low(min(bs_lo, len(agent.lo_buffer))))
+            # STFR Stage A / prior_only：不更新高层（慢层为解析 prior）
+            _hl_mode = str(cfg.get("high_level_mode", "learned")).lower()
+            _train_high = _hl_mode not in ("prior_only", "prior", "stfr_a", "stfr")
             if (
-                not in_phase_a
+                _train_high
+                and not in_phase_a
                 and len(agent.hi_buffer) >= learn_hi
                 and (valid_steps % c == 0)
+                and n_grad_hi > 0
             ):
                 hi_grads = n_grad_hi
                 for _ in range(hi_grads):
@@ -732,7 +880,62 @@ def run_ghtd3_training(
                     step_log[-1] = entry
                 else:
                     step_log.append(entry)
+                # 可观测进度：打印 + 落盘（训练中也可判断是否在跑）
+                try:
+                    prog = {
+                        "valid_steps": int(valid_steps),
+                        "total_steps": int(total_valid_steps),
+                        "frac": float(valid_steps) / max(float(total_valid_steps), 1.0),
+                        "episode": int(episode),
+                        "r_ext": float(r_ext),
+                        "r_int": float(r_int),
+                        "eps": float(eps),
+                        "tea_progress": float(progress),
+                        "lambda_soc": float(getattr(agent, "lambda_soc", 0.0)),
+                    }
+                    (run_dir / "train" / "progress.json").write_text(
+                        json.dumps(prog, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                    print(
+                        f"[progress] step={valid_steps}/{total_valid_steps} "
+                        f"({100.0 * prog['frac']:.1f}%) ep={episode} "
+                        f"r_ext={r_ext:.3f} r_int={r_int:.3f}",
+                        flush=True,
+                    )
+                except Exception as _exc:
+                    print(f"[progress-warn] {_exc}", flush=True)
             if done_flag:
+                # LTAR / high_lambda_soc：终端库存成本 → 更新 Lagrangian λ
+                if bool(getattr(agent, "ltar_enabled", False)) or bool(
+                    getattr(agent, "high_lambda_soc", False)
+                ) or bool(cfg.get("high_lambda_soc", False)):
+                    try:
+                        terms = dict(info.get("reward_terms") or {})
+                        # 优先用环境给出的 L1 误差；失败则 1.0 惩罚
+                        l1 = terms.get("terminal_soc_l1_error")
+                        if l1 is None:
+                            l1 = terms.get("terminal_soc_l1_energy")
+                        tol = float(
+                            terms.get("terminal_soc_tolerance")
+                            or 0.06
+                        )
+                        satisfied = bool(
+                            info.get("terminal_soc_satisfied")
+                            or terms.get("terminal_soc_satisfied")
+                            or False
+                        )
+                        if l1 is not None:
+                            cost = max(0.0, float(l1) - tol)
+                        else:
+                            cost = 0.0 if satisfied else 1.0
+                        if not satisfied:
+                            cost = max(cost, 0.5)
+                        lam = agent.update_lambda_soc(cost)
+                        stats["lambda_soc"] = float(lam)
+                        stats["ltar_ep_cost"] = float(cost)
+                    except Exception:
+                        pass
                 episode += 1
                 obs, _ = reset_ep(episode)
                 steps_in_cycle = 0
@@ -768,12 +971,34 @@ def run_ghtd3_training(
         result["rule"] = rule_res
         result["price_rule"] = price_rule_res
         result["innovations"] = {
+            "principle_pack": "Safe Market-GHTD3",
+            "MSGP": bool(cfg.get("market_goal_prior", True)),
+            "MS_HER": str(cfg.get("goal_relabel_mode", "")).lower() in ("ms_her", "her_mix")
+            or bool(cfg.get("ms_her_weighting", False)),
+            "F_MLE": bool(cfg.get("f_mle_pretrain", False))
+            or (
+                str(cfg.get("execution_mode", "")).lower() == "goal_conditioned"
+                and not bool(cfg.get("hybrid_anchor", False))
+            ),
+            "GiveSafe": True,
+            "IDD": "scripts/diagnose_ghtd3_goal_sensitivity.py + eval_idd_decoupling.py",
+            "high_lambda_soc": bool(cfg.get("high_lambda_soc", False)),
+            "tariff_aligned_c": bool(cfg.get("tariff_aligned_c", False)),
+            "ltar_enabled": bool(cfg.get("ltar_enabled", False)),
+            "lambda_soc_final": float(getattr(agent, "lambda_soc", 0.0)),
+            "stfr_enabled": bool(cfg.get("stfr_enabled", False)),
+            "high_level_mode": str(cfg.get("high_level_mode", "learned")),
+            "trust_region_residual": str(cfg.get("execution_mode", "")).lower()
+            in ("action_residual", "tea", "ltar")
+            and not bool(cfg.get("tea_expandable", False)),
+            "mode_factorized_teacher_lock": not bool(cfg.get("residual_mode_override", False)),
             "smdp_gamma_c": True,
             "modelica_goal_dim": int(agent.goal_dim),
             "hybrid_anchor": bool(agent.hybrid_anchor_enabled),
+            "execution_mode": str(cfg.get("execution_mode", "")),
             "market_goal_prior": bool(cfg.get("market_goal_prior", True)),
             "market_prior_annealing": True,
-            "her_mix_goal_relabel": str(cfg.get("goal_relabel_mode", "her_mix")),
+            "goal_relabel_mode": str(cfg.get("goal_relabel_mode", "her_mix")),
             "phase_a_steps": phase_a_steps,
             "residual_train_start": residual_train_start,
             "intrinsic_alpha_schedule": [alpha0, alpha1],

@@ -13,8 +13,10 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -157,11 +159,20 @@ class FmuSession:
     def _ensure_extracted(self) -> str:
         """解压 FMU 包（懒加载，仅一次）。
 
+        解压到 **本会话私有** 目录（在 OPTIMAL_DEMO_TMP / job TEMP 下 mkdtemp），
+        避免多进程共写同一解压树；配合 resolve_fmu_path 的每 job .fmu 副本。
+
         Returns:
             解压目录路径字符串。
         """
         if self._unzipdir is None:
-            self._unzipdir = extract(str(self.fmu_path))
+            # 优先 job 隔离 TMP，否则系统临时目录
+            base = os.environ.get("OPTIMAL_DEMO_TMP") or os.environ.get("TEMP") or os.environ.get("TMP")
+            parent = Path(base) if base else Path(tempfile.gettempdir())
+            parent = parent / "fmu_unzip"
+            parent.mkdir(parents=True, exist_ok=True)
+            unzipdir = tempfile.mkdtemp(prefix="fmu_", dir=str(parent))
+            self._unzipdir = str(extract(str(self.fmu_path), unzipdir=unzipdir))
         return self._unzipdir
 
     def reset(self, start_time: float = 0.0) -> dict[str, float]:

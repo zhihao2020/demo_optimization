@@ -1,0 +1,50 @@
+[
+  {
+    "seed": 1,
+    "season": "winter",
+    "start_time": 0.0,
+    "b0_reward": 67.47903658558717,
+    "b0_soc": true,
+    "td3_reward": 91.85429322170188,
+    "td3_soc": true,
+    "td3_caes_mwh": 8969.2875,
+    "ghtd3_reward": 123.12393897489999,
+    "ghtd3_soc": true,
+    "ghtd3_caes_mwh": 1471.1312925070524,
+    "ghtd3_bat_mwh": 4060.2206875383854,
+    "delta_vs_td3": 31.269645753198105,
+    "delta_pct_vs_td3": 34.04266110646008
+  },
+  {
+    "seed": 1,
+    "season": "transition",
+    "start_time": 7862400.0,
+    "b0_reward": 52.74132403535289,
+    "b0_soc": true,
+    "td3_reward": 24.153049493795738,
+    "td3_soc": false,
+    "td3_caes_mwh": 3312.0,
+    "ghtd3_reward": 95.52192998219151,
+    "ghtd3_soc": true,
+    "ghtd3_caes_mwh": 4486.346917533875,
+    "ghtd3_bat_mwh": 4144.084783382714,
+    "delta_vs_td3": 71.36888048839577,
+    "delta_pct_vs_td3": 295.4860027373707
+  },
+  {
+    "seed": 1,
+    "season": "summer",
+    "start_time": 15724800.0,
+    "b0_reward": 20.733669250066544,
+    "b0_soc": true,
+    "td3_reward": 52.68700328723121,
+    "td3_soc": true,
+    "td3_caes_mwh": 9353.2125,
+    "ghtd3_reward": 87.08672222186375,
+    "ghtd3_soc": true,
+    "ghtd3_caes_mwh": 1269.6886970289052,
+    "ghtd3_bat_mwh": 4560.788279399276,
+    "delta_vs_td3": 34.399718934632546,
+    "delta_pct_vs_td3": 65.29071077946348
+  }
+]
