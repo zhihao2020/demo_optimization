@@ -68,15 +68,19 @@ Multi-energy system \sep hierarchical reinforcement learning \sep HMSD \sep safe
     \multicolumn{4}{@{}l}{\textit{Plant and market variables}} \\
     \midrule
     $P_t^{\mathrm{th/bat/caes}}$ & thermal / battery / CAES electric power &
-    $P_t^{\mathrm{w/pv/load/grid}}$ & wind / PV / load / grid power \\
-    $s_{t,\mathrm{bat/gas}}$ & battery and CAES gas state-of-charge (SoC) &
+    $P_t^{\mathrm{w/pv}},P_t^{\mathrm{load/grid}}$ & wind / PV / load / grid power \\
+    $P_t^{\mathrm{curt}},P_t^{\mathrm{uns}}$ & curtailment and unserved power &
+    $G_t,v_t,T_t^{\mathrm{air}}$ & irradiance, wind speed, ambient temperature \\
+    $s_{t,\mathrm{bat/gas}}$ & battery and CAES gas SoC &
     $s_{t,\mathrm{hot/cold}}$ & CAES hot/cold thermal inventories \\
+    $p_t,T_t^{\mathrm{gas}}$ & CAES gas pressure and temperature &
+    $\eta,E_{\mathrm{cap}},p_{\mathrm{norm}}$ & battery efficiency, energy capacity, gas rating \\
     $\lambda_t^{\mathrm{buy/sell}}$ & TOU purchase / sale prices &
     $E_t^{\mathrm{buy/sell}}$ & grid purchase / sale energy \\
-    $\Delta J_t,\,J$ & hourly cash-flow increment and weekly net objective &
-    $u_{\mathrm{tp}},u_{\mathrm{bat}}$ & thermal load rate and battery command \\
+    $\Delta J_t,\,J,\,C_t^{\mathrm{op}}$ & cash-flow increment, weekly objective, O\&M cost &
+    $u_{\mathrm{tp}},u_{\mathrm{bat}},u_{\mathrm{caes}}$ & thermal / battery / CAES dispatch commands \\
     $m_{\mathrm{caes}},\mu_{\mathrm{caes}}$ & CAES mode and continuous magnitude &
-     & \\
+    $\mathcal{F}(s)$ & dynamic feasible action set \\
     \midrule
     \multicolumn{4}{@{}l}{\textit{Hierarchical RL}} \\
     \midrule
@@ -147,7 +151,7 @@ The main contributions of this paper are as follows.
 \item \textbf{Closed-loop evidence.} Multi-seed three-season FMU evaluations report episode rewards and physical cash-flow $J$, large paired gains over single-layer TD3 under the same budget, classical optimisers that often fail to beat a conservative rule on the twin, feasibility/safety statistics under GiveSafe, and matched multi-seed ablations that diagnose short-budget module behaviour complementary to the main ranking.
 \end{enumerate}
 
-The remainder of this paper is organised as follows. Section~\ref{sec:system} describes the multi-energy plant and TOU market. Section~\ref{sec:problem} formulates generation, conversion and storage models, operating constraints and the economic objective, and casts closed-loop control as a hybrid-action MDP. Section~\ref{sec:method} presents the HMSD solution methodology. Section~\ref{sec:results} reports simulation settings, comparative results and sensitivity analyses. Section~\ref{sec:conclusion} concludes.
+The remainder of this paper is organised as follows. Section~\ref{sec:system} describes the multi-energy plant and TOU market. Section~\ref{sec:problem} formulates plant physics (generation, conversion, multi-tank CAES and battery dynamics), bus balance with curtailment/unserved load, operating constraints and the economic objective, and casts closed-loop control as a hybrid-action MDP. Section~\ref{sec:method} presents the HMSD solution methodology. Section~\ref{sec:results} reports simulation settings, comparative results and sensitivity analyses. Section~\ref{sec:conclusion} concludes.
 
 % =====================================================================
 \section{System description}
@@ -190,7 +194,7 @@ The plant is a price-taker under Shandong industrial/commercial TOU purchase pri
 \label{sec:problem}
 % =====================================================================
 
-High-fidelity plant dynamics (thermal unit, battery, multi-tank CAES, renewables and grid interface) are advanced inside a Modelica--FMU twin with communication interval $\tau_s=1$~h. This section states the \emph{control-interface} models and constraints used by optimisers and RL agents. Component sets are
+This section formulates the multi-energy plant physics, operating constraints and market objective that define the weekly scheduling problem. Continuous-time differential--algebraic equations of the plant (thermal unit, battery, multi-tank CAES, renewables and grid interface) are integrated inside a Modelica--FMU digital twin with communication interval $\tau_s=1$~h; the closed-form relations below are the dispatch-level models implemented by that twin and used by optimisers and RL agents. Throughout the paper we adopt an \emph{academic sign convention}: renewable and thermal generation are non-negative when injecting power, battery/CAES charge is positive and discharge is negative, and grid import is positive. The FMU export uses the opposite generation-negative convention; Python normalises magnitudes before learning and evaluation. Component sets are
 \begin{equation}
 \begin{aligned}
 I_1&=\{\mathrm{w},\mathrm{pv}\},\quad
@@ -205,21 +209,44 @@ I&=I_1\cup I_2\cup I_3.
 
 \subsubsection{Photovoltaics}
 
-Available PV power is driven by irradiance and temperature resource tables and realised by the twin as
+PV available power depends on plane-of-array irradiance $G_t$, module surface temperature $T_t^{\mathrm{pv}}$ and nameplate capacity $P_n^{\mathrm{pv}}=260$~MW. With standard irradiance $G_{\mathrm{stc}}=1000$~W/m$^2$, standard temperature $T_{\mathrm{stc}}=298.15$~K, temperature coefficient $K_T=0.005$~K$^{-1}$ and conversion efficiency $\eta^{\mathrm{pv}}=0.95$,
 \begin{equation}
-0\le P_t^{\mathrm{pv}}\le P_t^{\mathrm{pv,avail}}(I_t,T_t),
+P_t^{\mathrm{pv,avail}}
+=
+\max\Bigl(
+P_n^{\mathrm{pv}}
+\frac{G_t}{G_{\mathrm{stc}}}
+\bigl[1-K_T\bigl(T_t^{\mathrm{pv}}-T_{\mathrm{stc}}\bigr)\bigr]
+\eta^{\mathrm{pv}},\,0\Bigr).
 \label{eq:pv}
 \end{equation}
-where $I_t$ and $T_t$ denote irradiance and ambient temperature. Curtailment is non-negative and absorbed in the electric balance.
+Module temperature is obtained from ambient temperature $T_t^{\mathrm{air}}$, wind speed $v_t$ and irradiance by the twin correlation
+\begin{equation}
+T_t^{\mathrm{pv}}
+=
+T_t^{\mathrm{air}}
++
+0.0138\bigl(1+0.031(T_t^{\mathrm{air}}-273.15)\bigr)
+\bigl(1-0.042\,v_t\bigr)G_t.
+\label{eq:pv-temp}
+\end{equation}
+Actual injected PV power after bus curtailment satisfies $0\le P_t^{\mathrm{pv}}\le P_t^{\mathrm{pv,avail}}$.
 
 \subsubsection{Wind turbines}
 
-Wind available power follows wind-speed tables. The twin injects
+Wind available power follows a cubic power curve with cut-in, rated and cut-out speeds $v_{\mathrm{ci}}=3$~m/s, $v_{\mathrm{r}}=10$~m/s and $v_{\mathrm{co}}=15$~m/s on capacity $P_n^{\mathrm{w}}=300$~MW:
 \begin{equation}
-0\le P_t^{\mathrm{w}}\le P_t^{\mathrm{w,avail}}(v_t),
+P_t^{\mathrm{w,avail}}
+=
+\begin{cases}
+0, & 0\le v_t < v_{\mathrm{ci}}\ \text{or}\ v_t\ge v_{\mathrm{co}},\\[2pt]
+P_n^{\mathrm{w}}\,\dfrac{v_t^{3}-v_{\mathrm{ci}}^{3}}{v_{\mathrm{r}}^{3}-v_{\mathrm{ci}}^{3}},
+& v_{\mathrm{ci}}\le v_t < v_{\mathrm{r}},\\[6pt]
+P_n^{\mathrm{w}}, & v_{\mathrm{r}}\le v_t < v_{\mathrm{co}}.
+\end{cases}
 \label{eq:wt}
 \end{equation}
-with $v_t$ the wind speed. Turbine pitch is not a free decision variable in this twin.
+Turbine pitch is not a free decision variable. Actual wind injection obeys $0\le P_t^{\mathrm{w}}\le P_t^{\mathrm{w,avail}}$.
 
 \subsection{Energy conversion units}
 
@@ -232,17 +259,26 @@ P_t^{\mathrm{th}} = u_{\mathrm{tp},t}\, P_{\mathrm{cap}}^{\mathrm{th}},
 u_{\min}\le u_{\mathrm{tp},t}\le u_{\max},
 \label{eq:th}
 \end{equation}
-with $P_{\mathrm{cap}}^{\mathrm{th}}=150$~MW, $u_{\min}=P_{\min}^{\mathrm{th}}/P_{\mathrm{cap}}^{\mathrm{th}}=1/3$ and $u_{\max}=1$ (no shut-down). Ramping is constrained in~\eqref{eq:box}. Operating cost contributes to $C_t^{\mathrm{op}}$ in~\eqref{eq:dJ}.
+with $P_{\mathrm{cap}}^{\mathrm{th}}=150$~MW, $P_{\min}^{\mathrm{th}}=50$~MW, $u_{\min}=P_{\min}^{\mathrm{th}}/P_{\mathrm{cap}}^{\mathrm{th}}=1/3$ and $u_{\max}=1$ (no shut-down). Inter-hour ramping is enforced on the actual thermal power,
+\begin{equation}
+\bigl|P_t^{\mathrm{th}}-P_{t-1}^{\mathrm{th}}\bigr|
+\le
+\Delta_{\mathrm{th}}^{\max}
+=
+r_{\max}\,P_{\mathrm{cap}}^{\mathrm{th}}\,\tau_s,
+\label{eq:th-ramp}
+\end{equation}
+where $r_{\max}=0.0025/60$~s$^{-1}$ is the Modelica load-rate limit (equivalently $0.15$~p.u.\ per hour). Fuel and O\&M costs enter $C_t^{\mathrm{op}}$ in~\eqref{eq:dJ}.
 
 \subsubsection{CAES conversion}
 
-CAES is a hybrid conversion--storage unit. The discrete mode and continuous magnitude
+CAES is a hybrid conversion--storage plant. The hybrid command comprises a discrete mode and continuous magnitude
 \begin{equation}
 m_{\mathrm{caes},t}\in\{\mathrm{charge},\mathrm{idle},\mathrm{discharge}\},\qquad
-\mu_{\mathrm{caes},t}\in[0,1]
+\mu_{\mathrm{caes},t}\in[0,1],
 \label{eq:caes-cmd}
 \end{equation}
-map to a signed power command on capacity $P_{\mathrm{cap}}^{\mathrm{caes}}=150$~MW,
+mapped to a signed electric power command on capacity $P_{\mathrm{cap}}^{\mathrm{caes}}=150$~MW,
 \begin{equation}
 P_t^{\mathrm{caes}}
 =
@@ -253,33 +289,110 @@ P_t^{\mathrm{caes}}
 \end{cases}
 \label{eq:caes-p}
 \end{equation}
-subject to minimum-run bands equivalent to $u_{\mathrm{caes}}\in[-1,-0.33]\cup\{0\}\cup[0.86,1]$ and mode locks in the FMU. Gas/thermal tank thermodynamics are integrated inside the twin; the RL interface only observes SoC inventories and electric power.
+or equivalently $P_t^{\mathrm{caes}}=u_{\mathrm{caes},t}P_{\mathrm{cap}}^{\mathrm{caes}}$ with the non-convex legal set
+\begin{equation}
+u_{\mathrm{caes},t}
+\in
+[-1,-0.33]\cup\{0\}\cup[0.86,1]
+\label{eq:caes-legal}
+\end{equation}
+encoding minimum compressor/expander loading. Mode locks and minimum-run dwell constraints further restrict admissible transitions of $m_{\mathrm{caes}}$ inside the twin and the GiveSafe oracle. Electric power is realised as planned ($P^{\mathrm{act}}=P^{\mathrm{plan}}$); mass-flow set-points of air and thermal fluid scale with $|P_t^{\mathrm{caes}}|$ and reverse direction between compression and expansion.
 
 \subsection{Energy storage units}
 
-Battery power is commanded by $u_{\mathrm{bat},t}\in[-1,1]$ on capacity $P_{\mathrm{cap}}^{\mathrm{bat}}=100$~MW:
+\subsubsection{Battery}
+
+Battery power is commanded by $u_{\mathrm{bat},t}\in[-1,1]$ on $P_{\mathrm{cap}}^{\mathrm{bat}}=100$~MW:
 \begin{equation}
 P_t^{\mathrm{bat}} = u_{\mathrm{bat},t}\, P_{\mathrm{cap}}^{\mathrm{bat}}.
 \label{eq:bat-p}
 \end{equation}
-The interface SoC recursion (charge positive) with efficiency $\eta$ and energy capacity $E_{\mathrm{cap}}$ is
+With energy capacity $E_{\mathrm{cap}}=500$~MWh and discharge efficiency $\eta=0.85$ (charge path lossless as in the twin), the SoC dynamics are
+\begin{equation}
+\frac{\mathrm{d}s_{\mathrm{bat}}}{\mathrm{d}t}
+=
+\begin{cases}
+P^{\mathrm{bat}}/E_{\mathrm{cap}}, & P^{\mathrm{bat}}\ge 0,\\[2pt]
+P^{\mathrm{bat}}/(E_{\mathrm{cap}}\,\eta), & P^{\mathrm{bat}}<0,
+\end{cases}
+\label{eq:bat-soc}
+\end{equation}
+or, in hourly form with $[x]_+=\max(x,0)$ and $[x]_-=\max(-x,0)$,
 \begin{equation}
 s_{t+1,\mathrm{bat}}
 =
 s_{t,\mathrm{bat}}
 +
-\tau_s\frac{\eta^{\mathrm{ch}}[P_t^{\mathrm{bat}}]_+ - [P_t^{\mathrm{bat}}]_-/\eta^{\mathrm{dis}}}{E_{\mathrm{cap}}},
-\label{eq:bat-soc}
+\tau_s\frac{[P_t^{\mathrm{bat}}]_+ - [P_t^{\mathrm{bat}}]_-/\eta}{E_{\mathrm{cap}}}.
+\label{eq:bat-soc-d}
 \end{equation}
-with $\eta^{\mathrm{ch}}=\eta^{\mathrm{dis}}=0.85$, $E_{\mathrm{cap}}=500$~MWh and $[x]_+=\max(x,0)$, $[x]_-=\max(-x,0)$. Primary energy inventories for weekly recovery are $s_{t,\mathrm{bat}}$ and CAES gas SoC $s_{t,\mathrm{gas}}$; hot/cold inventories $s_{t,\mathrm{hot}},s_{t,\mathrm{cold}}$ are process states used in goals and shaping. All inventories obey~\eqref{eq:socbox}.
+Inventory bounds are $s_{\mathrm{bat}}\in[0.1,0.9]$.
+
+\subsubsection{CAES inventories}
+
+CAES energy is stored as compressed air and two thermal fluid tanks. Gas SoC is pressure-based with rating $p_{\mathrm{norm}}=100$~bar,
+\begin{equation}
+s_{t,\mathrm{gas}}
+=
+\frac{p_t}{p_{\mathrm{norm}}},
+\qquad
+\underline{s}_{\mathrm{gas}}\le s_{t,\mathrm{gas}}\le \overline{s}_{\mathrm{gas}},
+\label{eq:gas-soc}
+\end{equation}
+with $(\underline{s}_{\mathrm{gas}},\overline{s}_{\mathrm{gas}})=(0.6,1.0)$. Fixed-volume gas-tank mass and energy balances (ideal-air medium) evolve pressure $p$ and specific enthalpy $h$ under port mass flows $\dot m_{\mathrm{a}},\dot m_{\mathrm{b}}$ and wall heat $q_{\mathrm{w}}$,
+\begin{align}
+V\bigl(\partial_p\rho\,\dot p+\partial_h\rho\,\dot h\bigr)
+&=
+\dot m_{\mathrm{a}}+\dot m_{\mathrm{b}},
+\label{eq:gas-mass}\\
+V\bigl(-\dot p+\partial_p\rho\,\dot p\,h+\partial_h\rho\,\dot h\,h+\rho\dot h\bigr)
+&=
+\dot m_{\mathrm{a}}h_{\mathrm{a}}^{\mathrm{in}}
++
+\dot m_{\mathrm{b}}h_{\mathrm{b}}^{\mathrm{out}}
++
+q_{\mathrm{w}},
+\label{eq:gas-energy}
+\end{align}
+with $q_{\mathrm{w}}=\alpha_{\mathrm{w}}S(T_{\mathrm{w}}-T)$ and gas temperature $T=T(p,h)$ (clipped at $253$~K). Hot and cold tanks store water at fixed pressure with free surface area $A$ and total volume $V_0=1.5\times10^{4}$~m$^3$. Level-based inventories
+\begin{equation}
+s_{t,i}
+=
+\frac{\ell_{t,i}}{V_0/A},
+\qquad
+i\in\{\mathrm{hot},\mathrm{cold}\},
+\label{eq:thermal-soc}
+\end{equation}
+obey mass and enthalpy balances when within $(\underline{s}_i,\overline{s}_i)=(0.05,0.95)$,
+\begin{equation}
+\dot m_i=\dot m_{\mathrm{a},i}+\dot m_{\mathrm{b},i},\qquad
+m_i\dot h_i
+=
+\dot m_{\mathrm{a},i}h_{\mathrm{a},i}^{\mathrm{in}}
++
+\dot m_{\mathrm{b},i}h_{\mathrm{b},i}^{\mathrm{out}}+Q_{\mathrm{gen},i}.
+\label{eq:tank-bal}
+\end{equation}
+Compression ($P^{\mathrm{caes}}>0$) charges the gas inventory and drives the thermal circuit one way; expansion ($P^{\mathrm{caes}}<0$) reverses the flows. Primary weekly recovery inventories are $s_{\mathrm{bat}}$ and $s_{\mathrm{gas}}$; hot/cold SoCs and temperatures $(T^{\mathrm{hot}},T^{\mathrm{cold}})$ are process states used in hierarchical goals and shaping. All inventories obey~\eqref{eq:socbox}.
 
 \subsection{System operation constraints}
 
-Electric power balance, box/ramp limits, inventory bounds and grid exchange limits are
+The electric bus closes the power balance with curtailment and unserved load. Let $P_t^{\mathrm{w,avail}},P_t^{\mathrm{pv,avail}}$ be renewable availability and $P_t^{\mathrm{load,plan}}$ the scheduled demand. Residual power after dispatchable assets is absorbed first by curtailing wind, then PV; residual deficit is met by demand response down to $20\%$ of plan, with remainder counted as unserved:
 \begin{equation}
-P_t^{\mathrm{th}}+P_t^{\mathrm{bat}}+P_t^{\mathrm{caes}}+P_t^{\mathrm{w}}+P_t^{\mathrm{pv}}+P_t^{\mathrm{grid}}=P_t^{\mathrm{load}},
+\begin{aligned}
+&P_t^{\mathrm{th}}+P_t^{\mathrm{bat}}+P_t^{\mathrm{caes}}
++P_t^{\mathrm{w}}+P_t^{\mathrm{pv}}+P_t^{\mathrm{grid}}
+=
+P_t^{\mathrm{load}},\\
+&0\le P_t^{\mathrm{w}}\le P_t^{\mathrm{w,avail}},\quad
+0\le P_t^{\mathrm{pv}}\le P_t^{\mathrm{pv,avail}},\\
+&P_t^{\mathrm{curt}}\ge 0,\quad
+P_t^{\mathrm{uns}}\ge 0,\quad
+0.2\,P_t^{\mathrm{load,plan}}\le P_t^{\mathrm{load}}\le P_t^{\mathrm{load,plan}}.
+\end{aligned}
 \label{eq:balance}
 \end{equation}
+Here $P_t^{\mathrm{curt}}$ is residual surplus after wind-then-PV curtailment and $P_t^{\mathrm{uns}}$ is residual shortfall after load reduction. Box and ramp limits, inventory bounds and grid exchange limits are
 \begin{equation}
 \underline{P}_{i}\le P_t^{i}\le \overline{P}_{i},\qquad
 \bigl|P_t^{i}-P_{t-1}^{i}\bigr|\le \Delta_i^{\max},
@@ -291,10 +404,10 @@ P_t^{\mathrm{th}}+P_t^{\mathrm{bat}}+P_t^{\mathrm{caes}}+P_t^{\mathrm{w}}+P_t^{\
 \label{eq:socbox}
 \end{equation}
 \begin{equation}
-P_{\mathrm{grid}}^{\min}\le P_t^{\mathrm{grid}}\le P_{\mathrm{grid}}^{\max}.
+P_{\mathrm{grid}}^{\min}\le P_t^{\mathrm{grid}}\le P_{\mathrm{grid}}^{\max},
 \label{eq:grid}
 \end{equation}
-Actions that would violate~\eqref{eq:balance}--\eqref{eq:grid} or CAES mode locks lie outside the dynamic feasible set $\mathcal{F}(s_t)$.
+with $(P_{\mathrm{grid}}^{\min},P_{\mathrm{grid}}^{\max})=(-500,500)$~MW. Actions that would violate~\eqref{eq:balance}--\eqref{eq:grid},~\eqref{eq:caes-legal} or CAES mode locks lie outside the dynamic feasible set $\mathcal{F}(s_t)$.
 
 Weekly operation further imposes an energy-SoC recovery gate on primary inventories,
 \begin{equation}
@@ -308,28 +421,37 @@ with $(w_{\mathrm{bat}},w_{\mathrm{gas}})=(1.5,1.0)$ and $\varepsilon=0.06$.
 
 \subsection{Optimization objectives}
 
-Let $t=0,\ldots,T-1$ index hours in a weekly episode ($T=168$). Denote purchase/sale energies by $E_t^{\mathrm{buy}},E_t^{\mathrm{sell}}$ (MWh), TOU prices by $\lambda_t^{\mathrm{buy}},\lambda_t^{\mathrm{sell}}$, and device operating costs by $C_t^{\mathrm{op}}$. The incremental cash flow and weekly objective are
+Let $t=0,\ldots,T-1$ index hours in a weekly episode ($T=168$). Grid purchase/sale energies are $E_t^{\mathrm{buy}}=\tau_s[P_t^{\mathrm{grid}}]_+$ and $E_t^{\mathrm{sell}}=\tau_s[P_t^{\mathrm{grid}}]_-$ (MWh). Device operating costs $C_t^{\mathrm{op}}$ aggregate thermal fuel/O\&M and storage cycling cash-flow increments exported by the twin. Under price-taker TOU prices $\lambda_t^{\mathrm{buy}},\lambda_t^{\mathrm{sell}}$, the hourly net cash-flow increment and weekly objective are
 \begin{equation}
-\Delta J_t = \lambda_t^{\mathrm{sell}} E_t^{\mathrm{sell}} - \lambda_t^{\mathrm{buy}} E_t^{\mathrm{buy}} - C_t^{\mathrm{op}},
+\Delta J_t
+=
+\lambda_t^{\mathrm{sell}} E_t^{\mathrm{sell}}
+-
+\lambda_t^{\mathrm{buy}} E_t^{\mathrm{buy}}
+-
+C_t^{\mathrm{op}},
 \label{eq:dJ}
 \end{equation}
 \begin{equation}
-\max\; J = \sum_{t=0}^{T-1} \Delta J_t
+\max_{\{a_t\}}\; J = \sum_{t=0}^{T-1} \Delta J_t
 \quad\text{s.t.}\quad
-\eqref{eq:balance}\text{--}\eqref{eq:soc}.
+\eqref{eq:pv}\text{--}\eqref{eq:soc},\
+a_t\in\mathcal{F}(s_t).
 \label{eq:J}
 \end{equation}
-Closed-loop evaluation ranks policies by $J$ and gate~\eqref{eq:soc}; training maximises discounted extrinsic rewards built from $\Delta J_t$ and SoC shaping (Section~\ref{sec:reward}).
+In closed-loop evaluation, grid settlement uses exogenous TOU tables while non-grid device cash-flows follow FMU cumulative economic outputs. Policies are ranked by $J$ and gate~\eqref{eq:soc}; training maximises discounted extrinsic rewards built from $\Delta J_t$ and SoC shaping (Section~\ref{sec:reward}).
 
 \subsection{Hybrid-action MDP}
 
-Closed-loop control is cast as an MDP $\mathcal{M}=\langle\mathcal{S},\mathcal{A},P,r,\gamma\rangle$ with $\gamma=0.99$. The state concatenates inventories, powers, prices and TOU features,
+Closed-loop control is cast as an MDP $\mathcal{M}=\langle\mathcal{S},\mathcal{A},P,r,\gamma\rangle$ with $\gamma=0.99$. The state concatenates inventories, thermo states, powers, prices and TOU features,
 \begin{equation}
 \begin{aligned}
 s_t=\bigl[&
-s_{t,\mathrm{bat}},s_{t,\mathrm{gas}},s_{t,\mathrm{hot}},s_{t,\mathrm{cold}},\\
+s_{t,\mathrm{bat}},s_{t,\mathrm{gas}},s_{t,\mathrm{hot}},s_{t,\mathrm{cold}},
+p_t,T_t^{\mathrm{gas}},T_t^{\mathrm{hot}},T_t^{\mathrm{cold}},\\
 &P_t^{\mathrm{th}},P_t^{\mathrm{bat}},P_t^{\mathrm{caes}},P_t^{\mathrm{grid}},
-P_t^{\mathrm{w}},P_t^{\mathrm{pv}},P_t^{\mathrm{load}},\\
+P_t^{\mathrm{w}},P_t^{\mathrm{pv}},P_t^{\mathrm{load}},
+P_t^{\mathrm{curt}},P_t^{\mathrm{uns}},\\
 &\lambda_t^{\mathrm{buy}},\ \text{TOU band features},\ \text{optional forecast residuals}
 \bigr],
 \end{aligned}
@@ -340,7 +462,7 @@ and the hybrid action is
 a_t = \bigl(u_{\mathrm{tp},t},\, u_{\mathrm{bat},t},\, m_{\mathrm{caes},t},\, \mu_{\mathrm{caes},t}\bigr)\in\mathcal{A},
 \label{eq:action}
 \end{equation}
-with continuous channels scaled to physical limits and $m_{\mathrm{caes}}\in\{\mathrm{charge},\mathrm{idle},\mathrm{discharge}\}$. Transitions $P$ are induced by one FMU hour under GiveSafe-filtered actions.
+with continuous channels scaled to physical limits and $m_{\mathrm{caes}}\in\{\mathrm{charge},\mathrm{idle},\mathrm{discharge}\}$. Transitions are induced by one FMU hour that integrates~\eqref{eq:pv}--\eqref{eq:tank-bal} under GiveSafe-filtered actions $a_t\in\mathcal{F}(s_t)$.
 
 \subsection{Reward function for learning}
 \label{sec:reward}
@@ -373,7 +495,7 @@ r_t^{\mathrm{ext}}
 = \mathrm{clip}\bigl(r_t^{\mathrm{econ}}+r_t^{\mathrm{shape}}+r_t^{\mathrm{term}},\, r_{\min},\, r_{\max}\bigr),
 \label{eq:rext}
 \end{equation}
-with $(r_{\min},r_{\max})=(-25,25)$. Figure~\ref{fig:reward} summarises the stack.
+with $(r_{\min},r_{\max})=(-25,25)$. Figure~\ref{fig:reward} summarises the stack. Classical programmes must convexify~\eqref{eq:caes-legal} and the CAES thermo coupling; HMSD (Section~\ref{sec:method}) optimises~\eqref{eq:J} by closed-loop interaction with the twin.
 
 \begin{figure}[!htbp]
 \centering
