@@ -144,3 +144,31 @@ FMU 路径与缓存见 `src/config/paths.py` / `env_config.yaml`；仅画图时�
 ---
 
 *生成目的：跨机论文复现；与 `Paper/main.tex` 当前主线一致。*
+
+## 6. Surrogate weekly optimality gap
+
+- Script: `scripts/eval_optimality_gap.py`
+- Module: `src/optimization/weekly_surrogate_ub.py`
+- Output: `runs/paper_optimality_gap.json` / `.md`
+- Paper: `sec:opt-gap`, `tab:gap` — same-proxy \(\mathrm{gap}_{\mathrm{surr}}\) (not a rigorous FMU global bound).
+- Winter HMSD gap \(\approx8\%\) of \(J_{\mathrm{surr}}^\star\); transition \(\approx23\%\); summer \(\approx20\%\).
+
+## 6b. GiveSafe offline footprint + stress
+
+- Offline table: `runs/paper_givesafe_stats.json` (seed-1 weekly CSVs).
+- Action-noise stress (σ=0.4, 25% random CAES mode): no shield → \(J\approx0\); with GiveSafe → \(J\approx1.24\times10^{7}\) CNY. See `docs/P0_无GiveSafe与多seed结果.md`.
+- Principle write-up (MIF framing beyond packaging Cui): `docs/principle_innovation_MIF_HRL.md`.
+
+## 7. Matched multi-seed ablations (15k x 3 seeds)
+
+Source: 
+uns/paper_ablation_multiseed_15k.json. Protocol: full / w/o MSGP / w/o MS-HER / w/o F-MLE, each seed 0-2, 1.5e4 steps.
+
+| Variant | Overall mean±std | Winter | Transition | Summer | SoC 9-cells |
+|---------|------------------|--------|------------|--------|-------------|
+| Full | 85.3±9.1 | 109.7±5.2 (3/3) | 76.6±39.7 (2/3) | 69.6±9.1 (2/3) | 7/9 |
+| w/o MSGP | 94.3±7.7 | 117.5±2.4 (3/3) | 95.2±11.6 (2/3) | 70.3±10.1 (2/3) | 7/9 |
+| w/o MS-HER | 85.9±24.0 | 106.3±13.3 (3/3) | 86.4±30.4 (2/3) | 65.0±29.1 (3/3) | 8/9 |
+| w/o F-MLE | 95.2±7.9 | 114.5±4.5 (3/3) | 96.1±11.0 (3/3) | 75.1±12.1 (3/3) | 9/9 |
+
+Main economic table remains 35k full multi-seed; 15k ablations are short-budget diagnostics only.

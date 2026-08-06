@@ -1,0 +1,58 @@
+# 设备物理参数：全部来自 Modelica 实例，禁止随意经验填充。
+# 路径相对于 resources/。
+
+battery:
+  P_cap_W: 1.0e8
+  E_cap_J: 1.8e12  # 500e6 * 3600
+  eta: 0.85
+  SOC_min: 0.1
+  SOC_max: 0.9
+  SOC_safe_min: 0.15
+  SOC_safe_max: 0.85
+  source: "resources/Example/TypicalScene/PowerSystem_8760h.mo battery; TypicalScenarios.Battery defaults"
+
+thermal:
+  P_cap_W: 1.5e8
+  P_min_W: 5.0e7
+  P_max_W: 1.5e8
+  rate_max_per_s: 4.1666666666666664e-5  # 0.0025/60
+  u_min: 0.3333333333333333
+  u_max: 1.0
+  note: "Modelica 爬坡方程已注释；Python FeasibilityOracle 仍强制 rate_max"
+  source: "PowerSystem_8760h.mo thermalPower; TypicalScenarios.ThermalPower.rate_max"
+
+caes:
+  P_cap_W: 1.5e8
+  gas_SOC_min: 0.6
+  gas_SOC_max: 1.0
+  gas_SOC_safe_min: 0.65
+  gas_SOC_safe_max: 0.95
+  hot_SOC_min: 0.05
+  hot_SOC_max: 0.95
+  hot_SOC_safe_min: 0.10
+  hot_SOC_safe_max: 0.90
+  cold_SOC_min: 0.05
+  cold_SOC_max: 0.95
+  cold_SOC_safe_min: 0.10
+  cold_SOC_safe_max: 0.90
+  gas_pressure_min_Pa: 6.5e6
+  gas_pressure_max_Pa: 9.5e6
+  gas_temp_min_K: 253.0
+  gas_temp_max_K: 450.0
+  hot_temp_min_K: 280.0
+  hot_temp_max_K: 550.0
+  cold_temp_min_K: 250.0
+  cold_temp_max_K: 320.0
+  discharge_u_min: -1.0
+  discharge_u_max: -0.33
+  charge_u_min: 0.86
+  charge_u_max: 1.0
+  source: "PowerSystem_8760h.mo compressedAirEnergyStorage; GasTank/HotTank/ColdTank asserts"
+
+grid:
+  P_max_buy_W: 5.0e8   # P1
+  P_max_sell_W: -5.0e8  # P2
+  note: "联络线硬容量 ±500 MW，非无限电网"
+  source: "PowerSystem_8760h.mo grid(P1=5e8, P2=-5e8)"
+
+decision_interval_seconds: 3600

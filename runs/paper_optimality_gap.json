@@ -1,0 +1,245 @@
+{
+  "note": "J_surr_star: optimal linear cash-flow proxy (weekly LP, perfect foresight, continuous thermal/storage/grid, must-take RE, terminal SoC band). gap_surr compares methods on the SAME proxy (trajectory replay). J_fmu is closed-loop twin cash flow and is NOT bounded by J_surr_star.",
+  "horizon": 168,
+  "fuel_yuan_per_mwh": 400.0,
+  "terminal_eps": 0.06,
+  "seasons": {
+    "winter": {
+      "j_surr_star": 19271140.289370544,
+      "j_surr_star_1e6": 19.271140289370543,
+      "lp": {
+        "success": true,
+        "message": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+        "thermal_mwh": 8575.0,
+        "bat_charge_mwh": 16800.0,
+        "bat_discharge_mwh": 12112.5,
+        "gas_charge_mwh": 1631.5756,
+        "gas_discharge_mwh": 1626.7756,
+        "buy_mwh": 9254.4202305,
+        "sell_mwh": 37453.716203874996,
+        "j_var_grid_fuel": 1896144.0157736093,
+        "load_revenue_fixed": 18763795.630449984,
+        "renewable_om_fixed": -1388799.35685305
+      },
+      "milp": {
+        "success": false,
+        "j_surr_milp": null
+      },
+      "methods": {
+        "b0": {
+          "label": "B0 (rule)",
+          "j_surr": 8278123.557759274,
+          "j_surr_1e6": 8.278123557759274,
+          "j_fmu": 8333189.44603921,
+          "j_fmu_1e6": 8.33318944603921,
+          "gap_surr_pct": 57.04393495425245,
+          "thermal_mwh": 25200.0,
+          "buy_mwh": 1668.6839060742832,
+          "sell_mwh": 8826.004881280835
+        },
+        "linprog": {
+          "label": "linprog MPC (H=8)",
+          "j_surr": 7902242.181260366,
+          "j_surr_1e6": 7.902242181260366,
+          "j_fmu": 7053296.464096619,
+          "j_fmu_1e6": 7.0532964640966185,
+          "gap_surr_pct": 58.99442346118441,
+          "thermal_mwh": 24175.552632,
+          "buy_mwh": 3727.22441886938,
+          "sell_mwh": 14319.750898551161
+        },
+        "pso": {
+          "label": "PSO",
+          "j_surr": NaN,
+          "j_surr_1e6": NaN,
+          "j_fmu": 737107.1099636045,
+          "j_fmu_1e6": 0.7371071099636045,
+          "gap_surr_pct": NaN,
+          "thermal_mwh": 810.600064,
+          "buy_mwh": NaN,
+          "sell_mwh": NaN
+        },
+        "td3": {
+          "label": "TD3 (seed1)",
+          "j_surr": 13132095.580097772,
+          "j_surr_1e6": 13.132095580097772,
+          "j_fmu": 12865751.96095357,
+          "j_fmu_1e6": 12.86575196095357,
+          "gap_surr_pct": 31.856157015570624,
+          "thermal_mwh": 17774.999884,
+          "buy_mwh": 1420.0550215892495,
+          "sell_mwh": 18990.97432044169
+        },
+        "ghtd3": {
+          "label": "HMSD (seed1)",
+          "j_surr": 17707014.694989424,
+          "j_surr_1e6": 17.707014694989425,
+          "j_fmu": 17452130.515749805,
+          "j_fmu_1e6": 17.452130515749804,
+          "gap_surr_pct": 8.116414342351348,
+          "thermal_mwh": 9781.431875999999,
+          "buy_mwh": 214.88678077472042,
+          "sell_mwh": 23528.46811240304
+        }
+      }
+    },
+    "transition": {
+      "j_surr_star": 17911644.392263077,
+      "j_surr_star_1e6": 17.911644392263078,
+      "lp": {
+        "success": true,
+        "message": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+        "thermal_mwh": 8575.0,
+        "bat_charge_mwh": 16800.0,
+        "bat_discharge_mwh": 12112.5,
+        "gas_charge_mwh": 1680.12907,
+        "gas_discharge_mwh": 1675.3290700000002,
+        "buy_mwh": 10530.185006,
+        "sell_mwh": 34440.1100844375,
+        "j_var_grid_fuel": 1078528.8548055263,
+        "load_revenue_fixed": 20553385.929749977,
+        "renewable_om_fixed": -3720270.392292425
+      },
+      "milp": {
+        "success": false,
+        "j_surr_milp": null
+      },
+      "methods": {
+        "b0": {
+          "label": "B0 (rule)",
+          "j_surr": 6173829.126993226,
+          "j_surr_1e6": 6.173829126993226,
+          "j_fmu": 6059774.0525976475,
+          "j_fmu_1e6": 6.059774052597647,
+          "gap_surr_pct": 65.53175692981038,
+          "thermal_mwh": 25200.0,
+          "buy_mwh": 7432.473559040374,
+          "sell_mwh": 9992.754859212462
+        },
+        "linprog": {
+          "label": "linprog MPC (H=8)",
+          "j_surr": 6710013.209121257,
+          "j_surr_1e6": 6.710013209121257,
+          "j_fmu": 5941052.8054062985,
+          "j_fmu_1e6": 5.941052805406298,
+          "gap_surr_pct": 62.53826247231861,
+          "thermal_mwh": 24605.793672,
+          "buy_mwh": 5123.668541884464,
+          "sell_mwh": 11017.701425305338
+        },
+        "pso": {
+          "label": "PSO",
+          "j_surr": 12918714.931196624,
+          "j_surr_1e6": 12.918714931196625,
+          "j_fmu": 12674159.855622921,
+          "j_fmu_1e6": 12.674159855622921,
+          "gap_surr_pct": 27.875327087350758,
+          "thermal_mwh": 14667.561456,
+          "buy_mwh": 4078.7698756893246,
+          "sell_mwh": 17321.4897318173
+        },
+        "td3": {
+          "label": "TD3 (seed1)",
+          "j_surr": NaN,
+          "j_surr_1e6": NaN,
+          "j_fmu": 4501936.373533463,
+          "j_fmu_1e6": 4.501936373533463,
+          "gap_surr_pct": NaN,
+          "thermal_mwh": 4662.500088,
+          "buy_mwh": NaN,
+          "sell_mwh": NaN
+        },
+        "ghtd3": {
+          "label": "HMSD (seed1)",
+          "j_surr": 13736029.690489832,
+          "j_surr_1e6": 13.736029690489833,
+          "j_fmu": 13231718.703238267,
+          "j_fmu_1e6": 13.231718703238267,
+          "gap_surr_pct": 23.312291213066395,
+          "thermal_mwh": 13367.243096,
+          "buy_mwh": 4110.85435191848,
+          "sell_mwh": 19772.901291394934
+        }
+      }
+    },
+    "summer": {
+      "j_surr_star": 15407239.773793334,
+      "j_surr_star_1e6": 15.407239773793334,
+      "lp": {
+        "success": true,
+        "message": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+        "thermal_mwh": 8575.0,
+        "bat_charge_mwh": 16800.0,
+        "bat_discharge_mwh": 12112.5,
+        "gas_charge_mwh": 1503.6438130000001,
+        "gas_discharge_mwh": 1498.843813,
+        "buy_mwh": 0.0,
+        "sell_mwh": 19628.9781924375,
+        "j_var_grid_fuel": 250433.41108203167,
+        "load_revenue_fixed": 18937008.87290004,
+        "renewable_om_fixed": -3780202.510188735
+      },
+      "milp": {
+        "success": false,
+        "j_surr_milp": null
+      },
+      "methods": {
+        "b0": {
+          "label": "B0 (rule)",
+          "j_surr": 1347545.1284454837,
+          "j_surr_1e6": 1.3475451284454838,
+          "j_fmu": 1108615.4098938508,
+          "j_fmu_1e6": 1.1086154098938508,
+          "gap_surr_pct": 91.25381867076823,
+          "thermal_mwh": 25200.0,
+          "buy_mwh": 7860.9864512342665,
+          "sell_mwh": 6034.739612596536
+        },
+        "linprog": {
+          "label": "linprog MPC (H=8)",
+          "j_surr": 1164074.283171881,
+          "j_surr_1e6": 1.1640742831718809,
+          "j_fmu": 450130.72866610624,
+          "j_fmu_1e6": 0.45013072866610626,
+          "gap_surr_pct": 92.44462797838786,
+          "thermal_mwh": 25200.0,
+          "buy_mwh": 6956.664092418126,
+          "sell_mwh": 6985.0036033475535
+        },
+        "pso": {
+          "label": "PSO",
+          "j_surr": NaN,
+          "j_surr_1e6": NaN,
+          "j_fmu": 9420110.134942925,
+          "j_fmu_1e6": 9.420110134942925,
+          "gap_surr_pct": NaN,
+          "thermal_mwh": 11274.42946,
+          "buy_mwh": NaN,
+          "sell_mwh": NaN
+        },
+        "td3": {
+          "label": "TD3 (seed1)",
+          "j_surr": 7242938.189490826,
+          "j_surr_1e6": 7.242938189490826,
+          "j_fmu": 6693337.783602485,
+          "j_fmu_1e6": 6.693337783602486,
+          "gap_surr_pct": 52.99003393319956,
+          "thermal_mwh": 17464.999988,
+          "buy_mwh": 5528.432885890401,
+          "sell_mwh": 14548.635752352653
+        },
+        "ghtd3": {
+          "label": "HMSD (seed1)",
+          "j_surr": 12342248.54225748,
+          "j_surr_1e6": 12.34224854225748,
+          "j_fmu": 11885202.43535785,
+          "j_fmu_1e6": 11.88520243535785,
+          "gap_surr_pct": 19.89318837465745,
+          "thermal_mwh": 10676.124256,
+          "buy_mwh": 2309.137625640779,
+          "sell_mwh": 15606.39431460262
+        }
+      }
+    }
+  }
+}

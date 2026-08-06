@@ -1,0 +1,257 @@
+[
+  {
+    "window_index": 0,
+    "start_step": 0,
+    "steps": 168,
+    "episode_reward": 106.01605579319636,
+    "discounted_return": 50.825449678945546,
+    "raw_total_cost": -17704293.73840525,
+    "economic_cashflow_delta": 17704293.73840525,
+    "net_cashflow_j": 17704293.73840525,
+    "terminal_soc": {
+      "battery_soc": 0.18035106360912323,
+      "caes_gas_soc": 0.8301628232002258,
+      "caes_hot_soc": 0.5152664184570312,
+      "caes_cold_soc": 0.4659733176231384
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 1,
+    "start_step": 168,
+    "steps": 168,
+    "episode_reward": 92.527039215844,
+    "discounted_return": 45.11854542979965,
+    "raw_total_cost": -14854609.683156585,
+    "economic_cashflow_delta": 14854609.683156585,
+    "net_cashflow_j": 14854609.683156585,
+    "terminal_soc": {
+      "battery_soc": 0.5637619495391846,
+      "caes_gas_soc": 0.841587483882904,
+      "caes_hot_soc": 0.5398231148719788,
+      "caes_cold_soc": 0.44362813234329224
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 2,
+    "start_step": 336,
+    "steps": 168,
+    "episode_reward": 92.54907638003557,
+    "discounted_return": 44.033869790961205,
+    "raw_total_cost": -15434804.166915465,
+    "economic_cashflow_delta": 15434804.166915465,
+    "net_cashflow_j": 15434804.166915465,
+    "terminal_soc": {
+      "battery_soc": 0.19143791496753693,
+      "caes_gas_soc": 0.8323244452476501,
+      "caes_hot_soc": 0.5212413668632507,
+      "caes_cold_soc": 0.28268909454345703
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 3,
+    "start_step": 504,
+    "steps": 168,
+    "episode_reward": 93.61468242466849,
+    "discounted_return": 45.41811958422271,
+    "raw_total_cost": -15653110.582145173,
+    "economic_cashflow_delta": 15653110.582145173,
+    "net_cashflow_j": 15653110.582145173,
+    "terminal_soc": {
+      "battery_soc": 0.20570486783981323,
+      "caes_gas_soc": 0.8498497009277344,
+      "caes_hot_soc": 0.5437688827514648,
+      "caes_cold_soc": 0.26188549399375916
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 4,
+    "start_step": 672,
+    "steps": 168,
+    "episode_reward": 91.39004102905079,
+    "discounted_return": 44.88336147191552,
+    "raw_total_cost": -15193236.059538757,
+    "economic_cashflow_delta": 15193236.059538757,
+    "net_cashflow_j": 15193236.059538757,
+    "terminal_soc": {
+      "battery_soc": 0.3463536500930786,
+      "caes_gas_soc": 0.8606232404708862,
+      "caes_hot_soc": 0.5437688827514648,
+      "caes_cold_soc": 0.26188549399375916
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 5,
+    "start_step": 840,
+    "steps": 168,
+    "episode_reward": 91.43668424214114,
+    "discounted_return": 43.5036875024167,
+    "raw_total_cost": -15284018.84706218,
+    "economic_cashflow_delta": 15284018.84706218,
+    "net_cashflow_j": 15284018.84706218,
+    "terminal_soc": {
+      "battery_soc": 0.3618592917919159,
+      "caes_gas_soc": 0.8392855525016785,
+      "caes_hot_soc": 0.5209872126579285,
+      "caes_cold_soc": 0.2846671938896179
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 6,
+    "start_step": 1008,
+    "steps": 168,
+    "episode_reward": 73.6762541575349,
+    "discounted_return": 34.16094409802537,
+    "raw_total_cost": -12552961.565442856,
+    "economic_cashflow_delta": 12552961.565442856,
+    "net_cashflow_j": 12552961.565442856,
+    "terminal_soc": {
+      "battery_soc": 0.18012592196464539,
+      "caes_gas_soc": 0.8297833204269409,
+      "caes_hot_soc": 0.5387374758720398,
+      "caes_cold_soc": 0.31163662672042847
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 7,
+    "start_step": 1176,
+    "steps": 168,
+    "episode_reward": 82.642809908253,
+    "discounted_return": 40.07887794936233,
+    "raw_total_cost": -13812291.601489767,
+    "economic_cashflow_delta": 13812291.601489767,
+    "net_cashflow_j": 13812291.601489767,
+    "terminal_soc": {
+      "battery_soc": 0.17870497703552246,
+      "caes_gas_soc": 0.8546614646911621,
+      "caes_hot_soc": 0.5568851828575134,
+      "caes_cold_soc": 0.3453783094882965
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 8,
+    "start_step": 1344,
+    "steps": 168,
+    "episode_reward": 84.2991834055085,
+    "discounted_return": 39.49166431351788,
+    "raw_total_cost": -14072319.405417144,
+    "economic_cashflow_delta": 14072319.405417144,
+    "net_cashflow_j": 14072319.405417144,
+    "terminal_soc": {
+      "battery_soc": 0.21855883300304413,
+      "caes_gas_soc": 0.8504343032836914,
+      "caes_hot_soc": 0.5374970436096191,
+      "caes_cold_soc": 0.3548409640789032
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 9,
+    "start_step": 1512,
+    "steps": 168,
+    "episode_reward": 92.3315681653548,
+    "discounted_return": 44.309347234073115,
+    "raw_total_cost": -15491195.300702592,
+    "economic_cashflow_delta": 15491195.300702592,
+    "net_cashflow_j": 15491195.300702592,
+    "terminal_soc": {
+      "battery_soc": 0.21857638657093048,
+      "caes_gas_soc": 0.860787570476532,
+      "caes_hot_soc": 0.5374970436096191,
+      "caes_cold_soc": 0.3548409640789032
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 10,
+    "start_step": 1680,
+    "steps": 168,
+    "episode_reward": 82.4161609396441,
+    "discounted_return": 39.84658934166342,
+    "raw_total_cost": -13861379.15619688,
+    "economic_cashflow_delta": 13861379.15619688,
+    "net_cashflow_j": 13861379.15619688,
+    "terminal_soc": {
+      "battery_soc": 0.1847960650920868,
+      "caes_gas_soc": 0.8282965421676636,
+      "caes_hot_soc": 0.5101191997528076,
+      "caes_cold_soc": 0.39550814032554626
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 11,
+    "start_step": 1848,
+    "steps": 168,
+    "episode_reward": 91.94240638231895,
+    "discounted_return": 43.81551847399407,
+    "raw_total_cost": -15239840.281474201,
+    "economic_cashflow_delta": 15239840.281474201,
+    "net_cashflow_j": 15239840.281474201,
+    "terminal_soc": {
+      "battery_soc": 0.29750725626945496,
+      "caes_gas_soc": 0.8591879606246948,
+      "caes_hot_soc": 0.5288292169570923,
+      "caes_cold_soc": 0.27751103043556213
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 12,
+    "start_step": 2016,
+    "steps": 168,
+    "episode_reward": 87.87436496585246,
+    "discounted_return": 40.789411880477424,
+    "raw_total_cost": -14802785.768590115,
+    "economic_cashflow_delta": 14802785.768590115,
+    "net_cashflow_j": 14802785.768590115,
+    "terminal_soc": {
+      "battery_soc": 0.2004140019416809,
+      "caes_gas_soc": 0.8475082516670227,
+      "caes_hot_soc": 0.5236538052558899,
+      "caes_cold_soc": 0.21412606537342072
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 13,
+    "start_step": 2184,
+    "steps": 168,
+    "episode_reward": 91.87487500936247,
+    "discounted_return": 46.83550928812429,
+    "raw_total_cost": -15194640.052443273,
+    "economic_cashflow_delta": 15194640.052443273,
+    "net_cashflow_j": 15194640.052443273,
+    "terminal_soc": {
+      "battery_soc": 0.2362947165966034,
+      "caes_gas_soc": 0.8493857383728027,
+      "caes_hot_soc": 0.5110142230987549,
+      "caes_cold_soc": 0.12510201334953308
+    },
+    "invalid_transition_count": 0
+  },
+  {
+    "window_index": 14,
+    "start_step": 2352,
+    "steps": 31,
+    "episode_reward": 19.036830569973464,
+    "discounted_return": 16.166592692007686,
+    "raw_total_cost": -2999401.461754312,
+    "economic_cashflow_delta": 2999401.461754312,
+    "net_cashflow_j": 2999401.461754312,
+    "terminal_soc": {
+      "battery_soc": 0.33436253666877747,
+      "caes_gas_soc": 0.8400261998176575,
+      "caes_hot_soc": 0.5195804834365845,
+      "caes_cold_soc": 0.05059719830751419
+    },
+    "invalid_transition_count": 1
+  }
+]
