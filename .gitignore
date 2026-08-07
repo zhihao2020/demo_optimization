@@ -24,4 +24,3 @@ _env_*.py
 runs/remote_pull*/
 runs/_remote_pull/
 *.log
-resources/
