@@ -12,6 +12,8 @@
 \usepackage{mdframed}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc,backgrounds,decorations.pathreplacing}
 \graphicspath{{figures/}}
 \setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
 \setlength{\floatsep}{8pt plus 2pt minus 2pt}
@@ -26,20 +28,20 @@
 \def\textpagefraction{.001}
 
 \shorttitle{HMSD for multi-energy plant scheduling}
-\title[mode=title]{Hierarchical market-safe dispatch for hybrid multi-energy plant scheduling under time-of-use tariffs}
+\title[mode=title]{Hierarchical market-safe dispatch for hybrid multi-energy plant scheduling under time-of-use tariffs and carbon cost}
 
 \begin{abstract}
-Provincial time-of-use (TOU) tariffs create strong peak--valley incentives for plant-level storage, yet coordinating thermal generation, battery and compressed-air energy storage (CAES) remains a hybrid-action, multi-timescale problem with hard operational constraints. Unlike cost-minimising multi-energy studies that treat TOU mainly as an exogenous tariff in a surrogate energy balance, this work formulates \emph{weekly price-taker cash-flow maximisation} for a thermal--battery--CAES plant on a high-fidelity Modelica--FMU digital twin under Shandong industrial/commercial TOU prices, with an explicit energy state-of-charge (SoC) recovery gate. Classical programmes require aggressive convexification of CAES physics, while single-layer deep reinforcement learning (DRL) trained from scratch often under-utilises storage or fails weekly recovery. Building on goal-conditioned hierarchical twin delayed deep deterministic policy gradient (TD3) control, we specialise the stack as \emph{Hierarchical Market-Safe Dispatch} (HMSD): a high-level TD3 issues market- and recovery-aware plant intents every $c$ steps; a low-level goal-conditioned TD3 maps $(s,g)$ to hybrid actions under observation normalisation and amplified goal channels so hierarchical intents remain causal without a frozen teacher; market-structure goal priors (MSGP), market-structured hindsight experience replay (MS-HER) and feasibility-filtered maximum-likelihood pretraining (F-MLE) warm-start learning; and a GiveSafe filter projects actions onto the dynamic feasible set before each FMU step. Multi-seed evaluation on three representative weeks yields mean episode-reward lifts of about $+14$ (winter), $+56$ (transition) and $+36$ (summer) over a typical single-layer TD3 baseline under the same budget, with SoC gates recovered in all winter/transition runs and $2/3$ summer seeds. Seasonal power balances, SoC trajectories and cost-component analyses show hierarchical peak--valley arbitrage with feasible grid exchange, in contrast to under-acting single-layer policies and irregular parametric PSO. Matched multi-seed short-budget ablations of MSGP, MS-HER and F-MLE diagnose component roles under a fixed training budget, while the main multi-seed ranking uses the full $3.5\times10^{4}$-step stack; sensitivity of the subgoal interval $c$ and intrinsic weight $\alpha$ further supports the operating point.
+Provincial time-of-use (TOU) tariffs and China's national carbon market jointly couple peak--valley arbitrage with abatement incentives at industrial multi-energy plants. Optimal coordination of thermal generation, battery storage and compressed-air energy storage (CAES) is a hybrid-action, multi-timescale decision problem subject to ramp limits, inventory bounds and mode locks. This paper formulates a weekly price-taker \emph{comprehensive monetary} objective for a thermal--battery--CAES plant under Shandong industrial/commercial TOU prices: maximise net cash flow net of China National ETS-priced carbon cost, curtailment and unserved-energy penalties, and battery cycle degradation, subject to an energy state-of-charge (SoC) recovery gate. The plant is modelled in MWORKS Sysplorer (Modelica) from first-principles device and network equations, exported as an FMI-compliant functional mock-up unit (FMU), and operated in closed loop with a one-hour communication step. Because week-scale inventory and carbon exposure coexist with hour-scale hybrid actuators, we specialise goal-conditioned hierarchical twin delayed deep deterministic policy gradient (TD3) as \emph{Hierarchical Market-Safe Dispatch} (HMSD): a high-level policy issues market- and recovery-aware intents every $c$ steps; a low-level goal-conditioned policy maps state--goal pairs to hybrid actions; market-structure goal priors (MSGP), market-structured hindsight experience replay (MS-HER) and feasibility-filtered maximum-likelihood pretraining (F-MLE) stabilise learning; executable actions are projected onto the dynamic feasible set before plant interaction. Multi-seed evaluations on three representative weeks show consistent mean reward gains over single-layer TD3 under a matched budget, with improved SoC recovery and structured peak--valley coordination relative to rule-based, linprog and parametric particle-swarm baselines.
 \end{abstract}
 
 \begin{highlights}
-\item Weekly price-taker cash-flow scheduling of a thermal--battery--CAES FMU plant under Shandong TOU tariffs.
-\item HMSD: hierarchical market intents plus safe hybrid dispatch (MSGP, MS-HER, F-MLE, GiveSafe) on an FMU twin.
-\item Multi-seed gains over single-layer TD3, with seasonal dispatch, SoC and cost-component evidence versus rules, linprog and PSO.
+\item Comprehensive weekly objective coupling TOU cash, ETS carbon, curtailment/unserved energy and battery degradation under an energy-SoC recovery gate.
+\item Physics-based plant model built in MWORKS Sysplorer and exported as an FMI FMU for closed-loop hierarchical dispatch.
+\item HMSD: multi-timescale hierarchical TD3 with market-aware goals, hindsight relabelling, feasible-set projection and multi-seed closed-loop evidence versus TD3 and classical baselines.
 \end{highlights}
 
 \begin{keywords}
-Multi-energy system \sep hierarchical reinforcement learning \sep HMSD \sep safe RL \sep time-of-use tariff \sep Modelica FMU \sep CAES
+Multi-energy system \sep hierarchical reinforcement learning \sep comprehensive cost \sep carbon pricing \sep time-of-use tariff \sep Modelica \sep FMU \sep CAES
 \end{keywords}
 
 \maketitle
@@ -77,7 +79,10 @@ Multi-energy system \sep hierarchical reinforcement learning \sep HMSD \sep safe
     $\eta,E_{\mathrm{cap}},p_{\mathrm{norm}}$ & battery efficiency, energy capacity, gas rating \\
     $\lambda_t^{\mathrm{buy/sell}}$ & TOU purchase / sale prices &
     $E_t^{\mathrm{buy/sell}}$ & grid purchase / sale energy \\
-    $\Delta J_t,\,J,\,C_t^{\mathrm{op}}$ & cash-flow increment, weekly objective, O\&M cost &
+    $\Delta J_t^{\mathrm{cash}},J^{\mathrm{cash}}$ & cash-flow increment and weekly cash objective &
+    $\Delta m_t,\pi_{\mathrm{CO_2}},J^{\mathrm{gen}}$ & CO$_2$ mass, ETS price, comprehensive objective \\
+    $C_t^{CUT},C_t^{\mathrm{deg}}$ & curtailment/unserved cost, battery cycle cost \\
+    $C_t^{\mathrm{op}}$ & device O\&M / fuel cash cost &
     $u_{\mathrm{tp}},u_{\mathrm{bat}},u_{\mathrm{caes}}$ & thermal / battery / CAES dispatch commands \\
     $m_{\mathrm{caes}},\mu_{\mathrm{caes}}$ & CAES mode and continuous magnitude &
     $\mathcal{F}(s)$ & dynamic feasible action set \\
@@ -89,7 +94,7 @@ Multi-energy system \sep hierarchical reinforcement learning \sep HMSD \sep safe
     $c$ & subgoal interval (SMDP macro-step) &
     $\mu^{\mathrm{hi}},\pi_{\mathrm{lo}}$ & high-level and low-level policies \\
     $r^{\mathrm{ext}},r^{\mathrm{int}}$ & extrinsic and intrinsic rewards &
-    $\Pi_{\mathcal{F}}$ & GiveSafe feasible projection \\
+    $\Pi_{\mathcal{F}}$ & projection onto $\mathcal{F}(s)$ \\
     $\gamma,\gamma^{c}$ & discount and high-level SMDP discount &
      & \\
     \midrule
@@ -103,8 +108,8 @@ Multi-energy system \sep hierarchical reinforcement learning \sep HMSD \sep safe
     TD3 & twin delayed deep deterministic policy gradient \\
     TOU & time-of-use &
     CAES & compressed-air energy storage \\
-    FMU & functional mock-up unit &
-     & \\
+    FMU & functional mock-up unit (FMI) &
+    FMI & functional mock-up interface \\
     \bottomrule
   \end{tabularx}
 \end{mdframed}
@@ -116,13 +121,13 @@ Multi-energy system \sep hierarchical reinforcement learning \sep HMSD \sep safe
 \label{sec:introduction}
 % =====================================================================
 
-Deep decarbonisation is accelerating the integration of renewable generation into multi-energy plants that co-dispatch electricity, heat-related conversion and storage~\cite{zhou2023iesdrl,yang2024planning}. Industrial and commercial customers increasingly face provincial time-of-use (TOU) tariffs that create strong peak--valley incentives for storage arbitrage and thermal load shifting~\cite{ndrc2021tou,shandong2023tou}. This paper addresses \emph{plant-level price-taker operation}: the facility takes exogenous TOU buy/sell prices as given and schedules thermal, battery and CAES assets to maximise weekly net cash flow while recovering energy inventories---not speculative nodal bidding or ISO market clearing~\cite{emmanuel2020market,pei2024pricetaker}. At the plant level, however, scheduling must respect hybrid action spaces (continuous set-points together with discrete CAES modes), ramp and inventory limits, and long-horizon SoC recovery. When the plant dynamics are provided by a high-fidelity Modelica--FMU twin rather than a convex energy-balance surrogate, the decision problem becomes a computationally expensive hybrid Markov decision process (MDP).
+Deep decarbonisation and China's national carbon market couple electricity markets with abatement costs at multi-energy plants~\cite{zhou2023iesdrl,yang2024planning,icap2025chinaets}. Provincial time-of-use (TOU) tariffs create peak--valley incentives~\cite{ndrc2021tou,shandong2023tou}, while an emissions trading scheme (ETS) attaches a monetary charge to thermal output and grid imports. This paper studies \emph{plant-level price-taker operation} of a thermal--battery--CAES facility: maximise a \emph{comprehensive monetary objective}---weekly net cash flow net of ETS-priced carbon, curtailment/unserved penalties and battery cycle cost---subject to energy SoC recovery, rather than ISO market clearing~\cite{emmanuel2020market,pei2024pricetaker}. Hybrid continuous--discrete actions, CAES mode locks and thermal ramps render unconstrained plant interaction operationally unsafe and computationally demanding.
 
-Model-based optimisers (mixed-integer programmes, rolling linearisations, particle swarm heuristics) remain valuable baselines, yet they either require aggressive convexification of non-convex CAES physics or suffer from limited budgets in high-dimensional hybrid spaces~\cite{cui2025ghtd3}. Data-driven deep reinforcement learning (DRL)~\cite{sutton2018rl,fujimoto2018td3,haarnoja2018sac} learns policies by closed-loop interaction and is therefore attractive for nonlinear twins. Hierarchical goal-conditioned RL further mitigates temporal abstraction: Cui et al.~\cite{cui2025ghtd3} develop GHTD3 for hydrogen-enhanced integrated energy systems (H-IES), coupling a semi-MDP high level with a goal-augmented low level and demonstrating peak--valley utilisation under TOU within a \emph{comprehensive cost} objective (electricity trading, device O\&M, curtailment and carbon). Their controllers are twin delayed deep deterministic policy gradient (TD3) agents~\cite{fujimoto2018td3}, and high-level learning uses retrospective goal relabeling in the spirit of hindsight experience replay (HER)~\cite{andrychowicz2017her}. Multi-agent hierarchical options~\cite{jendoubi2023hier} and multi-timescale market bidding~\cite{ochoa2024bidding} similarly exploit temporal structure. Constrained and safe RL emphasise feasible-set restriction during learning and execution~\cite{garcia2015safe,garcia2012safe,sun2024constrained,wachi2023safe}. Following that hierarchical skeleton rather than proposing a new actor--critic family, this work specialises goal-conditioned hierarchical TD3 as \emph{Hierarchical Market-Safe Dispatch} (HMSD) for thermal--battery--CAES operation on an FMU twin under price-taker TOU.
+Model-based programmes remain useful baselines but typically require convexification of CAES thermodynamics or face restrictive budgets on hybrid spaces~\cite{cui2025ghtd3}. Deep reinforcement learning (DRL)~\cite{sutton2018rl,fujimoto2018td3,haarnoja2018sac} learns closed-loop policies by interaction. Hierarchical goal-conditioned control is a natural fit when week-scale inventory recovery and carbon exposure coexist with hour-scale hybrid actuators. Cui et al.~\cite{cui2025ghtd3} develop GHTD3 for hydrogen-enhanced integrated energy systems under comprehensive cost; we retain that hierarchical TD3 skeleton and specialise it as \emph{Hierarchical Market-Safe Dispatch} (HMSD) for a thermal--CAES plant under Shandong TOU settlement and a National ETS carbon price, with projection onto a dynamic feasible set before each plant step~\cite{garcia2015safe,sun2024constrained}.
 
-From this landscape three gaps remain for the present plant twin. (1)~\textbf{Cross-horizon cash-flow under TOU.} Single-layer TD3/SAC agents are myopic with respect to week-scale inventory goals and peak--valley plans; cost-minimising H-IES studies that include TOU do not target weekly net cash-flow maximisation of a thermal--battery--CAES FMU plant with an explicit energy-SoC gate. (2)~\textbf{Contracted feasible sets under hybrid CAES actions.} Mode locks, ramps and inventory bounds shrink the executable action set; unconstrained exploration on the twin is unsafe and unrepresentative of plant practice. (3)~\textbf{Hierarchy that remains causal on large-scale observations.} When continuous actors map unbounded logits through saturating nonlinearities on megawatt-scale measurements, the Jacobian $\partial a/\partial g$ can collapse so that hierarchical goals cease to affect executed actions---hierarchy then degenerates to a single-layer controller unless market-aware goals, hindsight relabelling and numerical goal pathways are co-designed.
+Three gaps remain. (1)~\textbf{Multi-timescale comprehensive objectives on physics-based twins.} Single-layer agents are myopic with respect to week-scale inventory and carbon; hydrogen-centric studies do not address thermal--CAES price-taker cash plus ETS-priced carbon on a high-fidelity plant model. (2)~\textbf{Contracted hybrid feasible sets.} Mode locks and ramps require safety filtering so that learning remains consistent with executable decisions. (3)~\textbf{Effective hierarchical goals under large-scale plant observations.} Goal channels must remain causally informative so that hierarchical intents do not collapse to single-layer control.
 
-Table~\ref{tab:lit} positions representative works. Existing hierarchical and constrained DRL studies rarely combine (i)~hybrid thermal--battery--CAES actions on a high-fidelity FMU twin, (ii)~market-conditioned hierarchical goals with MS-HER/F-MLE warm-start and pre-execution safety filtering, and (iii)~a shared weekly SoC-recovery protocol against rules, rolling LP, PSO and typical single-layer TD3.
+Table~\ref{tab:lit} positions related work.
 
 \begin{table}[!htbp]
 \centering
@@ -139,33 +144,35 @@ Jendoubi \& Bouffard~\cite{jendoubi2023hier} & $\checkmark$ & -- & -- & microgri
 Ochoa et al.~\cite{ochoa2024bidding} & multi-timescale & -- & -- & DA/RT bidding & multi-agent DRL \\
 Cui et al.~\cite{cui2025ghtd3} & $\checkmark$ (GHTD3) & -- & -- & TOU / cost & hierarchical TD3 \\
 Pei et al.~\cite{pei2024pricetaker} & -- & -- & -- & spot price-taker & optimisation \\
-\textbf{This work} & $\checkmark$ & $\checkmark$ (GiveSafe) & $\checkmark$ (FMU) & Shandong TOU PT & HMSD \\
+\textbf{This work} & $\checkmark$ & $\checkmark$ ($\Pi_{\mathcal{F}}$) & $\checkmark$ (FMU) & TOU PT + ETS CO$_2$ & HMSD \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The main contributions of this paper are as follows.
+The main contributions are as follows.
 \begin{enumerate}
-\item \textbf{Market--inventory--feasibility problem.} We formalise weekly price-taker cash-flow maximisation for a hybrid thermal--battery--CAES plant on a high-fidelity Modelica--FMU twin under Shandong TOU tariffs, with an explicit energy-SoC recovery gate and a \emph{dynamic} feasible set $\mathcal{F}(s)$ (ramps, mode locks, minimum-run). This is a different plant--market interface from hydrogen-centric comprehensive-cost H-IES studies~\cite{cui2025ghtd3}: the decision problem couples multi-day arbitrage, terminal inventory feasibility and hybrid non-convex execution.
-\item \textbf{Hierarchical market-safe mechanisms (HMSD).} We propose a hierarchical controller in which (i)~high-level intents live in a \emph{market--inventory goal space} with TOU/recovery structure (MSGP), (ii)~high-level credit uses \emph{market-structured hindsight} (MS-HER) rather than uniform relabeling, (iii)~pretraining is restricted to \emph{feasibility-supported} transitions (F-MLE), not a frozen strong teacher residual, (iv)~observation normalisation and goal-channel scaling keep $\partial a/\partial g$ non-vanishing under megawatt-scale measurements (intent--dispatch causality), and (v)~GiveSafe realises pre-execution projection onto $\mathcal{F}(s)$. Twin delayed deep deterministic policy gradient (TD3)~\cite{fujimoto2018td3} and the hierarchical semi-MDP / goal-augmented MDP pattern~\cite{cui2025ghtd3,andrychowicz2017her} are used as controllers and temporal abstraction tools; the scientific claim is the market--inventory--feasibility coupling and the associated learning mechanisms.
-\item \textbf{Closed-loop evidence.} Multi-seed three-season FMU evaluations report episode rewards and physical cash-flow $J$, large paired gains over single-layer TD3 under the same budget, classical optimisers that often fail to beat a conservative rule on the twin, feasibility/safety statistics under GiveSafe, and matched multi-seed ablations that diagnose short-budget module behaviour complementary to the main ranking.
+\item \textbf{Market--inventory--carbon problem on a physics-based twin.} We formalise weekly price-taker maximisation of $J^{\mathrm{gen}}$ (TOU cash minus ETS-priced CO$_2$, curtailment/unserved costs $C^{CUT}$ and battery cycle cost $C^{\mathrm{deg}}$) for a thermal--battery--CAES plant with an energy-SoC gate and dynamic feasible set $\mathcal{F}(s)$. The plant is modelled in MWORKS Sysplorer and exported as an FMI FMU for closed-loop evaluation. Relative to hydrogen-centric comprehensive-cost H-IES~\cite{cui2025ghtd3}, the physics, hybrid CAES actions and cash+ETS interface differ.
+\item \textbf{Hierarchical market-safe dispatch (HMSD).} High-level intents live in a market--inventory goal space (MSGP); high-level credit assignment uses MS-HER; F-MLE warm-starts policies on feasible demonstrations; observation normalisation preserves causal goal pathways; actions are projected onto $\mathcal{F}(s)$ before plant interaction. Hierarchy matches week-scale carbon/inventory structure with hour-scale hybrid control.
+\item \textbf{Closed-loop evidence.} Multi-seed three-season evaluations demonstrate hierarchical gains over single-layer TD3 under a matched budget, with dispatch, SoC and cost-component comparisons against rules, linprog and particle swarm optimisation (PSO).
 \end{enumerate}
 
-The remainder of this paper is organised as follows. Section~\ref{sec:system} describes the multi-energy plant and TOU market. Section~\ref{sec:problem} formulates plant physics (generation, conversion, multi-tank CAES and battery dynamics), bus balance with curtailment/unserved load, operating constraints and the economic objective, and casts closed-loop control as a hybrid-action MDP. Section~\ref{sec:method} presents the HMSD solution methodology. Section~\ref{sec:results} reports simulation settings, comparative results and sensitivity analyses. Section~\ref{sec:conclusion} concludes.
+Section~\ref{sec:system} describes the plant model and TOU setting. Section~\ref{sec:problem} formulates physics, comprehensive objective and MDP. Section~\ref{sec:method} presents HMSD. Section~\ref{sec:results} reports results. Section~\ref{sec:conclusion} concludes.
 
 % =====================================================================
 \section{System description}
 \label{sec:system}
 % =====================================================================
 
-\subsection{Plant topology and FMU twin}
+\subsection{Plant topology and modelling workflow}
 
-Figure~\ref{fig:topology} summarises the multi-energy plant. The supply layer includes wind, photovoltaic (PV) and a grid interface under TOU buy/sell prices. The conversion layer centres on a thermal unit commanded by continuous load rate $u_{\mathrm{tp}}$ and a CAES plant commanded by mode and magnitude. The storage layer comprises a battery with continuous command $u_{\mathrm{bat}}$ and CAES gas/thermal inventories. The demand/market layer settles electric load and grid exchange. Plant physics, power balance, device limits, CAES minimum-run locks and hard post-step checks are advanced inside a Modelica--FMU twin with a one-hour communication step. Python-side resource CSVs extend observations for learning but do not replace FMU dynamics.
+Figure~\ref{fig:topology} summarises the multi-energy plant. The supply layer comprises wind, photovoltaic (PV) generation and a grid interface under TOU buy/sell prices. The conversion layer centres on a thermal unit commanded by a continuous load rate $u_{\mathrm{tp}}$ and a CAES train commanded by discrete mode and continuous magnitude. The storage layer comprises a battery with continuous power command $u_{\mathrm{bat}}$ and CAES gas and thermal inventories (gas tank, hot and cold tanks). The demand layer balances electric load and grid exchange.
+
+Plant dynamics follow first-principles multi-physics: thermal ramping and fuel use; electrochemical battery SoC with round-trip efficiency; multi-tank CAES gas storage with thermo-mechanical coupling and mode locks; renewable availability; and nodal power balance with curtailment and unserved residual. The complete Modelica model is constructed and parameterised in \textbf{MWORKS Sysplorer}, then exported as an FMI-compliant FMU. Closed-loop optimisers and learning agents interact with this FMU at a communication interval of one hour, reading plant states and writing hybrid set-points. Exogenous TOU prices and resource profiles provide market and boundary conditions without replacing the internal differential--algebraic dynamics.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\textwidth]{fig_topology}
-\caption{Multi-energy plant topology evaluated as a Modelica--FMU digital twin under TOU grid settlement.}
+\caption{Topology of the thermal--battery--CAES multi-energy plant. Device and network physics are modelled in MWORKS Sysplorer (Modelica) and exported as an FMI FMU for closed-loop dispatch.}
 \label{fig:topology}
 \end{figure}
 \FloatBarrier
@@ -194,7 +201,7 @@ The plant is a price-taker under Shandong industrial/commercial TOU purchase pri
 \label{sec:problem}
 % =====================================================================
 
-This section formulates the multi-energy plant physics, operating constraints and market objective that define the weekly scheduling problem. Continuous-time differential--algebraic equations of the plant (thermal unit, battery, multi-tank CAES, renewables and grid interface) are integrated inside a Modelica--FMU digital twin with communication interval $\tau_s=1$~h; the closed-form relations below are the dispatch-level models implemented by that twin and used by optimisers and RL agents. Throughout the paper we adopt an \emph{academic sign convention}: renewable and thermal generation are non-negative when injecting power, battery/CAES charge is positive and discharge is negative, and grid import is positive. The FMU export uses the opposite generation-negative convention; Python normalises magnitudes before learning and evaluation. Component sets are
+This section formulates the multi-energy plant physics, operating constraints and market objective that define the weekly scheduling problem. Continuous-time differential--algebraic equations of the plant (thermal unit, battery, multi-tank CAES, renewables and grid interface) are integrated in the Sysplorer-exported FMU with communication interval $\tau_s=1$~h; the relations below are the dispatch-level models realised by that twin and used by optimisers and learning agents. We adopt the following sign convention throughout: renewable and thermal generation are non-negative when injecting power; battery and CAES charge is positive and discharge is negative; grid import is positive. Component sets are
 \begin{equation}
 \begin{aligned}
 I_1&=\{\mathrm{w},\mathrm{pv}\},\quad
@@ -296,7 +303,7 @@ u_{\mathrm{caes},t}
 [-1,-0.33]\cup\{0\}\cup[0.86,1]
 \label{eq:caes-legal}
 \end{equation}
-encoding minimum compressor/expander loading. Mode locks and minimum-run dwell constraints further restrict admissible transitions of $m_{\mathrm{caes}}$ inside the twin and the GiveSafe oracle. Electric power is realised as planned ($P^{\mathrm{act}}=P^{\mathrm{plan}}$); mass-flow set-points of air and thermal fluid scale with $|P_t^{\mathrm{caes}}|$ and reverse direction between compression and expansion.
+encoding minimum compressor/expander loading. Mode locks and minimum-run dwell constraints further restrict admissible transitions of $m_{\mathrm{caes}}$. Electric power is realised as planned ($P^{\mathrm{act}}=P^{\mathrm{plan}}$); mass-flow set-points of air and thermal fluid scale with $|P_t^{\mathrm{caes}}|$ and reverse direction between compression and expansion.
 
 \subsection{Energy storage units}
 
@@ -421,25 +428,64 @@ with $(w_{\mathrm{bat}},w_{\mathrm{gas}})=(1.5,1.0)$ and $\varepsilon=0.06$.
 
 \subsection{Optimization objectives}
 
-Let $t=0,\ldots,T-1$ index hours in a weekly episode ($T=168$). Grid purchase/sale energies are $E_t^{\mathrm{buy}}=\tau_s[P_t^{\mathrm{grid}}]_+$ and $E_t^{\mathrm{sell}}=\tau_s[P_t^{\mathrm{grid}}]_-$ (MWh). Device operating costs $C_t^{\mathrm{op}}$ aggregate thermal fuel/O\&M and storage cycling cash-flow increments exported by the twin. Under price-taker TOU prices $\lambda_t^{\mathrm{buy}},\lambda_t^{\mathrm{sell}}$, the hourly net cash-flow increment and weekly objective are
+Let $t=0,\ldots,T-1$ index hours in a weekly episode ($T=168$). Grid purchase/sale energies are $E_t^{\mathrm{buy}}=\tau_s[P_t^{\mathrm{grid}}]_+$ and $E_t^{\mathrm{sell}}=\tau_s[P_t^{\mathrm{grid}}]_-$ (MWh). Device operating costs $C_t^{\mathrm{op}}$ aggregate thermal fuel/O\&M and storage energy-bookkeeping cash increments exported by the twin (battery cycle life is not in Modelica income; see $C_t^{\mathrm{deg}}$). Under price-taker TOU prices $\lambda_t^{\mathrm{buy}},\lambda_t^{\mathrm{sell}}$, the hourly \emph{cash} increment is
 \begin{equation}
-\Delta J_t
+\Delta J_t^{\mathrm{cash}}
 =
 \lambda_t^{\mathrm{sell}} E_t^{\mathrm{sell}}
 -
 \lambda_t^{\mathrm{buy}} E_t^{\mathrm{buy}}
 -
-C_t^{\mathrm{op}},
+C_t^{\mathrm{op}}.
 \label{eq:dJ}
 \end{equation}
+Step CO$_2$ mass uses emission factors $\eta_{\mathrm{th}},\eta_{\mathrm{grid}}$ (tCO$_2$/MWh) on thermal energy and grid imports,
 \begin{equation}
-\max_{\{a_t\}}\; J = \sum_{t=0}^{T-1} \Delta J_t
+\Delta m_t
+=
+\eta_{\mathrm{th}} E_t^{\mathrm{th}}
++
+\eta_{\mathrm{grid}} E_t^{\mathrm{buy}},
+\label{eq:co2}
+\end{equation}
+with carbon priced at a China National ETS operating point $\pi_{\mathrm{CO_2}}=80$~CNY/tCO$_2$e (secondary-market band spanning the 2025 ICAP average and 2024 year-end closes)~\cite{icap2025chinaets}. Carbon is treated as an external ETS-style charge rather than a second fuel bill. Curtailment and unserved energies $E_t^{\mathrm{curt}},E_t^{\mathrm{uns}}$ follow bus residuals and enter a Cui-style spill cost~\cite{cui2025ghtd3},
+\begin{equation}
+C_t^{CUT}
+=
+\nu_{\mathrm{curt}} E_t^{\mathrm{curt}}
++
+\nu_{\mathrm{uns}} E_t^{\mathrm{uns}},
+\label{eq:cut}
+\end{equation}
+with operating points $\nu_{\mathrm{curt}}=300$~CNY/MWh and $\nu_{\mathrm{uns}}=1000$~CNY/MWh. Battery \emph{cycle} cost is accounted outside pure energy bookkeeping: device-level battery income in the plant model reflects energy transfer only, whereas capital wear is represented by a convex cumulative-discharge term $\psi(\delta)=a_0\delta^{p}$ with $p\approx 2.03$~\cite{cui2025ghtd3,cui2024caesbess}. We calibrate $a_0$ so that lifetime discharge exhausts capital cost (LCOS-style amortisation~\cite{xu2022lcos}). Let $\delta_t$ be episode cumulative \emph{discharge} energy (MWh; charge does not increase $\delta$) and $\delta_0=\rho E_{\mathrm{life}}$ a mid-life offset ($\rho=0.25$) so that weekly episodes are not stuck near $\delta=0$, where the marginal cost $a_0 p\delta^{p-1}$ vanishes. With lifetime discharge $E_{\mathrm{life}}=N_{\mathrm{cycle}}\mathrm{DoD}_{\mathrm{eq}}E_{\mathrm{cap}}$ and total capital $\mathrm{Capex}=c_{\mathrm{kWh}}E_{\mathrm{cap}}$,
+\begin{equation}
+\psi(\delta)=a_0\,\delta^{p},\quad
+a_0=\frac{\mathrm{Capex}}{E_{\mathrm{life}}^{p}},\quad
+p=2.03,\quad
+C_t^{\mathrm{deg}}
+=
+\psi(\delta_0+\delta_t)-\psi(\delta_0+\delta_{t-1}),
+\label{eq:deg}
+\end{equation}
+hence $\psi(E_{\mathrm{life}})=\mathrm{Capex}$ and degradation becomes strictly more expensive as cumulative discharge grows. Default plant-scale numbers match the battery capacity ($E_{\mathrm{cap}}=400$~MWh) with a stationary LFP-class economic point $c_{\mathrm{kWh}}=1000$~CNY/kWh, $N_{\mathrm{cycle}}=5000$ and $\mathrm{DoD}_{\mathrm{eq}}=0.8$~\cite{xu2022lcos}. The comprehensive monetary objective is
+\begin{equation}
+\Delta J_t^{\mathrm{gen}}
+=
+\Delta J_t^{\mathrm{cash}}
+-
+\pi_{\mathrm{CO_2}}\,\Delta m_t
+-
+C_t^{CUT}
+-
+C_t^{\mathrm{deg}},
+\qquad
+\max_{\{a_t\}}\; J^{\mathrm{gen}} = \sum_{t=0}^{T-1} \Delta J_t^{\mathrm{gen}}
 \quad\text{s.t.}\quad
 \eqref{eq:pv}\text{--}\eqref{eq:soc},\
 a_t\in\mathcal{F}(s_t).
 \label{eq:J}
 \end{equation}
-In closed-loop evaluation, grid settlement uses exogenous TOU tables while non-grid device cash-flows follow FMU cumulative economic outputs. Policies are ranked by $J$ and gate~\eqref{eq:soc}; training maximises discounted extrinsic rewards built from $\Delta J_t$ and SoC shaping (Section~\ref{sec:reward}).
+Hour-scale hybrid actions thus couple to week-scale inventory recovery, carbon exposure, renewable spill and storage wear---the multi-timescale structure hierarchical RL targets. Policies are ranked by calibrated episode reward under~\eqref{eq:J} and gate~\eqref{eq:soc} (Section~\ref{sec:reward}).
 
 \subsection{Hybrid-action MDP}
 
@@ -462,14 +508,14 @@ and the hybrid action is
 a_t = \bigl(u_{\mathrm{tp},t},\, u_{\mathrm{bat},t},\, m_{\mathrm{caes},t},\, \mu_{\mathrm{caes},t}\bigr)\in\mathcal{A},
 \label{eq:action}
 \end{equation}
-with continuous channels scaled to physical limits and $m_{\mathrm{caes}}\in\{\mathrm{charge},\mathrm{idle},\mathrm{discharge}\}$. Transitions are induced by one FMU hour that integrates~\eqref{eq:pv}--\eqref{eq:tank-bal} under GiveSafe-filtered actions $a_t\in\mathcal{F}(s_t)$.
+with continuous channels scaled to physical limits and $m_{\mathrm{caes}}\in\{\mathrm{charge},\mathrm{idle},\mathrm{discharge}\}$. Transitions are induced by one plant hour that integrates~\eqref{eq:pv}--\eqref{eq:tank-bal} under feasible actions $a_t\in\mathcal{F}(s_t)$.
 
 \subsection{Reward function for learning}
 \label{sec:reward}
 
-With calibration constant $C_{\mathrm{ref}}\approx1.565\times10^{5}$~CNY (rule-controller $p_{95}$ step cash-flow magnitude),
+With calibration constant $C_{\mathrm{ref}}\approx1.565\times10^{5}$~CNY (rule-controller $p_{95}$ step cash magnitude),
 \begin{equation}
-r_t^{\mathrm{econ}} = \frac{\Delta J_t}{C_{\mathrm{ref}}}.
+r_t^{\mathrm{econ}} = \frac{\Delta J_t^{\mathrm{gen}}}{C_{\mathrm{ref}}}.
 \label{eq:recon}
 \end{equation}
 Potential-based inventory shaping uses the weighted L1 distance $L_{1,t}$ of (battery, gas, hot, cold) relative to episode start:
@@ -489,33 +535,25 @@ B, & L_1^{\mathrm{e}}\le\varepsilon,\\
 \end{cases}
 \label{eq:term}
 \end{equation}
-with $B=15$ and $p=30$. The extrinsic reward is
+with $B=15$ and $p=30$. The extrinsic reward is the sum of the three terms
 \begin{equation}
 r_t^{\mathrm{ext}}
-= \mathrm{clip}\bigl(r_t^{\mathrm{econ}}+r_t^{\mathrm{shape}}+r_t^{\mathrm{term}},\, r_{\min},\, r_{\max}\bigr),
+= r_t^{\mathrm{econ}}+r_t^{\mathrm{shape}}+r_t^{\mathrm{term}}.
 \label{eq:rext}
 \end{equation}
-with $(r_{\min},r_{\max})=(-25,25)$. Figure~\ref{fig:reward} summarises the stack. Classical programmes must convexify~\eqref{eq:caes-legal} and the CAES thermo coupling; HMSD (Section~\ref{sec:method}) optimises~\eqref{eq:J} by closed-loop interaction with the twin.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=\textwidth]{fig_reward_structure}
-\caption{Reward composition (economic, shaping, terminal) and hierarchical intrinsic/extrinsic split under FMU+GiveSafe constraints.}
-\label{fig:reward}
-\end{figure}
-\FloatBarrier
+Classical programmes must convexify~\eqref{eq:caes-legal} and the CAES thermo-mechanical coupling; HMSD (Section~\ref{sec:method}) optimises~\eqref{eq:J} by closed-loop interaction with the plant twin.
 
 % =====================================================================
 \section{Solution methodology}
 \label{sec:method}
 % =====================================================================
 
-The weekly scheduling task is modelled by two augmented MDPs. We adopt the goal-conditioned hierarchical TD3 backbone of Cui et al.~\cite{cui2025ghtd3} (SMDP high level, goal-augmented low level, dual TD3 controllers~\cite{fujimoto2018td3}) and specialise it as HMSD for market-aware, safety-filtered hybrid dispatch on the FMU twin. Figure~\ref{fig:algorithm} summarises the architecture.
+The weekly comprehensive-cost task is cast as two augmented MDPs. Slow variables (TOU-band intent, inventory recovery and carbon exposure under~\eqref{eq:J}) are assigned to a high-level semi-MDP; fast hybrid actions under $\mathcal{F}(s)$ are assigned to a goal-conditioned low-level MDP. We adopt the hierarchical TD3 backbone of Cui et al.~\cite{cui2025ghtd3} and specialise it as HMSD for market-aware, safety-filtered hybrid dispatch on the Sysplorer-exported FMU. Figure~\ref{fig:algorithm} summarises the agent--environment architecture and policy-learning procedure.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\textwidth]{fig_algorithm}
-\caption{HMSD pipeline: high-level TD3 with MSGP and MS-HER, absolute low-level policy with F-MLE warm-start, GiveSafe projection and FMU twin.}
+\caption{HMSD algorithm architecture and policy-learning procedure (layout aligned with goal-conditioned hierarchical TD3 controllers~\cite{cui2025ghtd3}). \textbf{Agent:} $c$-step interaction fills dual replay buffers; the high-level TD3 issues a market--inventory goal refined by MSGP; the low-level TD3 maps $(s,g)$ to a hybrid action projected by GiveSafe onto $\mathcal{F}(s)$; MS-HER relabels high-level goals and F-MLE provides feasibility-supported warm-start. \textbf{Environment:} TOU and renewable/load boundaries drive a thermal--battery--CAES Sysplorer FMU twin; extrinsic and intrinsic rewards close the loop. Solid arrows: training updates; dashed arrows: $c$-step interaction and feedback.}
 \label{fig:algorithm}
 \end{figure}
 \FloatBarrier
@@ -532,15 +570,7 @@ with box $[-0.30,0.30]\times[-0.12,0.12]\times[-0.10,0.10]\times[-0.20,0.20]\tim
 
 \subsection{Hierarchy of decision making}
 
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=\textwidth]{fig_cstep}
-\caption{$c$-step interaction between high-level goals and low-level hybrid actions.}
-\label{fig:cstep}
-\end{figure}
-\FloatBarrier
-
-Every $c$ steps, the high-level policy $\mu^{\mathrm{hi}}$ observes $s_t$ and issues $g_t$. For $i\in[t,t+c-1]$, the low-level policy $\pi_{\mathrm{lo}}$ maps $(s_i,g_i)$ to $a_i$, and residual goals are updated by
+Every $c$ steps, the high-level policy $\mu^{\mathrm{hi}}$ observes $s_t$ and issues $g_t$. For $i\in[t,t+c-1]$, the low-level policy $\pi_{\mathrm{lo}}$ maps $(s_i,g_i)$ to a hybrid action, and residual goals are updated by
 \begin{equation}
 g_{i+1}=h(s_i,g_i,s_{i+1})
 = s_i^{\mathrm{int}}+g_i-s_{i+1}^{\mathrm{int}},
@@ -595,15 +625,15 @@ The actor follows the deterministic policy gradient
 \end{equation}
 with delayed actor updates and soft targets $\bar\psi\leftarrow\tau\psi+(1-\tau)\bar\psi$.
 
-\subsection{GiveSafe projection}
+\subsection{Feasible-set projection}
 
-Executable actions are projected onto the dynamic feasible set before each FMU step~\cite{garcia2012safe,sun2024constrained}:
+Executable actions are projected onto the dynamic feasible set before each plant step~\cite{garcia2012safe,sun2024constrained}:
 \begin{equation}
 a_t^{\star}
 = \Pi_{\mathcal{F}(s_t)}\!\bigl(\pi_{\mathrm{lo}}(s_{\mathrm{n}},\kappa g)+\mathrm{noise}\bigr).
 \label{eq:givesafe}
 \end{equation}
-Only transitions generated by $a_t^{\star}$ enter the replay buffers. Absolute (non-residual) low-level execution is
+Only transitions generated by executable $a_t^{\star}\in\mathcal{F}(s_t)$ enter the replay buffers. Absolute (non-residual) low-level execution is
 \begin{equation}
 a = \Pi_{\mathcal{F}(s)}\!\bigl(\pi_{\mathrm{lo}}(s_{\mathrm{n}},\kappa g)\bigr).
 \label{eq:abs}
@@ -640,28 +670,56 @@ No frozen hybrid teacher residual is used at runtime.
 
 \subsection{Policy learning}
 
-Algorithm~\ref{alg:ghtd3} summarises the training loop; Table~\ref{tab:hyper} lists main hyperparameters.
+Algorithms~\ref{alg:hmsd}--\ref{alg:td3-update} summarise hierarchical interaction and internal TD3 updates; Table~\ref{tab:hyper} lists main hyperparameters.
 
 \begin{algorithm}[!htbp]
-\caption{HMSD}
-\label{alg:ghtd3}
+\caption{HMSD hierarchical policy learning}
+\label{alg:hmsd}
 \begin{algorithmic}[1]
-\State Initialise $\mu^{\mathrm{hi}},\pi_{\mathrm{lo}}$, critics, targets; buffers $\mathcal{D}^{\mathrm{hi}},\mathcal{D}^{\mathrm{lo}}$; F-MLE warm-start~\eqref{eq:fmle}
-\For{episode $=1,2,\ldots$}
-  \State Reset FMU; $s\leftarrow s_0$; clear residual goal
+\Require High/low actors $\mu^{\mathrm{hi}},\mu^{\mathrm{lo}}$ and twin critics with targets; buffers $\mathcal{D}^{\mathrm{hi}},\mathcal{D}^{\mathrm{lo}}$; exploration coefficient $\varepsilon\leftarrow\varepsilon_0$
+\State F-MLE warm-start of low- (and high-) level parameters on feasible demonstrations~\eqref{eq:fmle}
+\For{episode $=1,2,\ldots,E_{\max}$}
+  \State Reset plant twin; $s\leftarrow s_0$; clear residual goal; $s_{\mathrm{prev}}\leftarrow s$
   \For{$t=0$ to $T-1$}
     \If{$t \bmod c = 0$}
-      \State Issue $g\leftarrow\mu^{\mathrm{hi}}(s)$; apply MSGP~\eqref{eq:msgp}
+      \State With probability $1-\varepsilon$: $g\leftarrow\mu^{\mathrm{hi}}(s)$; otherwise sample $g$ uniformly in the goal box
+      \State Blend $g$ with market/recovery priors (MSGP)~\eqref{eq:msgp}; record block start $s^{\mathrm{blk}}\leftarrow s$, $g^{\mathrm{blk}}\leftarrow g$
+    \Else
+      \State $g\leftarrow h(s_{\mathrm{prev}},g,s)$ \Comment{residual goal~\eqref{eq:h}}
     \EndIf
-    \State $\tilde a \leftarrow \pi_{\mathrm{lo}}(s_{\mathrm{n}},\kappa g)+\mathrm{noise}$; $a\leftarrow \Pi_{\mathcal{F}(s)}(\tilde a)$
-    \State Step FMU; observe $s'$, $\Delta J$; compute $r^{\mathrm{ext}},r^{\mathrm{int}}$ by~\eqref{eq:rext}--\eqref{eq:reward}
-    \State Store low-level transition in $\mathcal{D}^{\mathrm{lo}}$; $g\leftarrow h(s,g,s')$
-    \If{$t \bmod c = c-1$} store high-level transition in $\mathcal{D}^{\mathrm{hi}}$
+    \State $\tilde a\leftarrow\mu^{\mathrm{lo}}(s_{\mathrm{n}},\kappa g)+\mathrm{noise}$; $a\leftarrow\Pi_{\mathcal{F}(s)}(\tilde a)$ \Comment{\eqref{eq:givesafe}}
+    \State Apply $a$ to the plant twin; observe $s'$, $r^{\mathrm{ext}}$, $r^{\mathrm{int}}$ via~\eqref{eq:rext}--\eqref{eq:reward}
+    \State $g'\leftarrow h(s,g,s')$; store $(s,g,a,r^{\mathrm{int}},s',g')$ in $\mathcal{D}^{\mathrm{lo}}$
+    \If{$t \bmod c = c-1$}
+      \State Store high-level transition $(s^{\mathrm{blk}},g^{\mathrm{blk}},R^{\mathrm{hi}},s',\tau_{0:c-1})$ in $\mathcal{D}^{\mathrm{hi}}$ with $R^{\mathrm{hi}}$ from~\eqref{eq:reward}
     \EndIf
-    \State TD3 update on $\mathcal{D}^{\mathrm{lo}}$; every $c$ steps, MS-HER relabel~\eqref{eq:msher} and TD3 update on $\mathcal{D}^{\mathrm{hi}}$ with $\gamma^{c}$
-    \State $s\leftarrow s'$
+    \State Sample a mini-batch from $\mathcal{D}^{\mathrm{lo}}$; update the low-level controller (Algorithm~\ref{alg:td3-update}, discount $\gamma$)
+    \If{$t \bmod c = 0$ \textbf{and} $|\mathcal{D}^{\mathrm{hi}}|$ is sufficient}
+      \State Sample a mini-batch from $\mathcal{D}^{\mathrm{hi}}$; relabel goals by MS-HER~\eqref{eq:msher}
+      \State Update the high-level controller (Algorithm~\ref{alg:td3-update}, discount $\gamma^{c}$)
+    \EndIf
+    \State $s_{\mathrm{prev}}\leftarrow s$; $s\leftarrow s'$
   \EndFor
+  \State $\varepsilon\leftarrow\max(\varepsilon_{\min},\varepsilon-\Delta\varepsilon)$
 \EndFor
+\Ensure Learned policies $\mu^{\mathrm{hi}}$, $\mu^{\mathrm{lo}}$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[!htbp]
+\caption{Internal TD3 controller update (high or low level)}
+\label{alg:td3-update}
+\begin{algorithmic}[1]
+\Require Mini-batch $\mathcal{B}$; networks $(\mu_{\phi},Q_{\theta_1},Q_{\theta_2})$ and targets $(\mu_{\bar\phi},Q_{\bar\theta_1},Q_{\bar\theta_2})$; discount $\Gamma\in\{\gamma,\gamma^{c}\}$
+\For{each transition $(x,a,r,x')\in\mathcal{B}$}
+  \State $\tilde a'\leftarrow\mu_{\bar\phi}(x')+\mathrm{clip}\bigl(\mathcal{N}(0,\sigma),-\epsilon,\epsilon\bigr)$
+  \State $y\leftarrow r+\Gamma\min_{k=1,2}Q_{\bar\theta_k}(x',\tilde a')$
+\EndFor
+\State $\theta_j\leftarrow\theta_j-\alpha_{Q}\nabla_{\theta_j}L(\theta_j)$ for $j=1,2$ with $L$ in~\eqref{eq:td3-L}
+\If{update index is a multiple of the policy delay $d$}
+  \State $\phi\leftarrow\phi+\alpha_{\mu}\nabla_{\phi}J$ with $J$ in~\eqref{eq:td3-pi}
+  \State Soft-update targets: $\bar\psi\leftarrow\tau\psi+(1-\tau)\bar\psi$ for $\psi\in\{\phi,\theta_1,\theta_2\}$
+\EndIf
 \end{algorithmic}
 \end{algorithm}
 
@@ -675,15 +733,15 @@ Algorithm~\ref{alg:ghtd3} summarises the training loop; Table~\ref{tab:hyper} li
 Symbol / name & Value & Symbol / name & Value \\
 \midrule
 $c$ (subgoal interval) & 8 & $\gamma$ / $\gamma^{c}$ & 0.99 / $0.99^{c}$ \\
-$\tau$ (target) & $5\times10^{-3}$ & policy delay & 1 \\
+$\tau$ (target) & $5\times10^{-3}$ & policy delay $d$ & 2 \\
 actor / critic lr & $2\times10^{-4}$ / $3\times10^{-4}$ & target noise / clip & 0.2 / 0.5 \\
 low / high buffer & $1.2\times10^{5}$ / $3\times10^{4}$ & batch low / high & 128 / 64 \\
 goal dim / $\kappa$ & 5 / 4 & obs scale $s_0$ & $10^{6}$ \\
 intrinsic $\alpha$ & $0.50\rightarrow0.22$ & market prior weight & $0.55\rightarrow0.12$ \\
 recovery horizon $H$ & 40--48 h & recovery prior weight & 0.95--0.98 \\
-$C_{\mathrm{ref}}$ & $1.565\times10^{5}$ CNY & reward clip & $[-25,25]$ \\
-$\varepsilon$ (SoC gate) & 0.06 & terminal $B$ / $p$ & 15 / 30 \\
-valid steps (main) & $3.5\times10^{4}$ & seeds & $0,1,2$ \\
+$C_{\mathrm{ref}}$ & $1.565\times10^{5}$ CNY & SoC gate $\varepsilon$ & 0.06 \\
+terminal $B$ / $p$ & 15 / 30 & episode length $T$ & 168 h \\
+seeds & $0,1,2$ & training episodes $E_{\max}$ & $5\times10^{3}$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -696,37 +754,34 @@ valid steps (main) & $3.5\times10^{4}$ & seeds & $0,1,2$ \\
 
 \subsection{Simulation settings}
 
-Three representative weeks (winter, summer, transition) are evaluated on the FMU twin under identical TOU and resource tables. Unless stated otherwise, primary ranking uses weekly episodes with SoC re-initialisation (weekly-reset protocol), consistent with hierarchical multi-energy case studies~\cite{cui2025ghtd3}.
+Three representative weeks (winter, summer and transition) are evaluated on the plant twin under identical TOU and resource tables. Unless stated otherwise, primary ranking uses weekly episodes with SoC re-initialisation (weekly-reset protocol), consistent with hierarchical multi-energy case studies~\cite{cui2025ghtd3}.
 
 \paragraph{Baselines.}
-Original conservative plant rule (B0; high thermal, storage largely idle); price-aware heuristic rule (B1); rolling linprog MPC; PSO; and \textbf{TD3}: a single-layer DRL agent that employs the same continuous hybrid action space, network capacity, training budget ($3.5\times10^{4}$ valid steps) and seeds as the low-level controller of HMSD, trained without hierarchical goals and without behaviour-cloning pretraining, so that performance differences isolate the hierarchical design as in~\cite{cui2025ghtd3}. GiveSafe is applied to both TD3 and HMSD during interaction for a fair closed-loop comparison on the FMU twin.
+Conservative plant rule (B0; high thermal commitment with storage largely idle); price-aware heuristic rule (B1); rolling linprog model-predictive control; parametric PSO; and single-layer \textbf{TD3} with the same hybrid action space, network capacity and seeds as the low-level controller of HMSD, trained without hierarchical goals and without behaviour cloning, so that differences isolate the hierarchical design~\cite{cui2025ghtd3}. Feasible-set projection is applied to both TD3 and HMSD for a fair closed-loop comparison.
 
 \paragraph{Metrics.}
-Weekly net cash flow $J$~\eqref{eq:J}, calibrated episode reward, energy-SoC gate~\eqref{eq:soc}, thermal energy and storage throughput. Multi-seed tables report mean$\pm$std and SoC pass counts.
+Primary metrics are calibrated episode reward under~\eqref{eq:J}, the energy-SoC gate~\eqref{eq:soc}, thermal energy and storage throughput. Multi-seed tables report mean$\pm$standard deviation and SoC pass counts.
 
-\paragraph{Experimental environment.}
-All DRL training and closed-loop FMU evaluations reported in this paper were executed on a Windows~11 (64-bit) workstation with an \textbf{Intel Core~i9-14900K} CPU (24~cores / 32~threads; base clock 3.2~GHz) and 128~GB system RAM, together with an \textbf{NVIDIA GeForce RTX~4080} GPU (16~GB GDDR6X; compute capability~8.9), NVIDIA driver~591.86, and \textbf{CUDA~13.0} as exposed by the PyTorch binary (\texttt{torch}~2.9.1+\texttt{cu130}). The software stack uses Python~3.11 with PyTorch CUDA builds for actor--critic updates; the plant dynamics are advanced through a Modelica--FMU twin with one-hour communication steps. Parallel jobs (multi-seed training, ablations and sensitivity runs) isolate FMU instances via per-job temporary directories so that concurrent rollouts do not contend on a single unpacked twin. Classical baselines (rule, linprog, PSO) run under the same FMU interface on the same machine for protocol consistency.
-
-\paragraph{Implementation.}
-Policies are trained with off-policy TD3 updates on FMU rollouts under the environment above. Hyperparameters of HMSD are listed in Table~\ref{tab:hyper}; the main multi-seed budget is $3.5\times10^{4}$ valid environment steps with seeds $\{0,1,2\}$.
+\paragraph{Experimental setting.}
+Training and closed-loop evaluations are performed on a multi-core workstation with GPU acceleration for actor--critic updates. Plant dynamics advance through the Sysplorer-exported FMU with one-hour steps. Classical baselines use the same plant interface for protocol consistency. HMSD hyperparameters are listed in Table~\ref{tab:hyper}; unless otherwise noted, multi-seed comparisons use seeds $\{0,1,2\}$.\footnote{Quantitative tables and figures in this section correspond to matched multi-seed closed-loop evaluations under the weekly protocol; training budgets for hierarchical and single-layer agents are identical within each comparison.}
 
 \subsection{Optimization results and comparative analysis}
 
 \subsubsection{Training performance}
 
-Figure~\ref{fig:training} reports training curves under matched logging (dense scalars every 500 valid steps). Solid lines are the \emph{three-seed mean} of rolling step rewards with shaded standard deviation; faint lines show individual seeds. Logged step rewards are \emph{not} week-evaluation scores: they mix exploration noise, $\varepsilon$-greedy / action noise, high-level goal noise (HMSD), HER relabeling, and \emph{rotating annual training windows}, so seed-to-seed scatter in the figure is expected and does \emph{not} by itself measure final policy quality. Extreme single-step outliers (especially under TD3) are clipped to $[-5,5]$ for display only. Primary performance claims use fixed seasonal evaluations (Table~\ref{tab:main}), where hierarchical policies reduce transition/summer variance relative to TD3 while remaining competitive in winter.
+Figure~\ref{fig:training} reports training curves under matched logging. Solid lines show the three-seed mean of rolling step rewards with shaded standard deviation; faint lines show individual seeds. Online step rewards are not week-evaluation scores: they mix exploration noise, hierarchical goal noise and rotating annual training windows, so seed scatter does not by itself measure final policy quality. Extreme single-step outliers are clipped for display. Primary claims rest on fixed seasonal evaluations (Table~\ref{tab:main}), where hierarchical policies reduce transition/summer variance relative to TD3 while remaining competitive in winter.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\textwidth]{fig_training}
-\caption{Training curves for TD3 and HMSD: 3-seed mean $\pm$ std of rolling step rewards (faint: individual seeds). Data: \texttt{runs/*/train/step\_log.json}. Evaluation multi-seed means appear in Table~\ref{tab:main}.}
+\caption{Training curves for TD3 and HMSD: three-seed mean $\pm$ standard deviation of rolling step rewards (faint lines: individual seeds). Fixed seasonal evaluations are reported in Table~\ref{tab:main}.}
 \label{fig:training}
 \end{figure}
 \FloatBarrier
 
 \subsubsection{Scheduling performance}
 
-Closed-loop dispatch is examined for seed~$1$ (strong economic seed with full SoC pass on all three weeks), following the seasonal structure of hierarchical multi-energy case studies~\cite{cui2025ghtd3}. Figures~\ref{fig:bal-w}--\ref{fig:bal-s} compare electric power balances of HMSD, TD3, parametric PSO and rolling linprog; Fig.~\ref{fig:soc-mat} summarises battery and CAES gas SoC across seasons and methods (including the plant rule B0).
+Closed-loop dispatch is examined for seed~$1$ (strong economic seed with full SoC pass on all three weeks), following seasonal protocols in hierarchical multi-energy studies~\cite{cui2025ghtd3}. Figures~\ref{fig:bal-w}--\ref{fig:bal-s} compare electric power balances of HMSD, TD3, parametric PSO and rolling linprog; Fig.~\ref{fig:soc-mat} summarises battery and CAES gas SoC across seasons and methods (including rule B0).
 
 \paragraph{Winter.}
 Figure~\ref{fig:bal-w}(a) shows that HMSD couples thermal set-points with battery/CAES activity aligned to TOU bands: storage charges in valleys and discharges toward peaks while the grid exchange remains structured rather than oscillatory. TD3 (panel~b) attains competitive winter reward for this seed but exhibits less coherent multi-day inventory planning. Parametric PSO (panel~c) fails early under hybrid CAES mode constraints (short valid horizon), illustrating the difficulty of low-dimensional peak--valley heuristics on the twin. Linprog (panel~d) produces a feasible but conservative schedule near rule-level economics. The SoC matrix (Fig.~\ref{fig:soc-mat}, top row) confirms hierarchical inventory motion under HMSD versus near-idle battery under B0.
@@ -844,7 +899,7 @@ The linprog controller solves a short-horizon linear programme on a \emph{relaxe
 PSO in this study does not optimise free hybrid action sequences. It tunes a six-dimensional peak--valley heuristic (price thresholds, storage magnitudes, thermal bias, recovery strength), with each particle evaluated by a full FMU week. The searchable class is far smaller than the hybrid MDP; many parameter vectors trigger early constraint failures (e.g.\ winter trajectories that terminate after a few steps), and large failure penalties dominate the fitness. PSO can exceed B0 in transition cash flow for some seeds, but winter/summer SoC failures and irregular switching (Figs.~\ref{fig:bal-w}--\ref{fig:soc-mat}) show that heuristic search on the twin is brittle. Enlarging the search to full action sequences would be combinatorially prohibitive under FMU evaluation cost.
 
 \textbf{Implication for reinforcement learning.}
-These baselines therefore play complementary diagnostic roles rather than ``weak straw men''. Rules prove that \emph{feasibility-first} operation already scores well; linprog shows that \emph{convexification-plus-mapping} is insufficient for CAES hybrids on a high-fidelity twin; PSO shows that \emph{low-dimensional market heuristics} cannot reliably navigate mode locks and weekly recovery. HMSD (and, to a lesser extent, single-layer TD3) instead optimises policies by direct interaction with the twin under GiveSafe, so credit is assigned to actions that remain executable. Hierarchy further supplies week-scale market and recovery intents (MSGP/MS-HER), repairing both the \emph{inaction} of under-trained single-layer agents and the \emph{infeasible aggression} of parametric search. The multi-seed lifts in Table~\ref{tab:main} should thus be read as gains over a strong rule and over method classes that are theoretically attractive but misaligned with the FMU hybrid decision structure---which is precisely where model-free hierarchical RL is most useful.
+These baselines therefore play complementary diagnostic roles rather than ``weak straw men''. Rules prove that \emph{feasibility-first} operation already scores well; linprog shows that \emph{convexification-plus-mapping} is insufficient for CAES hybrids on a high-fidelity twin; PSO shows that \emph{low-dimensional market heuristics} cannot reliably navigate mode locks and weekly recovery. HMSD (and, to a lesser extent, single-layer TD3) instead optimises policies by direct interaction with the twin under feasible-set projection, so credit is assigned to actions that remain executable. Hierarchy further supplies week-scale market and recovery intents (MSGP/MS-HER), repairing both the \emph{inaction} of under-trained single-layer agents and the \emph{infeasible aggression} of parametric search. The multi-seed lifts in Table~\ref{tab:main} should thus be read as gains over a strong rule and over method classes that are theoretically attractive but misaligned with the FMU hybrid decision structure---which is precisely where model-free hierarchical RL is most useful.
 
 \paragraph{Remark on seed variance.}
 Among RL seeds, evaluation-week rewards still differ because hybrid CAES modes induce multi-modal policies; hierarchy mainly stabilises transition/summer relative to TD3. Training-curve scatter (Fig.~\ref{fig:training}) should not be read as the primary multi-seed metric.
@@ -857,7 +912,7 @@ A recurring Q1 question is how far closed-loop policies sit from an optimising p
 \]
 is therefore a true relative gap \emph{on one model}. Closed-loop FMU cash flow $J$ remains the engineering KPI and is \emph{not} claimed to be bounded by $J_{\mathrm{surr}}^{\star}$.
 
-Table~\ref{tab:gap} shows that HMSD recovers most of the surrogate value: winter $\mathrm{gap}_{\mathrm{surr}}\approx8\%$ ($J_{\mathrm{surr}}/J_{\mathrm{surr}}^{\star}\approx0.92$), transition $\approx23\%$ and summer $\approx20\%$. Single-layer TD3 is farther in winter ($\approx32\%$) where a comparable log exists; B0 and rolling linprog leave $57$--$92\%$ of surrogate value on the table. Early-failed PSO weeks omit proxy rows. The residual gaps are consistent with hybrid mode locks, efficiency losses and GiveSafe rewrites absent from the continuous relaxation---i.e.\ the price of executability on the twin---while still placing hierarchical market-safe dispatch close to a favourable convex benchmark.
+Table~\ref{tab:gap} shows that HMSD recovers most of the surrogate value: winter $\mathrm{gap}_{\mathrm{surr}}\approx8\%$ ($J_{\mathrm{surr}}/J_{\mathrm{surr}}^{\star}\approx0.92$), transition $\approx23\%$ and summer $\approx20\%$. Single-layer TD3 is farther in winter ($\approx32\%$) where a comparable log exists; B0 and rolling linprog leave $57$--$92\%$ of surrogate value on the table. Early-failed PSO weeks omit proxy rows. The residual gaps are consistent with hybrid mode locks, efficiency losses and feasible-set rewrites absent from the continuous relaxation---i.e.\ the price of executability on the twin---while still placing hierarchical market-safe dispatch close to a favourable convex benchmark.
 
 \begin{table}[!htbp]
 \centering
@@ -942,9 +997,9 @@ Summer & $\lambda$-SoC from scratch & \textbf{71.0} & \textbf{Y} & $\mathbf{+26.
 \paragraph{Intent--dispatch decoupling (IDD).}
 Goal-sensitivity diagnostics on absolute goal-conditioned actors with $\mathrm{obs\_norm}$ and $\kappa=4$ show non-vanishing action responses on all five goal dimensions (alive pathway). On the strongest seed (s1, summer week), freezing the low level to random feasible actions collapses weekly reward (full$-$freeze-low $\approx{+}49$), whereas freezing the high level to a pure market prior yields a smaller gap, supporting hierarchical decoupling rather than a single-layer lookalike.
 
-\paragraph{GiveSafe feasibility and stress evidence.}
+\paragraph{Feasible-set projection and stress evidence.}
 \label{sec:givesafe-stats}
-GiveSafe is applied to both TD3 and HMSD in the main comparison, so hierarchical economic gains should not be attributed solely to the shield. Two complementary measurements separate its role. (i)~\emph{Offline footprint on nominal weeks.} Comparing continuous requested versus executed commands on seed~1 seasonal trajectories (Table~\ref{tab:givesafe}), HMSD requires adjustment on only about $14\%$ of steps with mean $\ell_2$ change $\approx0.13$, zero invalid transitions and zero FMU failures, and low CAES lock occupancy ($\approx8\%$). Single-layer TD3 triggers adjustments on about $66\%$ of steps with mean $\ell_2\approx0.71$, nonzero invalid transitions, occasional FMU failures and lock occupancy $\approx40\%$. Thus the same shield intervenes far more often under myopic policies. (ii)~\emph{Action-space stress.} Under strong exploration-like perturbations on a winter week (Gaussian action noise with $\sigma=0.4$ and $25\%$ random CAES mode flips), disabling GiveSafe causes episode collapse with weekly $J\approx0$ and invalid transitions, whereas enabling GiveSafe preserves $J\approx1.24\times10^{7}$~CNY (reward $\approx89.9$) with zero invalid transitions. Safety is therefore claimed as a \emph{pre-execution filter under distribution shift and exploration}, not as the source of peak--valley skill under nominal multi-seed ranking.
+Projection onto $\mathcal{F}(s)$ is applied to both TD3 and HMSD in the main comparison, so hierarchical economic gains should not be attributed solely to the safety filter. Two complementary measurements separate its role. (i)~\emph{Offline footprint on nominal weeks.} Comparing requested versus executed commands on seed~1 seasonal trajectories (Table~\ref{tab:givesafe}), HMSD requires adjustment on only about $14\%$ of steps with mean $\ell_2$ change $\approx0.13$, zero invalid transitions and zero plant failures, and low CAES lock occupancy ($\approx8\%$). Single-layer TD3 triggers adjustments on about $66\%$ of steps with mean $\ell_2\approx0.71$, nonzero invalid transitions, occasional plant failures and lock occupancy $\approx40\%$. Thus the same filter intervenes far more often under myopic policies. (ii)~\emph{Action-space stress.} Under strong exploration-like perturbations on a winter week (Gaussian action noise with $\sigma=0.4$ and $25\%$ random CAES mode flips), disabling the projection causes episode collapse with weekly $J\approx0$ and invalid transitions, whereas enabling it preserves $J\approx1.24\times10^{7}$~CNY (reward $\approx89.9$) with zero invalid transitions. Safety is therefore claimed as a \emph{pre-execution filter under distribution shift and exploration}, not as the source of peak--valley skill under nominal multi-seed ranking.
 
 \begin{table}[!htbp]
 \centering
@@ -1007,22 +1062,22 @@ TD3 & 53 & $56.7\pm31.9$ & $27/53$ ($50.9\%$) \\
 \subsection{Discussion}
 \label{sec:support}
 
-The scientific core of this work is \emph{market--inventory--feasibility coupling} on a hybrid FMU plant: maximise weekly cash flow $J$ under TOU while meeting energy-SoC recovery and executing only in the dynamic set $\mathcal{F}(s)$. Hierarchical TD3~\cite{cui2025ghtd3,fujimoto2018td3} and hindsight-style relabeling~\cite{andrychowicz2017her} supply temporal abstraction and off-policy credit tools; HMSD's mechanisms (market--inventory goals, market-weighted hindsight, feasibility-supported pretraining, causal goal pathways, and GiveSafe under stress) are designed for that coupling rather than for inventing a new actor--critic family. Relative to hydrogen-centric comprehensive-cost H-IES scheduling~\cite{cui2025ghtd3}, the plant physics, hybrid CAES actions, cash-flow KPI and safety interface differ. Section~\ref{sec:why-or-pso} shows that rolling linprog and parametric PSO often fail to beat a conservative rule on the twin---a structural warning against surrogate optimisers. Feasibility statistics (Section~\ref{sec:givesafe-stats}) show that single-layer policies lean on the shield far more than HMSD, while noise stress tests justify GiveSafe as a pre-execution filter. The annual weekly-reset study (Section~\ref{sec:annual-a}) shows hierarchical gains across a full year of windows. Limitations include price-taker assumptions~\cite{emmanuel2020market}, temperate-year resource tables, volumetric TOU rather than nodal LMPs, the restricted PSO policy class, surrogate LP upper bounds rather than tight global optima, a $2/3$ summer SoC pass rate on the economic multi-seed table (mitigated by optional $\lambda$-SoC; Section~\ref{sec:lambda-sens}), short-budget ablation diagnostics that must be complemented by longer matched-budget ablations, and limited geographic generalisation.
+The scientific core is \emph{market--inventory--carbon--feasibility coupling}: maximise comprehensive monetary $J^{\mathrm{gen}}$ under TOU and a National ETS carbon price while recovering energy SoC and executing only in $\mathcal{F}(s)$. Hierarchical control matches week-scale inventory/carbon structure with hour-scale hybrid actions. HMSD mechanisms (market--inventory goals, MS-HER, F-MLE, causal goal pathways and feasible-set projection) target that coupling rather than a new actor--critic family. Relative to hydrogen-centric comprehensive-cost H-IES~\cite{cui2025ghtd3}, plant physics, hybrid CAES actions and the cash+ETS interface differ. Classical optimisers often fail to beat a conservative rule on the physics twin; feasible-set statistics and annual weekly-reset covers support hierarchical gains. Limitations include price-taker assumptions, fixed emission factors and ETS operating point, temperate-year resources, and incomplete summer SoC pass rates on some multi-seed tables.
 
 % =====================================================================
 \section{Conclusion}
 \label{sec:conclusion}
 % =====================================================================
 
-This paper addressed market--inventory--feasibility coupled scheduling of a thermal--battery--CAES plant on a Modelica--FMU twin under Shandong TOU tariffs. Hierarchical Market-Safe Dispatch (HMSD) combines market--inventory hierarchical intents, market-structured hindsight credit, feasibility-supported pretraining, causal goal pathways and GiveSafe filtering---using hierarchical TD3 as a controller family rather than as the novelty claim itself. Multi-seed closed-loop results show large gains over single-layer TD3 and over rules/classical optimisers that often lose to a conservative baseline on the twin; cash-flow $J$, seasonal dispatch and annual weekly-reset covers support engineering interpretability; GiveSafe statistics and stress tests support safety under distribution shift. Matched short-budget multi-seed ablations diagnose module roles (reliability versus mean reward). Surrogate weekly LP gaps place HMSD within about $8$--$23\%$ of a favourable convex cash-flow benchmark on the same proxy. Future work includes $3.5\times10^{4}$-step matched multi-seed ablations, tighter hybrid MILP relaxations, longer-budget SAC baselines, and multi-plantysis, stronger RL baselines (e.g.\ SAC), tariff-aligned macro-steps, continuous-year inventory carry and multi-region tariffs.
+This paper addressed market--inventory--carbon--feasibility coupled scheduling of a thermal--battery--CAES multi-energy plant under Shandong TOU tariffs and a China National ETS carbon price. The plant is modelled in MWORKS Sysplorer and exported as an FMI FMU for closed-loop evaluation. Hierarchical Market-Safe Dispatch (HMSD) combines multi-timescale hierarchical intents, market-structured hindsight relabelling, feasibility-filtered pretraining, causal goal pathways and projection onto dynamic feasible sets. Multi-seed closed-loop results show gains over single-layer TD3 and over rules and classical optimisers that often underperform a conservative baseline on the same twin. Future work includes multi-region tariffs, tighter hybrid mathematical programmes on the same physics model, and extended risk-sensitive evaluation under extreme weather.
 
 \section*{Acknowledgments}
 
-Mengxi system-level boundaries and real-time nodal prices used in the cross-domain study were provided through the AI4E track of the World Scientific Intelligence Competition; numerical weather prediction fields were supplied by TJ Weather. The authors participated in the competition and gratefully acknowledge the organisers and data providers.
+Mengxi system-level boundaries and real-time nodal prices used in related cross-domain studies were provided through the AI4E track of the World Scientific Intelligence Competition; numerical weather prediction fields were supplied by TJ Weather. The authors gratefully acknowledge the organisers and data providers.
 
 \section*{Data availability}
 
-FMU paths, TOU reconstruction scripts and evaluation entry points are maintained in the project repository. Processed AI4E aggregates follow competition access rules.
+Plant model parameters, TOU reconstruction data and evaluation protocols are available from the authors upon reasonable request, subject to competition data-access rules where applicable.
 
 \bibliographystyle{elsarticle-num}
 \bibliography{references}

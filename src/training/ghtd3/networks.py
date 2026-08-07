@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.distributions import Categorical, Normal
 
 from actions import CaesMode
 
@@ -304,6 +305,194 @@ class LowLevelActor(nn.Module):
             "delta_bat": d_bat,
             "delta_mag": d_mag,
         }
+
+
+class LowLevelStochasticActor(nn.Module):
+    """Goal-conditioned hybrid stochastic actor for hierarchical SAC.
+
+    Continuous channels: squashed diagonal Gaussians on dynamic bounds.
+    CAES mode: masked Categorical. Returns log_prob for max-entropy updates.
+    """
+
+    LOG_STD_MIN = -5.0
+    LOG_STD_MAX = 2.0
+
+    def __init__(
+        self,
+        obs_dim: int,
+        goal_dim: int = 5,
+        hidden: int = 256,
+        *,
+        goal_input_scale: float = 4.0,
+    ):
+        super().__init__()
+        self.goal_dim = int(goal_dim)
+        self.goal_input_scale = float(goal_input_scale)
+        self.encoder = _mlp(obs_dim + goal_dim, hidden)
+        self.tp_mean = nn.Linear(hidden, 1)
+        self.bat_mean = nn.Linear(hidden, 1)
+        self.mode_head = nn.Linear(hidden, 3)
+        self.d_mag_mean = nn.Linear(hidden, 1)
+        self.c_mag_mean = nn.Linear(hidden, 1)
+        self.tp_log_std = nn.Linear(hidden, 1)
+        self.bat_log_std = nn.Linear(hidden, 1)
+        self.d_mag_log_std = nn.Linear(hidden, 1)
+        self.c_mag_log_std = nn.Linear(hidden, 1)
+        # Prefer idle initially; avoid battery thrashing bias
+        nn.init.constant_(self.tp_mean.bias, 0.5)
+        nn.init.constant_(self.bat_mean.bias, 0.0)
+        with torch.no_grad():
+            self.mode_head.bias.zero_()
+            self.mode_head.bias[int(CaesMode.IDLE)] = 1.5
+            self.mode_head.bias[int(CaesMode.DISCHARGE)] = -0.5
+            self.mode_head.bias[int(CaesMode.CHARGE)] = -0.5
+
+    def _pack(self, obs: torch.Tensor, goal: torch.Tensor) -> torch.Tensor:
+        if goal.shape[-1] != self.goal_dim:
+            g = torch.zeros(goal.shape[0], self.goal_dim, device=goal.device, dtype=goal.dtype)
+            n = min(self.goal_dim, goal.shape[-1])
+            g[:, :n] = goal[:, :n]
+            goal = g
+        if self.goal_input_scale != 1.0:
+            goal = goal * self.goal_input_scale
+        return torch.cat([obs, goal], dim=-1)
+
+    def _heads(self, obs: torch.Tensor, goal: torch.Tensor) -> dict[str, torch.Tensor]:
+        h = self.encoder(self._pack(obs, goal))
+        return {
+            "mu_tp": self.tp_mean(h).squeeze(-1),
+            "mu_bat": self.bat_mean(h).squeeze(-1),
+            "logits_mode": self.mode_head(h),
+            "mu_d": self.d_mag_mean(h).squeeze(-1),
+            "mu_c": self.c_mag_mean(h).squeeze(-1),
+            "ls_tp": self.tp_log_std(h).squeeze(-1).clamp(self.LOG_STD_MIN, self.LOG_STD_MAX),
+            "ls_bat": self.bat_log_std(h).squeeze(-1).clamp(self.LOG_STD_MIN, self.LOG_STD_MAX),
+            "ls_d": self.d_mag_log_std(h).squeeze(-1).clamp(self.LOG_STD_MIN, self.LOG_STD_MAX),
+            "ls_c": self.c_mag_log_std(h).squeeze(-1).clamp(self.LOG_STD_MIN, self.LOG_STD_MAX),
+        }
+
+    def forward_logits(self, obs: torch.Tensor, goal: torch.Tensor) -> dict[str, torch.Tensor]:
+        """F-MLE / BC interface: expose pre-squash means as logits."""
+        h = self._heads(obs, goal)
+        return {
+            "z_tp": h["mu_tp"],
+            "z_bat": h["mu_bat"],
+            "logits_mode": h["logits_mode"],
+            "z_discharge": h["mu_d"],
+            "z_charge": h["mu_c"],
+        }
+
+    @staticmethod
+    def map_bounded(z: torch.Tensor, low: torch.Tensor, high: torch.Tensor) -> torch.Tensor:
+        mapped = low + torch.sigmoid(z) * (high - low)
+        return torch.minimum(torch.maximum(mapped, low), high)
+
+    @staticmethod
+    def _squash_log_prob(
+        dist: Normal, z: torch.Tensor, low: torch.Tensor, high: torch.Tensor
+    ) -> torch.Tensor:
+        s = torch.sigmoid(z)
+        log_det = torch.log(s * (1.0 - s) + 1e-6) + torch.log((high - low).clamp_min(1e-6))
+        return dist.log_prob(z) - log_det
+
+    def forward_action(
+        self,
+        obs: torch.Tensor,
+        goal: torch.Tensor,
+        u_tp_low: torch.Tensor,
+        u_tp_high: torch.Tensor,
+        u_bat_low: torch.Tensor,
+        u_bat_high: torch.Tensor,
+        mode_mask: torch.Tensor,
+        *,
+        deterministic: bool = False,
+    ) -> dict[str, torch.Tensor]:
+        obs = torch.nan_to_num(obs, nan=0.0, posinf=0.0, neginf=0.0)
+        goal = torch.nan_to_num(goal, nan=0.0, posinf=0.0, neginf=0.0)
+        h = self._heads(obs, goal)
+        logits = h["logits_mode"].masked_fill(
+            ~mode_mask.bool(), torch.finfo(h["logits_mode"].dtype).min / 2
+        )
+        if not torch.isfinite(logits).all():
+            logits = torch.nan_to_num(logits, nan=0.0, posinf=1e4, neginf=-1e4)
+            logits = logits.masked_fill(
+                ~mode_mask.bool(), torch.finfo(logits.dtype).min / 2
+            )
+        mode_dist = Categorical(logits=logits)
+        mode = torch.argmax(logits, dim=-1) if deterministic else mode_dist.sample()
+        mode_oh = F.one_hot(mode, num_classes=3).float()
+
+        def _cont(mu, ls, low, high):
+            mu = torch.nan_to_num(mu, nan=0.0)
+            ls = torch.nan_to_num(ls, nan=-1.0).clamp(self.LOG_STD_MIN, self.LOG_STD_MAX)
+            dist = Normal(mu, ls.exp())
+            z = mu if deterministic else dist.rsample()
+            u = self.map_bounded(z, low, high)
+            lp = self._squash_log_prob(dist, z, low, high)
+            return u, lp, dist.entropy()
+
+        zero = torch.zeros_like(u_tp_low)
+        one = torch.ones_like(u_tp_low)
+        u_tp, lp_tp, e_tp = _cont(h["mu_tp"], h["ls_tp"], u_tp_low, u_tp_high)
+        u_bat, lp_bat, e_bat = _cont(h["mu_bat"], h["ls_bat"], u_bat_low, u_bat_high)
+        mag_d, lp_d, e_d = _cont(h["mu_d"], h["ls_d"], zero, one)
+        mag_c, lp_c, e_c = _cont(h["mu_c"], h["ls_c"], zero, one)
+        mag = torch.where(
+            mode == int(CaesMode.DISCHARGE),
+            mag_d,
+            torch.where(mode == int(CaesMode.CHARGE), mag_c, torch.zeros_like(mag_d)),
+        )
+        lp_mag = torch.where(
+            mode == int(CaesMode.DISCHARGE),
+            lp_d,
+            torch.where(mode == int(CaesMode.CHARGE), lp_c, torch.zeros_like(lp_d)),
+        )
+        e_mag = torch.where(
+            mode == int(CaesMode.DISCHARGE),
+            e_d,
+            torch.where(mode == int(CaesMode.CHARGE), e_c, torch.zeros_like(e_d)),
+        )
+        lp_mode = mode_dist.log_prob(mode)
+        log_prob = lp_tp + lp_bat + lp_mag + lp_mode
+        entropy = e_tp + e_bat + e_mag + mode_dist.entropy()
+        return {
+            "u_tp": u_tp,
+            "u_battery": u_bat,
+            "caes_mode": mode,
+            "caes_mode_oh": mode_oh,
+            "caes_magnitude": mag,
+            "log_prob": log_prob,
+            "entropy": entropy,
+            "logits_mode": logits,
+        }
+
+    def act(
+        self,
+        obs: torch.Tensor,
+        goal: torch.Tensor,
+        u_tp_low: torch.Tensor,
+        u_tp_high: torch.Tensor,
+        u_bat_low: torch.Tensor,
+        u_bat_high: torch.Tensor,
+        mode_mask: torch.Tensor,
+        *,
+        deterministic: bool = False,
+        explore_noise_std: float = 0.0,
+        gumbel_tau: float = 1.0,
+        soft_mode_for_grad: bool = False,
+    ) -> dict[str, torch.Tensor]:
+        """TD3/BC-compatible interface; ignores explore_noise when stochastic."""
+        _ = (explore_noise_std, gumbel_tau, soft_mode_for_grad)
+        return self.forward_action(
+            obs,
+            goal,
+            u_tp_low,
+            u_tp_high,
+            u_bat_low,
+            u_bat_high,
+            mode_mask,
+            deterministic=deterministic,
+        )
 
 
 class LowLevelCritic(nn.Module):

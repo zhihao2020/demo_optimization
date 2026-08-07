@@ -29,7 +29,6 @@ class HybridTD3:
         explore_noise: float = 0.1,
         target_noise: float = 0.2,
         noise_clip: float = 0.5,
-        reward_clip: tuple[float, float] | None = (-20.0, 20.0),
         q_clip: float = 200.0,
         device: str | None = None,
     ):
@@ -54,7 +53,6 @@ class HybridTD3:
         self.explore_noise = explore_noise
         self.target_noise = target_noise
         self.noise_clip = noise_clip
-        self.reward_clip = reward_clip
         self.q_clip = float(q_clip)
         self.actor = HybridActor(obs_dim).to(self.device)
         self.actor_target = deepcopy(self.actor).to(self.device)
@@ -109,9 +107,6 @@ class HybridTD3:
         mode_oh = F.one_hot(mode, num_classes=3).float()
         mag = torch.as_tensor(batch["caes_magnitude"], device=self.device)
         reward = torch.as_tensor(batch["reward"], device=self.device)
-        if self.reward_clip is not None:
-            lo, hi = self.reward_clip
-            reward = reward.clamp(lo, hi)
         done = torch.as_tensor(batch["done"], device=self.device)
         next_mask = torch.as_tensor(batch["next_mode_mask"], device=self.device)
 

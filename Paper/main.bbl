@@ -18,6 +18,12 @@ X.~Yang, Y.~Tao, L.~Li, Decentralized coordinated planning model for integrated
   two-stage multi-layer robust optimization and {Nash} bargaining approach,
   EnergySeasonal uncertainty and coordinated IES planning (2024).
 
+\bibitem{icap2025chinaets}
+{International Carbon Action Partnership}, {China National ETS} factsheet,
+  \url{https://icapcarbonaction.com/en/ets/china-national-ets},
+  secondary-market average allowance price (2025) reported as about 70.78
+  CNY/tCO2e; accessed 2026 (2025).
+
 \bibitem{ndrc2021tou}
 {National Development and Reform Commission of China}, Notice on further
   improving the time-of-use electricity price mechanism, nDRC Price [2021] No.
@@ -43,8 +49,8 @@ Z.~Pei, J.~Fang, Z.~Zhang, J.~Chen, S.~Hong, Z.~Peng, Optimal price-taker
 \bibitem{cui2025ghtd3}
 F.~Cui, D.~An, H.~Xi, Z.~Ren, Collaborative scheduling optimization of
   hydrogen-enhanced integrated energy system via goal-conditioned hierarchical
-  reinforcement learning, Energy 338 (2025) 138768, article number / pages may
-  vary by publisher final; PII S0360544225044895.
+  reinforcement learning, Energy 338 (2025) 138768, comprehensive cost includes
+  BESS degradation of convex cumulative-discharge form; PII S0360544225044895.
 \newblock \href {https://doi.org/10.1016/j.energy.2025.138768}
   {\path{doi:10.1016/j.energy.2025.138768}}.
 
@@ -64,10 +70,16 @@ T.~Haarnoja, A.~Zhou, P.~Abbeel, S.~Levine, Soft actor-critic: Off-policy
   Proceedings of the 35th International Conference on Machine Learning, Vol.~80
   of Proceedings of Machine Learning Research, PMLR, 2018, pp. 1861--1870.
 
-\bibitem{andrychowicz2017her}
-M.~Andrychowicz, F.~Wolski, A.~Ray, J.~Schneider, R.~Fong, P.~Welinder,
-  B.~McGrew, J.~Tobin, P.~Abbeel, W.~Zaremba, Hindsight experience replay, in:
-  Advances in Neural Information Processing Systems, Vol.~30, 2017.
+\bibitem{garcia2015safe}
+J.~Garc{\'i}a, F.~Fern{\'a}ndez, A comprehensive survey on safe reinforcement
+  learning, Journal of Machine Learning Research 16 (2015) 1437--1480.
+
+\bibitem{sun2024constrained}
+Q.~Sun, X.~Wang, Z.~Liu, W.~Lin, J.~He, W.~Pei, Dynamic energy dispatch
+  strategy for integrated energy system based on constrained reinforcement
+  learning, CSEE Journal of Power and Energy Systems (2022).
+\newblock \href {https://doi.org/10.17775/CSEEJPES.2021.08770}
+  {\path{doi:10.17775/CSEEJPES.2021.08770}}.
 
 \bibitem{jendoubi2023hier}
 I.~Jendoubi, F.~Bouffard, Multi-agent hierarchical reinforcement learning for
@@ -81,27 +93,6 @@ T.~Ochoa, E.~Gil, A.~Angulo, C.~Valle, Multi-agent deep reinforcement learning
   and real-time markets, Applied EnergyMulti-timescale market bidding with
   multi-agent DRL (2024).
 
-\bibitem{garcia2015safe}
-J.~Garc{\'i}a, F.~Fern{\'a}ndez, A comprehensive survey on safe reinforcement
-  learning, Journal of Machine Learning Research 16 (2015) 1437--1480.
-
-\bibitem{garcia2012safe}
-J.~Garc{\'i}a, F.~Fern{\'a}ndez, Safe exploration of state and action spaces in
-  reinforcement learning, Journal of Artificial Intelligence Research 45 (2012)
-  515--564.
-
-\bibitem{sun2024constrained}
-Q.~Sun, X.~Wang, Z.~Liu, W.~Lin, J.~He, W.~Pei, Dynamic energy dispatch
-  strategy for integrated energy system based on constrained reinforcement
-  learning, CSEE Journal of Power and Energy Systems (2022).
-\newblock \href {https://doi.org/10.17775/CSEEJPES.2021.08770}
-  {\path{doi:10.17775/CSEEJPES.2021.08770}}.
-
-\bibitem{wachi2023safe}
-A.~Wachi, X.~Shen, W.~Hashimoto, K.~Hashimoto, Safe exploration in
-  reinforcement learning: A generalized formulation and algorithms, in:
-  Advances in Neural Information Processing Systems, 2023.
-
 \bibitem{shandong2026tou}
 {State Grid Shandong Electric Power Company}, Announcement of industrial and
   commercial time-of-use electricity prices for 2026 (2025).
@@ -109,5 +100,31 @@ A.~Wachi, X.~Shen, W.~Hashimoto, K.~Hashimoto, Safe exploration in
 \bibitem{ndrc2023td}
 {National Development and Reform Commission of China}, Provincial grid
   transmission and distribution tariffs for the fourth regulatory cycle (2023).
+
+\bibitem{cui2024caesbess}
+F.~Cui, D.~An, H.~Xi, Integrated energy hub dispatch with a multi-mode
+  {CAES}--{BESS} hybrid system: An option-based hierarchical reinforcement
+  learning approach, Applied Energy 374 (2024) 123950, source of convex BESS
+  degradation form $\psi(\delta)=a_0\delta^{2.03}$ used in hierarchical IES
+  cost models.
+\newblock \href {https://doi.org/10.1016/j.apenergy.2024.123950}
+  {\path{doi:10.1016/j.apenergy.2024.123950}}.
+
+\bibitem{xu2022lcos}
+Y.~Xu, et~al., The levelized cost of storage of electrochemical energy storage
+  technologies in {China}, Frontiers in Energy ResearchChinese EES LCOS / Capex
+  order of magnitude for LFP-class stationary storage (2022).
+\newblock \href {https://doi.org/10.3389/fenrg.2022.873800}
+  {\path{doi:10.3389/fenrg.2022.873800}}.
+
+\bibitem{garcia2012safe}
+J.~Garc{\'i}a, F.~Fern{\'a}ndez, Safe exploration of state and action spaces in
+  reinforcement learning, Journal of Artificial Intelligence Research 45 (2012)
+  515--564.
+
+\bibitem{andrychowicz2017her}
+M.~Andrychowicz, F.~Wolski, A.~Ray, J.~Schneider, R.~Fong, P.~Welinder,
+  B.~McGrew, J.~Tobin, P.~Abbeel, W.~Zaremba, Hindsight experience replay, in:
+  Advances in Neural Information Processing Systems, Vol.~30, 2017.
 
 \end{thebibliography}

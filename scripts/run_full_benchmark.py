@@ -270,7 +270,14 @@ def main() -> None:
     lines.append("")
     md = "\n".join(lines) + "\n"
     (out / "benchmark_table.md").write_text(md, encoding="utf-8")
-    (ROOT / "docs" / "全方法基准对比结果.md").write_text(md, encoding="utf-8")
+    # Optional docs mirror: do not fail the benchmark if docs/ is missing
+    # (e.g. remote cache cleanup) or the Chinese path is unavailable.
+    try:
+        docs_dir = ROOT / "docs"
+        docs_dir.mkdir(parents=True, exist_ok=True)
+        (docs_dir / "全方法基准对比结果.md").write_text(md, encoding="utf-8")
+    except OSError as exc:
+        print(f"[warn] skip docs/ mirror write: {exc}", flush=True)
     print(md)
 
 

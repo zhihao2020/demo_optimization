@@ -1,43 +1,48 @@
-# Safe Market-GHTD3 abs + 从零 high_lambda_soc（修夏 SoC；非短续训）
-# 原理包同 abs，全程开高层库存对偶
+# Hierarchical-SAC HMSD (H-SAC)
+# Low-level: max-entropy hybrid SAC (continuous + CAES categorical)
+# High-level: TD3 + MS-HER (kept)
+# MSGP: weak / fast-annealed market prior (ablation showed strong prior hurts mean J)
+# No hybrid teacher residual
 
 ghtd3:
   enabled: true
   subgoal_interval: 8
-  # --- Modelica-aligned 5D goal ---
   goal_dim: 5
   goal_low:  [-0.30, -0.12, -0.10, -0.20, 0.0]
   goal_high: [ 0.30,  0.12,  0.10,  0.20, 1.0]
-  intrinsic_weights: [1.5, 1.2, 0.25, 0.4]  # bat, gas, th, u_tp
-  intrinsic_alpha: 0.50
-  intrinsic_alpha_end: 0.22
-  # 无教师：绝对目标条件执行
+  # Weaker goal tracking so low-level SAC can chase extrinsic J
+  intrinsic_weights: [1.0, 0.9, 0.15, 0.25]  # bat, gas, th, u_tp
+  intrinsic_alpha: 0.35
+  intrinsic_alpha_end: 0.10
   hybrid_anchor: false
   hybrid_anchor_path: null
   hybrid_init_low: false
   execution_mode: goal_conditioned
   residual_init: false
-  # goal 相对 obs_norm 放大，避免淹没（旧 GC 死通路主因之一）
   goal_input_scale: 4.0
   low_use_raw_obs: false
   obs_norm: true
   obs_scale: 1.0e6
-  # 不做 Hybrid 残差 MLE
   mle_pretrain_residual: false
   mle_fit_mode: false
-  # --- F-MLE：可行规则轨迹逆动力学预热（非 Hybrid 教师）---
+  # --- Hierarchical-SAC low level ---
+  low_level_algo: sac
+  low_target_entropy: -4.1   # -(3 + log 3)
+  low_alpha_lr: 3.0e-4
+  low_alpha_max: 1.0         # hard clamp; prevents alpha blow-up
+  actor_bc_weight: 0.0       # pure max-ent; no buffer BC on low actor
+  # F-MLE warm-start still useful for mode/thermal structure
   f_mle_pretrain: true
   f_mle_low: true
   f_mle_high: true
   f_mle_windows: 4
-  f_mle_epochs_low: 25
-  f_mle_epochs_high: 25
-  # 探索
-  high_explore_noise: 0.05
-  low_explore_noise: 0.06
-  epsilon_start: 0.25
+  f_mle_epochs_low: 20
+  f_mle_epochs_high: 20
+  # Explore: SAC low handles stochasticity; keep mild high-level noise
+  high_explore_noise: 0.04
+  low_explore_noise: 0.0
+  epsilon_start: 0.20
   epsilon_end: 0.05
-  # TD3 + SMDP γ^c
   gamma: 0.99
   tau: 0.005
   policy_delay: 1
@@ -48,16 +53,15 @@ ghtd3:
   q_clip: 200.0
   q_clip_high: 50.0
   high_reward_normalize: true
-  # buffer
   high_buffer_size: 30000
-  low_buffer_size: 120000
+  low_buffer_size: 150000
   high_batch_size: 64
   low_batch_size: 128
   learning_starts_low: 512
   learning_starts_high: 64
   gradient_steps_low: 2
   gradient_steps_high: 4
-  # --- MS-HER：市场结构化 hindsight 回放 ---
+  # MS-HER kept for high-level variance
   goal_relabel: true
   goal_relabel_mode: ms_her
   ms_her_weighting: true
@@ -67,35 +71,27 @@ ghtd3:
   relabel_p_orig: 0.35
   relabel_p_ach: 0.35
   relabel_candidates: 8
-  # --- MSGP：市场 / 回收目标先验退火 ---
+  # --- Weak MSGP (ablation: strong prior hurts mean J) ---
   market_goal_prior: true
-  market_prior_weight: 0.55
-  market_prior_weight_end: 0.12
-  market_prior_anneal_start: 0.25
-  market_prior_strength: 0.14
+  market_prior_weight: 0.22
+  market_prior_weight_end: 0.04
+  market_prior_anneal_start: 0.15
+  market_prior_strength: 0.10
   charge_threshold: 0.40
   discharge_threshold: 0.90
-  recovery_goal_horizon_steps: 48
-  recovery_prior_weight: 0.98
-  # 课程：早期强 prior + 只训底层（无教师时更需要）
-  phase_a_steps: 4000
+  recovery_goal_horizon_steps: 40
+  recovery_prior_weight: 0.55
+  phase_a_steps: 2500
   goal_dropout: 0.0
-  actor_bc_weight: 0.20
   log_every: 500
   price_aware_bootstrap: true
   bc_pretrain: true
   bc_pretrain_low: true
   bc_pretrain_high: true
   bc_windows: 4
-  bc_epochs_low: 25
-  bc_epochs_high: 25
-  # 从零 λ-SoC（全程）
-  high_lambda_soc: true
-  ltar_lambda_init: 0.35
-  ltar_lambda_lr: 0.15
-  ltar_lambda_max: 8.0
-  ltar_cost_tol: 0.0
-  tea_terminal_soc_penalty: 0.45
+  bc_epochs_low: 20
+  bc_epochs_high: 20
+  high_lambda_soc: false
   tariff_aligned_c: false
   use_shadow: false
 

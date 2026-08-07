@@ -61,7 +61,6 @@ ghtd3:
   critic_lr: 3.0e-4
   target_noise: 0.2
   noise_clip: 0.5
-  reward_clip: [-25.0, 25.0]
   q_clip: 200.0
   q_clip_high: 50.0
   high_reward_normalize: true

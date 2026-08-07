@@ -398,15 +398,10 @@ def run_hybrid_training(
     safety_dataset = SafetyDataset()
     collector = GiveSafeTransitionCollector(buffer, controller, shadow=shadow, safety_dataset=safety_dataset)
     rew_cfg = env.reward_calculator.config
-    clip_cfg = rew_cfg.get("reward_clip") or {}
-    reward_clip = None
-    if clip_cfg.get("enabled", True):
-        reward_clip = (float(clip_cfg.get("min", -20.0)), float(clip_cfg.get("max", 20.0)))
     agent = HybridTD3(
         obs_dim=int(np.prod(env.observation_space.shape)),
         gamma=float(rew_cfg.get("gamma", 0.99)),
         explore_noise=0.08,
-        reward_clip=reward_clip,
         q_clip=200.0,
     )
     # 目标网络与带先验的 actor 同步
@@ -487,7 +482,6 @@ def run_hybrid_training(
             "reset_critic_on_resume": bool(reset_critic_on_resume and resumed),
             "rule_demo_fraction": float(np.clip(rule_demo_fraction, 0.0, 1.0)),
             "soc_shaping": (rew_cfg.get("terminal_soc") or {}).get("shaping"),
-            "reward_clip": reward_clip,
         },
     }
 

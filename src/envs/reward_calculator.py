@@ -47,6 +47,8 @@ class RewardCalculator:
         self.previous_cashflow: dict[str, float] | None = None
         self.previous_soc_l1: float = 0.0
         self.step_in_episode = 0
+        # Cumulative battery discharge energy this episode [MWh] (Cui-style δ)
+        self._batt_discharge_cum_mwh: float = 0.0
         self.episode_steps = int(config.get("episode_steps", 168))
         self.require_complete = require_complete
         self._validate_config()
@@ -131,6 +133,7 @@ class RewardCalculator:
         self.previous_cashflow = self._cashflows(outputs)
         self.previous_soc_l1 = 0.0  # 起点相对自身 L1=0
         self.step_in_episode = 0
+        self._batt_discharge_cum_mwh = 0.0
 
     def terminal_soc_diagnostics(self, outputs: dict[str, float]) -> dict[str, float]:
         """计算终端 SOC 相对初始值的 L1/L2 误差与是否满足容差。
@@ -237,6 +240,184 @@ class RewardCalculator:
             "soc_l1_prev": prev,
         }
 
+    @staticmethod
+    def _power_mwh(power_w: float, dt_h: float) -> float:
+        """Convert W over dt_h hours to MWh."""
+        return float(power_w) * float(dt_h) / 1.0e6
+
+    def _carbon_cost(self, outputs: Mapping[str, float], *, dt_h: float) -> tuple[float, dict[str, float]]:
+        """ETS-style CO2 cost [CNY] from p_thermal / p_grid (no Modelica change)."""
+        cc = self.config.get("carbon") or {}
+        if not bool(cc.get("enabled", False)):
+            return 0.0, {
+                "carbon_enabled": 0.0,
+                "carbon_mass_t": 0.0,
+                "carbon_cost_cny": 0.0,
+                "carbon_price_cny_per_t": 0.0,
+            }
+        price = float(cc.get("price_cny_per_t", 80.0))
+        eta_th = float(cc.get("eta_thermal_t_per_mwh", 0.85))
+        eta_g = float(cc.get("eta_grid_t_per_mwh", 0.5703))
+        p_th = float(outputs.get(str(cc.get("thermal_power_key", "p_thermal")), 0.0) or 0.0)
+        p_g = float(outputs.get(str(cc.get("grid_power_key", "p_grid")), 0.0) or 0.0)
+        e_th = self._power_mwh(abs(p_th), dt_h)
+        if bool(cc.get("count_grid_import_only", True)):
+            e_buy = self._power_mwh(max(p_g, 0.0), dt_h)
+        else:
+            e_buy = self._power_mwh(abs(p_g), dt_h)
+        mass = eta_th * e_th + eta_g * e_buy
+        cost = price * mass
+        return float(cost), {
+            "carbon_enabled": 1.0,
+            "carbon_mass_t": float(mass),
+            "carbon_cost_cny": float(cost),
+            "carbon_price_cny_per_t": price,
+            "carbon_eta_thermal": eta_th,
+            "carbon_eta_grid": eta_g,
+            "carbon_e_thermal_mwh": float(e_th),
+            "carbon_e_grid_buy_mwh": float(e_buy),
+        }
+
+    def _curtailment_cost(self, outputs: Mapping[str, float], *, dt_h: float) -> tuple[float, dict[str, float]]:
+        """C^CUT: curtailment + unserved penalties [CNY] from FMU powers."""
+        cfg = self.config.get("curtailment") or {}
+        if not bool(cfg.get("enabled", False)):
+            return 0.0, {
+                "curtailment_enabled": 0.0,
+                "curtailment_cost_cny": 0.0,
+                "unserved_cost_cny": 0.0,
+                "cut_total_cost_cny": 0.0,
+            }
+        nu_c = float(cfg.get("nu_curt_cny_per_mwh", 300.0))
+        nu_u = float(cfg.get("nu_uns_cny_per_mwh", 1000.0))
+        k_c = str(cfg.get("curtail_power_key", "p_curtailment"))
+        k_u = str(cfg.get("unserved_power_key", "p_unserved"))
+        e_c = self._power_mwh(max(float(outputs.get(k_c, 0.0) or 0.0), 0.0), dt_h)
+        e_u = self._power_mwh(max(float(outputs.get(k_u, 0.0) or 0.0), 0.0), dt_h)
+        cost_c, cost_u = nu_c * e_c, nu_u * e_u
+        total = cost_c + cost_u
+        return float(total), {
+            "curtailment_enabled": 1.0,
+            "curtailment_energy_mwh": float(e_c),
+            "unserved_energy_mwh": float(e_u),
+            "curtailment_cost_cny": float(cost_c),
+            "unserved_cost_cny": float(cost_u),
+            "cut_total_cost_cny": float(total),
+            "nu_curt_cny_per_mwh": nu_c,
+            "nu_uns_cny_per_mwh": nu_u,
+        }
+
+    def _battery_deg_params(self, cfg: Mapping[str, Any]) -> dict[str, float]:
+        """Calibrate Cui-style a0 and life quantities from Capex / cycles / DoD / E_cap."""
+        e_cap = float(cfg.get("e_cap_mwh", 400.0))
+        capex_kwh = float(cfg.get("capex_cny_per_kwh", 1000.0))
+        n_cyc = float(cfg.get("n_cycles", 5000.0))
+        dod = float(cfg.get("dod_eq", 0.8))
+        p_exp = float(cfg.get("power_exp", 2.03))
+        capex_total = capex_kwh * e_cap * 1000.0  # CNY
+        e_life = max(n_cyc * dod * e_cap, 1e-9)  # MWh lifetime discharge
+        a0_over = cfg.get("a0", None)
+        if a0_over is not None and str(a0_over).strip() != "":
+            a0 = float(a0_over)
+        else:
+            # ψ(E_life) = Capex_total  ⇒  a0 = Capex_total / E_life^p
+            a0 = capex_total / (e_life**p_exp)
+        off_frac = float(cfg.get("offset_frac_of_life", 0.25))
+        delta_offset = max(0.0, off_frac) * e_life
+        # Reference linear CNY/MWh for diagnostics: Capex_total / E_life
+        c_lin = capex_total / e_life
+        return {
+            "e_cap_mwh": e_cap,
+            "capex_total_cny": capex_total,
+            "e_life_mwh": e_life,
+            "a0": a0,
+            "power_exp": p_exp,
+            "delta_offset_mwh": delta_offset,
+            "c_lin_cny_per_mwh": c_lin,
+            "n_cycles": n_cyc,
+            "dod_eq": dod,
+            "capex_cny_per_kwh": capex_kwh,
+        }
+
+    def _battery_deg_cost(self, outputs: Mapping[str, float], *, dt_h: float) -> tuple[float, dict[str, float]]:
+        """Battery degradation cost [CNY].
+
+        Default: Cui-style convex cumulative discharge
+            ψ(δ)=a0·δ^p,  C_t = ψ(δ_off+δ_t) - ψ(δ_off+δ_{t-1}),
+        with a0 from Capex/life and mid-life offset so weekly marginal cost is non-vanishing.
+
+        Legacy: mode=linear_throughput uses constant CNY/MWh on |P| or discharge.
+        Modelica Battery Income has no cycle term.
+        """
+        cfg = self.config.get("battery_degradation") or {}
+        if not bool(cfg.get("enabled", False)):
+            return 0.0, {
+                "battery_deg_enabled": 0.0,
+                "battery_deg_cost_cny": 0.0,
+                "battery_deg_mode": 0.0,
+            }
+        mode = str(cfg.get("mode", "convex_cumulative")).lower()
+        k = str(cfg.get("battery_power_key", "p_battery"))
+        p = float(outputs.get(k, 0.0) or 0.0)
+        # Discharge energy this step [MWh]
+        if bool(cfg.get("discharge_negative_power", True)):
+            e_dis = self._power_mwh(abs(min(p, 0.0)), dt_h)
+        else:
+            e_dis = self._power_mwh(max(p, 0.0), dt_h)
+
+        if mode in ("linear", "linear_throughput"):
+            par = self._battery_deg_params(cfg)
+            c_deg = float(cfg.get("c_deg_cny_per_mwh") or par["c_lin_cny_per_mwh"])
+            thr = e_dis if bool(cfg.get("discharge_only", True)) else self._power_mwh(abs(p), dt_h)
+            cost = c_deg * thr
+            return float(cost), {
+                "battery_deg_enabled": 1.0,
+                "battery_deg_mode": 1.0,
+                "battery_deg_cost_cny": float(cost),
+                "battery_discharge_mwh": float(e_dis),
+                "battery_throughput_mwh": float(thr),
+                "c_deg_cny_per_mwh": float(c_deg),
+                "battery_deg_a0": 0.0,
+                "battery_deg_delta_mwh": float(self._batt_discharge_cum_mwh),
+            }
+
+        # --- convex cumulative (default) ---
+        par = self._battery_deg_params(cfg)
+        a0 = par["a0"]
+        p_exp = par["power_exp"]
+        d_off = par["delta_offset_mwh"]
+        d0 = float(self._batt_discharge_cum_mwh)
+        d1 = d0 + float(e_dis)
+        self._batt_discharge_cum_mwh = d1
+
+        def psi(d: float) -> float:
+            x = max(d_off + max(d, 0.0), 0.0)
+            return a0 * (x**p_exp)
+
+        cost = max(0.0, psi(d1) - psi(d0))
+        # Instantaneous marginal at end of step (for logs)
+        x1 = d_off + d1
+        marg = a0 * p_exp * (x1 ** (p_exp - 1.0)) if x1 > 0 else 0.0
+        return float(cost), {
+            "battery_deg_enabled": 1.0,
+            "battery_deg_mode": 2.0,  # 2 = convex
+            "battery_deg_cost_cny": float(cost),
+            "battery_discharge_mwh": float(e_dis),
+            "battery_deg_delta_mwh": float(d1),
+            "battery_deg_delta_prev_mwh": float(d0),
+            "battery_deg_delta_offset_mwh": float(d_off),
+            "battery_deg_a0": float(a0),
+            "battery_deg_power_exp": float(p_exp),
+            "battery_deg_e_life_mwh": float(par["e_life_mwh"]),
+            "battery_deg_capex_total_cny": float(par["capex_total_cny"]),
+            "battery_deg_marginal_cny_per_mwh": float(marg),
+            "c_lin_cny_per_mwh": float(par["c_lin_cny_per_mwh"]),
+            "battery_deg_capex_cny_per_kwh": float(par["capex_cny_per_kwh"]),
+            "battery_deg_n_cycles": float(par["n_cycles"]),
+            "battery_deg_dod_eq": float(par["dod_eq"]),
+            "battery_deg_e_cap_mwh": float(par["e_cap_mwh"]),
+        }
+
     def calculate(
         self,
         outputs: dict[str, float],
@@ -249,11 +430,10 @@ class RewardCalculator:
         market_prices: Mapping[str, float] | None = None,
         decision_interval_hours: float | None = None,
     ) -> tuple[float, dict[str, float]]:
-        """奖励 = 经济现金流增量/C_ref + SOC shaping + 终端 bonus。
+        """奖励 = 综合货币增量 ΔJ_gen/C_ref + SOC shaping + 终端 bonus。
 
-        market_prices 若提供 ``buy_yuan_per_kwh`` / ``sell_yuan_per_kwh``，则用分时电价
-        重算电网现金流，并替换 FMU 电网增量：  
-        ``delta_total' = delta_total - delta_grid_fmu + market_grid_cashflow``。
+        ΔJ_gen = ΔJ_cash − π·Δm − C^CUT − C^deg（Python 权威经济层）。
+        market_prices 若提供 buy/sell，则用分时电价替换 FMU 电网增量。
         """
         if self.previous_cashflow is None:
             raise RuntimeError("RewardCalculator 必须先 reset")
@@ -266,22 +446,24 @@ class RewardCalculator:
         else:
             reference, reference_missing = float(cref), False
 
+        dt_h = decision_interval_hours
+        if dt_h is None:
+            dt_h = float(self.config.get("decision_interval_seconds", 3600)) / 3600.0
+        dt_h = float(dt_h)
+
         market_terms: dict[str, float] = {"market_settlement_enabled": 0.0}
-        economic_delta = float(delta[ECONOMIC_TOTAL])
+        cash_delta = float(delta[ECONOMIC_TOTAL])
         if market_prices is not None:
             buy = market_prices.get("buy_yuan_per_kwh")
             sell = market_prices.get("sell_yuan_per_kwh")
             if buy is None or sell is None:
                 raise ValueError("market_prices 需含 buy_yuan_per_kwh 与 sell_yuan_per_kwh")
-            dt_h = decision_interval_hours
-            if dt_h is None:
-                dt_h = float(self.config.get("decision_interval_seconds", 3600)) / 3600.0
             p_grid = float(outputs.get("p_grid", 0.0))
-            settled = settle_grid_step(p_grid, float(buy), float(sell), float(dt_h))
+            settled = settle_grid_step(p_grid, float(buy), float(sell), dt_h)
             fmu_grid_delta = float(delta[ECONOMIC_GRID])
-            economic_delta = economic_delta - fmu_grid_delta + float(settled["market_grid_cashflow"])
+            cash_delta = cash_delta - fmu_grid_delta + float(settled["market_grid_cashflow"])
             delta = dict(delta)
-            delta[ECONOMIC_TOTAL] = economic_delta
+            delta[ECONOMIC_TOTAL] = cash_delta
             delta[ECONOMIC_GRID] = float(settled["market_grid_cashflow"])
             market_terms = {
                 "market_settlement_enabled": 1.0,
@@ -289,9 +471,15 @@ class RewardCalculator:
                 "fmu_grid_cashflow_delta": fmu_grid_delta,
             }
 
-        economic_reward = economic_delta / reference
-        # 离线报告以“成本”为正，严格等于有效现金流增量的相反数。
-        raw_total_cost = -economic_delta
+        carbon_cost, carbon_terms = self._carbon_cost(outputs, dt_h=dt_h)
+        cut_cost, cut_terms = self._curtailment_cost(outputs, dt_h=dt_h)
+        deg_cost, deg_terms = self._battery_deg_cost(outputs, dt_h=dt_h)
+        generalized_delta = (
+            float(cash_delta) - float(carbon_cost) - float(cut_cost) - float(deg_cost)
+        )
+        economic_reward = generalized_delta / reference
+        raw_total_cost = -cash_delta
+        raw_generalized_cost = -generalized_delta
         terminal_bonus = 0.0
         diag = self.terminal_soc_diagnostics(outputs) if self.initial_soc else {
             "terminal_soc_l1_error": 0.0, "terminal_soc_l2_error": 0.0,
@@ -309,7 +497,6 @@ class RewardCalculator:
             if l1_err <= tol:
                 terminal_bonus = float(term.get("bonus", 0.0))
             else:
-                # 未达标：按 L1 罚，避免“永远不回收仍拿高经济 reward”
                 fail_pen = float(term.get("fail_penalty_l1", 0.0) or 0.0)
                 terminal_bonus = -fail_pen * l1_err
         elif gates and term.get("mode") == "quadratic_penalty":
@@ -317,17 +504,24 @@ class RewardCalculator:
         reward = economic_reward + shaping_reward + terminal_bonus
         terms: dict[str, float] = {
             "economic_cashflow_total": current[ECONOMIC_TOTAL],
-            "economic_cashflow_delta": economic_delta,
+            "economic_cashflow_delta": cash_delta,
+            "cashflow_delta": cash_delta,
+            "generalized_cashflow_delta": generalized_delta,
             "economic_reward": economic_reward,
             "raw_total_cost": raw_total_cost,
-            "normalized_cost": raw_total_cost / reference,
+            "raw_generalized_cost": raw_generalized_cost,
+            "normalized_cost": raw_generalized_cost / reference,
             "cost_reference": reference,
             "cost_reference_missing": float(reference_missing),
             "terminal_soc_bonus": terminal_bonus,
             "reward": reward,
+            "external_cost_cny": float(carbon_cost) + float(cut_cost) + float(deg_cost),
             **diag,
             **shaping_terms,
             **market_terms,
+            **carbon_terms,
+            **cut_terms,
+            **deg_terms,
         }
         for name in ECONOMIC_COMPONENTS:
             suffix = name.removeprefix("economic_cashflow_")

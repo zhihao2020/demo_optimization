@@ -99,11 +99,15 @@ def structured_intrinsic_reward(
     *,
     alpha: float,
     weights: Sequence[float] | None = None,
+    relax_thermal_floor: bool = False,
 ) -> tuple[float, dict[str, float]]:
     """5 维 Modelica 对齐内在奖励。
 
     跟踪：bat/gas/th residual + 火电偏置 |u_tp - clip(u_H + g_u)|。
     arb 不进 e，仅由执行侧缩放残差。
+
+    When ``relax_thermal_floor`` is True (absolute GC / no hybrid teacher), do not
+    force u_tgt ≥ 1/3 — that floor biases high thermal and fights economic J.
     """
     g = np.asarray(goal_t, dtype=np.float64).ravel()
     it = np.asarray(intent_t, dtype=np.float64).ravel()
@@ -116,7 +120,12 @@ def structured_intrinsic_reward(
     track_sq = float(np.sum(w_e * e * e))
     # thermal bias track
     g_u = float(g[G_UTP]) if g.size > G_UTP else 0.0
-    u_tgt = float(np.clip(u_tp_hybrid + g_u, 1.0 / 3.0, 1.0))
+    base_u = float(u_tp_hybrid)
+    if relax_thermal_floor:
+        # g_u is a load-rate bias in goal box (~[-0.2,0.2]); center around mid load.
+        u_tgt = float(np.clip(0.5 + g_u + 0.15 * (base_u - 0.5), 0.0, 1.0))
+    else:
+        u_tgt = float(np.clip(base_u + g_u, 1.0 / 3.0, 1.0))
     e_u = abs(float(u_tp) - u_tgt)
     w_u = float(w[3]) if w.size > 3 else 0.4
     track_sq += w_u * e_u * e_u
@@ -128,6 +137,7 @@ def structured_intrinsic_reward(
         "e_gas": float(e[1]) if n > 1 else 0.0,
         "e_th": float(e[2]) if n > 2 else 0.0,
         "e_u_tp": float(e_u),
+        "u_tgt": float(u_tgt),
         "intrinsic_reward": r_int,
         "extrinsic_reward": float(r_ext),
         "intrinsic_alpha": float(alpha),

@@ -363,6 +363,8 @@ def run_ghtd3_training(
                 "MSGP": bool(cfg.get("market_goal_prior", True)),
                 "MS-HER": str(cfg.get("goal_relabel_mode", "")).lower() in ("ms_her", "her_mix")
                 or bool(cfg.get("ms_her_weighting", False)),
+                "H-SAC": str(cfg.get("low_level_algo", "td3")).lower()
+                in ("sac", "soft_actor_critic", "maxent", "hsac"),
             },
         }
         (run_dir / "train" / "bc_summary.json").write_text(
@@ -420,6 +422,8 @@ def run_ghtd3_training(
         "high_goal_count": 0,
         "low_step_count": 0,
         "givesafe_reject": 0,
+        "givesafe_reject_stored": 0,
+        "invalid_step_stored": 0,
         "physical_ok": 0,
         "her_mix": str(cfg.get("goal_relabel_mode", "her_mix")),
         "phase_a_steps": phase_a_steps,
@@ -632,8 +636,66 @@ def run_ghtd3_training(
                     deterministic=False,
                     residual_scale=scale,
                 )
-            def _on_rej(*_args):
+            learn_from_reject = bool(cfg.get("learn_from_reject", True))
+            reject_reward_scale = float(cfg.get("reject_reward_scale", 1.0))
+            reject_store_prob = float(cfg.get("reject_store_prob", 1.0))
+            reject_max_per_step = int(cfg.get("reject_max_store_per_step", 8))
+            reject_stored_this_step = 0
+
+            def _store_reject_transition(proposed_action, safety, terms) -> None:
+                nonlocal reject_stored_this_step
                 stats["givesafe_reject"] += 1
+                if not learn_from_reject:
+                    return
+                if reject_stored_this_step >= max(reject_max_per_step, 0):
+                    return
+                if reject_store_prob < 1.0 and float(np.random.rand()) > reject_store_prob:
+                    return
+                try:
+                    ha = {
+                        "u_tp": float(np.asarray(proposed_action["u_tp"]).reshape(-1)[0]),
+                        "u_battery": float(np.asarray(proposed_action["u_battery"]).reshape(-1)[0]),
+                        "caes_mode": int(proposed_action["caes_mode"]),
+                        "caes_magnitude": float(
+                            np.asarray(proposed_action.get("caes_magnitude", 0.0)).reshape(-1)[0]
+                        ),
+                    }
+                except Exception:
+                    return
+                r_rej = float(terms.get("constraint_reward", -1.0)) * reject_reward_scale
+                bounds_now = {
+                    "u_tp_low": float(feasible.u_tp_low),
+                    "u_tp_high": float(feasible.u_tp_high),
+                    "u_battery_low": float(feasible.u_battery_low),
+                    "u_battery_high": float(feasible.u_battery_high),
+                }
+                mask_now = feasible.mode_mask.as_bool_array()
+                agent.lo_buffer.add(
+                    LowTransition(
+                        observation=np.asarray(obs_before, dtype=np.float32),
+                        goal=np.asarray(g_before, dtype=np.float32),
+                        hybrid_action=ha,
+                        reward_int=float(r_rej),
+                        next_observation=np.asarray(obs_before, dtype=np.float32),
+                        next_goal=np.asarray(g_before, dtype=np.float32),
+                        terminated=False,
+                        valid_mode_mask=mask_now,
+                        next_valid_mode_mask=mask_now,
+                        dynamic_action_bounds=dict(bounds_now),
+                        next_dynamic_action_bounds=dict(bounds_now),
+                        reward_terms={
+                            **dict(terms or {}),
+                            "givesafe_rejection": 1.0,
+                            "rejection_stage": str(getattr(safety, "rejection_stage", "") or ""),
+                            "violation_type": str(getattr(safety, "violation_type", "") or ""),
+                        },
+                    )
+                )
+                reject_stored_this_step += 1
+                stats["givesafe_reject_stored"] = int(stats.get("givesafe_reject_stored", 0)) + 1
+
+            def _on_rej(proposed_action, safety, terms):
+                _store_reject_transition(proposed_action, safety, terms)
 
             try:
                 gs = controller.select_safe_action(
@@ -655,6 +717,44 @@ def run_ghtd3_training(
             stats["low_step_count"] += 1
 
             if not info.get("transition_valid"):
+                # Optional: treat post-step invalid as a learning self-loop (off by default).
+                if bool(cfg.get("learn_from_invalid_step", False)):
+                    try:
+                        ha_inv = {
+                            "u_tp": float(np.asarray(action["u_tp"]).reshape(-1)[0]),
+                            "u_battery": float(np.asarray(action["u_battery"]).reshape(-1)[0]),
+                            "caes_mode": int(action["caes_mode"]),
+                            "caes_magnitude": float(
+                                np.asarray(action.get("caes_magnitude", 0.0)).reshape(-1)[0]
+                            ),
+                        }
+                        pen = float(cfg.get("invalid_step_penalty", -2.0))
+                        bounds_inv = {
+                            "u_tp_low": float(feasible.u_tp_low),
+                            "u_tp_high": float(feasible.u_tp_high),
+                            "u_battery_low": float(feasible.u_battery_low),
+                            "u_battery_high": float(feasible.u_battery_high),
+                        }
+                        mask_inv = feasible.mode_mask.as_bool_array()
+                        agent.lo_buffer.add(
+                            LowTransition(
+                                observation=np.asarray(obs_before, dtype=np.float32),
+                                goal=np.asarray(g_before, dtype=np.float32),
+                                hybrid_action=ha_inv,
+                                reward_int=pen,
+                                next_observation=np.asarray(obs_before, dtype=np.float32),
+                                next_goal=np.asarray(g_before, dtype=np.float32),
+                                terminated=True,
+                                valid_mode_mask=mask_inv,
+                                next_valid_mode_mask=mask_inv,
+                                dynamic_action_bounds=dict(bounds_inv),
+                                next_dynamic_action_bounds=dict(bounds_inv),
+                                reward_terms={"invalid_step": 1.0, "invalid_step_penalty": pen},
+                            )
+                        )
+                        stats["invalid_step_stored"] = int(stats.get("invalid_step_stored", 0)) + 1
+                    except Exception:
+                        pass
                 episode += 1
                 obs, _ = reset_ep(episode)
                 steps_in_cycle = 0
@@ -667,6 +767,7 @@ def run_ghtd3_training(
                 u_tp_act = float(np.asarray(action["u_tp"]).reshape(-1)[0])
             except Exception:
                 u_tp_act = float(u_tp_h)
+            relax_floor = bool(cfg.get("relax_thermal_floor", not agent.hybrid_anchor_enabled))
             r_int, shape_terms = structured_intrinsic_reward(
                 intent_before,
                 g_before,
@@ -676,6 +777,7 @@ def run_ghtd3_training(
                 float(r_ext),
                 alpha=alpha,
                 weights=intrinsic_weights,
+                relax_thermal_floor=relax_floor,
             )
             # TEA 安全：相对 Hybrid 的 CAES 幅度偏离惩罚，抑制无意义过吞吐
             thr_pen = float(cfg.get("tea_mag_dev_penalty", 0.0) or 0.0)
@@ -874,6 +976,9 @@ def run_ghtd3_training(
                     "prior_w": scheduled_prior_weight(progress, recovery=False),
                     "alpha": alpha,
                     "phase_a": bool(in_phase_a),
+                    "givesafe_reject": int(stats.get("givesafe_reject", 0)),
+                    "givesafe_reject_stored": int(stats.get("givesafe_reject_stored", 0)),
+                    "lo_buffer_size": int(len(agent.lo_buffer)),
                     **metrics,
                 }
                 if step_log and int(step_log[-1].get("valid_step", -1)) == int(display_step):

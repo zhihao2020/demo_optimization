@@ -18,7 +18,13 @@ from .goals import (
     extract_soc_from_obs,
     residual_scale_from_goal,
 )
-from .networks import HighLevelActor, HighLevelCritic, LowLevelActor, LowLevelCritic
+from .networks import (
+    HighLevelActor,
+    HighLevelCritic,
+    LowLevelActor,
+    LowLevelCritic,
+    LowLevelStochasticActor,
+)
 
 
 class GHTD3Agent:
@@ -49,11 +55,14 @@ class GHTD3Agent:
         self.policy_delay = int(cfg.get("policy_delay", 2))
         self.target_noise = float(cfg.get("target_noise", 0.2))
         self.noise_clip = float(cfg.get("noise_clip", 0.5))
-        rc = cfg.get("reward_clip") or [-20.0, 20.0]
-        self.reward_clip = (float(rc[0]), float(rc[1]))
         # 高层 reward 为 c 步均值后尺度接近底层，q_clip 可收紧
         self.q_clip = float(cfg.get("q_clip", 200.0))
         self.q_clip_high = float(cfg.get("q_clip_high", min(self.q_clip, 50.0)))
+        # Training-time feasible span floor. Large values invent fake action range.
+        # 0 disables widening (prefer true oracle bounds).
+        self.min_span_tp = float(cfg.get("min_span_tp", 0.02))
+        self.min_span_bat = float(cfg.get("min_span_bat", 0.05))
+        self.clamp_high_actor_q = bool(cfg.get("clamp_high_actor_q", False))
         self.high_noise = float(cfg.get("high_explore_noise", 0.05))
         self.low_noise = float(cfg.get("low_explore_noise", 0.08))
         # 高层 reward = mean_ext over cycle（稳定 critic；相对论文 sum 的实现改进）
@@ -62,6 +71,9 @@ class GHTD3Agent:
         self.hybrid_anchor_enabled = bool(cfg.get("hybrid_anchor", False))
         # action_residual: a=a_H+β tanh Δ(s,g)（推荐）；goal_conditioned: 绝对头；blend: 旧混合
         self.execution_mode = str(cfg.get("execution_mode", "action_residual")).lower()
+        # low_level_algo: td3 (default) | sac (max-entropy hybrid low level)
+        self.low_level_algo = str(cfg.get("low_level_algo", "td3")).lower()
+        self.low_sac = self.low_level_algo in ("sac", "soft_actor_critic", "maxent", "hsac")
         self.residual_alpha0 = float(cfg.get("residual_alpha0", 0.0))
         self._hybrid_anchor = None  # set by train via attach_hybrid_anchor
         # action_residual 用 norm obs；仅绝对头移植 Hybrid 时用 raw
@@ -130,9 +142,25 @@ class GHTD3Agent:
         self.hi_actor_t = deepcopy(self.hi_actor).to(self.device)
         self.hi_critic = HighLevelCritic(obs_dim, self.goal_dim).to(self.device)
         self.hi_critic_t = deepcopy(self.hi_critic).to(self.device)
-        self.lo_actor = LowLevelActor(
-            obs_dim, self.goal_dim, residual_init=residual_init, goal_input_scale=goal_scale
-        ).to(self.device)
+        if self.low_sac:
+            self.lo_actor = LowLevelStochasticActor(
+                obs_dim, self.goal_dim, goal_input_scale=goal_scale
+            ).to(self.device)
+            self.lo_target_entropy = float(
+                cfg.get("low_target_entropy", -(3.0 + float(np.log(3.0))))
+            )
+            self.lo_log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
+            self.lo_alpha_lr = float(cfg.get("low_alpha_lr", cfg.get("actor_lr", 3e-4)))
+            self.lo_alpha_opt = torch.optim.Adam([self.lo_log_alpha], lr=self.lo_alpha_lr)
+            self.lo_alpha_max = float(cfg.get("low_alpha_max", 2.0))
+        else:
+            self.lo_actor = LowLevelActor(
+                obs_dim, self.goal_dim, residual_init=residual_init, goal_input_scale=goal_scale
+            ).to(self.device)
+            self.lo_log_alpha = None
+            self.lo_alpha_opt = None
+            self.lo_target_entropy = 0.0
+            self.lo_alpha_max = 2.0
         self.lo_actor_t = deepcopy(self.lo_actor).to(self.device)
         self.lo_critic = LowLevelCritic(obs_dim, self.goal_dim).to(self.device)
         self.lo_critic_t = deepcopy(self.lo_critic).to(self.device)
@@ -152,6 +180,13 @@ class GHTD3Agent:
         # 功率等观测可达 1e8，不归一化则 actor 反传梯度数值上为 0
         self.obs_norm = bool(cfg.get("obs_norm", True))
         self._obs_scale = float(cfg.get("obs_scale", 1.0e6))
+
+    @property
+    def lo_alpha(self) -> torch.Tensor:
+        if self.lo_log_alpha is None:
+            return torch.zeros((), device=self.device)
+        a = self.lo_log_alpha.exp().clamp(max=self.lo_alpha_max)
+        return a
 
     def _prep_obs(self, obs: torch.Tensor) -> torch.Tensor:
         if not self.obs_norm:
@@ -530,7 +565,7 @@ class GHTD3Agent:
         *,
         deterministic: bool = False,
     ) -> dict:
-        """Goal-conditioned 底层（移植 Hybrid 后：g=0 ≈ Hybrid）。"""
+        """Goal-conditioned low level: TD3 deterministic head or SAC stochastic hybrid."""
         self.lo_actor.eval()
         with torch.no_grad():
             o = torch.as_tensor(obs, dtype=torch.float32, device=self.device).view(1, -1)
@@ -541,18 +576,32 @@ class GHTD3Agent:
                 n = min(self.goal_dim, g.shape[-1])
                 gg[:, :n] = g[:, :n]
                 g = gg
-            mask = torch.as_tensor(feasible.mode_mask.as_bool_array(), dtype=torch.bool, device=self.device).view(1, 3)
-            out = self.lo_actor.act(
-                o,
-                g,
-                torch.tensor([feasible.u_tp_low], device=self.device),
-                torch.tensor([feasible.u_tp_high], device=self.device),
-                torch.tensor([feasible.u_battery_low], device=self.device),
-                torch.tensor([feasible.u_battery_high], device=self.device),
-                mask,
-                deterministic=deterministic,
-                explore_noise_std=0.0 if deterministic else self.low_noise,
-            )
+            mask = torch.as_tensor(
+                feasible.mode_mask.as_bool_array(), dtype=torch.bool, device=self.device
+            ).view(1, 3)
+            if self.low_sac:
+                out = self.lo_actor.forward_action(
+                    o,
+                    g,
+                    torch.tensor([feasible.u_tp_low], device=self.device),
+                    torch.tensor([feasible.u_tp_high], device=self.device),
+                    torch.tensor([feasible.u_battery_low], device=self.device),
+                    torch.tensor([feasible.u_battery_high], device=self.device),
+                    mask,
+                    deterministic=deterministic,
+                )
+            else:
+                out = self.lo_actor.act(
+                    o,
+                    g,
+                    torch.tensor([feasible.u_tp_low], device=self.device),
+                    torch.tensor([feasible.u_tp_high], device=self.device),
+                    torch.tensor([feasible.u_battery_low], device=self.device),
+                    torch.tensor([feasible.u_battery_high], device=self.device),
+                    mask,
+                    deterministic=deterministic,
+                    explore_noise_std=0.0 if deterministic else self.low_noise,
+                )
         return {
             "u_tp": np.asarray([float(out["u_tp"][0].cpu())], dtype=np.float32),
             "u_battery": np.asarray([float(out["u_battery"][0].cpu())], dtype=np.float32),
@@ -616,6 +665,8 @@ class GHTD3Agent:
         }
 
     def update_low(self, batch_size: int) -> dict[str, float]:
+        if self.low_sac:
+            return self._update_low_sac(batch_size)
         if len(self.lo_buffer) < batch_size:
             return {}
         self.lo_it += 1
@@ -640,7 +691,7 @@ class GHTD3Agent:
         mode = torch.as_tensor(b["caes_mode"], device=self.device, dtype=torch.int64)
         mode_oh = F.one_hot(mode, 3).float()
         mag = torch.as_tensor(b["caes_magnitude"], device=self.device)
-        reward = torch.as_tensor(b["reward"], device=self.device).clamp(*self.reward_clip)
+        reward = torch.as_tensor(b["reward"], device=self.device)
         done = torch.as_tensor(b["done"], device=self.device)
         next_mask = torch.as_tensor(b["next_mode_mask"], device=self.device)
 
@@ -653,19 +704,21 @@ class GHTD3Agent:
         n_tp_hi = torch.as_tensor(b["next_u_tp_high"], device=self.device)
         n_bat_lo = torch.as_tensor(b["next_u_bat_low"], device=self.device)
         n_bat_hi = torch.as_tensor(b["next_u_bat_high"], device=self.device)
-        min_span_tp, min_span_bat = 0.15, 0.30
-        tp_hi_b = torch.maximum(tp_hi_b, tp_lo_b + min_span_tp)
-        tp_lo_b = torch.minimum(tp_lo_b, tp_hi_b - min_span_tp).clamp(0.0, 1.0)
-        tp_hi_b = tp_hi_b.clamp(0.0, 1.0)
-        bat_hi_b = torch.maximum(bat_hi_b, bat_lo_b + min_span_bat)
-        bat_lo_b = torch.minimum(bat_lo_b, bat_hi_b - min_span_bat).clamp(-1.0, 1.0)
-        bat_hi_b = bat_hi_b.clamp(-1.0, 1.0)
-        n_tp_hi = torch.maximum(n_tp_hi, n_tp_lo + min_span_tp)
-        n_tp_lo = torch.minimum(n_tp_lo, n_tp_hi - min_span_tp).clamp(0.0, 1.0)
-        n_tp_hi = n_tp_hi.clamp(0.0, 1.0)
-        n_bat_hi = torch.maximum(n_bat_hi, n_bat_lo + min_span_bat)
-        n_bat_lo = torch.minimum(n_bat_lo, n_bat_hi - min_span_bat).clamp(-1.0, 1.0)
-        n_bat_hi = n_bat_hi.clamp(-1.0, 1.0)
+        min_span_tp, min_span_bat = float(self.min_span_tp), float(self.min_span_bat)
+        if min_span_tp > 0.0:
+            tp_hi_b = torch.maximum(tp_hi_b, tp_lo_b + min_span_tp)
+            tp_lo_b = torch.minimum(tp_lo_b, tp_hi_b - min_span_tp).clamp(0.0, 1.0)
+            tp_hi_b = tp_hi_b.clamp(0.0, 1.0)
+            n_tp_hi = torch.maximum(n_tp_hi, n_tp_lo + min_span_tp)
+            n_tp_lo = torch.minimum(n_tp_lo, n_tp_hi - min_span_tp).clamp(0.0, 1.0)
+            n_tp_hi = n_tp_hi.clamp(0.0, 1.0)
+        if min_span_bat > 0.0:
+            bat_hi_b = torch.maximum(bat_hi_b, bat_lo_b + min_span_bat)
+            bat_lo_b = torch.minimum(bat_lo_b, bat_hi_b - min_span_bat).clamp(-1.0, 1.0)
+            bat_hi_b = bat_hi_b.clamp(-1.0, 1.0)
+            n_bat_hi = torch.maximum(n_bat_hi, n_bat_lo + min_span_bat)
+            n_bat_lo = torch.minimum(n_bat_lo, n_bat_hi - min_span_bat).clamp(-1.0, 1.0)
+            n_bat_hi = n_bat_hi.clamp(-1.0, 1.0)
         mask = torch.as_tensor(b["mode_mask"], device=self.device)
         all_false = ~mask.any(dim=-1, keepdim=True)
         mask = torch.where(all_false, torch.ones_like(mask), mask)
@@ -827,6 +880,137 @@ class GHTD3Agent:
         self.last_metrics.update(metrics)
         return metrics
 
+    def _update_low_sac(self, batch_size: int) -> dict[str, float]:
+        """Max-entropy low-level update (goal-conditioned Hybrid-SAC)."""
+        if len(self.lo_buffer) < batch_size:
+            return {}
+        self.lo_it += 1
+        b = self.lo_buffer.sample_batch(batch_size)
+        obs = self._prep_obs_low(torch.as_tensor(b["obs"], device=self.device))
+        goal = torch.as_tensor(b["goal"], device=self.device)
+        next_obs = self._prep_obs_low(torch.as_tensor(b["next_obs"], device=self.device))
+        next_goal = torch.as_tensor(b["next_goal"], device=self.device)
+        if goal.shape[-1] != self.goal_dim:
+            gg = torch.zeros(goal.shape[0], self.goal_dim, device=self.device)
+            n = min(self.goal_dim, goal.shape[-1])
+            gg[:, :n] = goal[:, :n]
+            goal = gg
+        if next_goal.shape[-1] != self.goal_dim:
+            ng = torch.zeros(next_goal.shape[0], self.goal_dim, device=self.device)
+            n = min(self.goal_dim, next_goal.shape[-1])
+            ng[:, :n] = next_goal[:, :n]
+            next_goal = ng
+        u_tp = torch.as_tensor(b["u_tp"], device=self.device)
+        u_bat = torch.as_tensor(b["u_battery"], device=self.device)
+        mode = torch.as_tensor(b["caes_mode"], device=self.device, dtype=torch.long)
+        mode_oh = F.one_hot(mode, 3).float()
+        mag = torch.as_tensor(b["caes_magnitude"], device=self.device)
+        reward = torch.as_tensor(b["reward"], device=self.device)
+        done = torch.as_tensor(b["done"], device=self.device)
+        next_mask = torch.as_tensor(b["next_mode_mask"], device=self.device)
+        tp_lo_b = torch.as_tensor(b["u_tp_low"], device=self.device)
+        tp_hi_b = torch.as_tensor(b["u_tp_high"], device=self.device)
+        bat_lo_b = torch.as_tensor(b["u_bat_low"], device=self.device)
+        bat_hi_b = torch.as_tensor(b["u_bat_high"], device=self.device)
+        n_tp_lo = torch.as_tensor(b["next_u_tp_low"], device=self.device)
+        n_tp_hi = torch.as_tensor(b["next_u_tp_high"], device=self.device)
+        n_bat_lo = torch.as_tensor(b["next_u_bat_low"], device=self.device)
+        n_bat_hi = torch.as_tensor(b["next_u_bat_high"], device=self.device)
+        min_span_tp, min_span_bat = float(self.min_span_tp), float(self.min_span_bat)
+        if min_span_tp > 0.0:
+            tp_hi_b = torch.maximum(tp_hi_b, tp_lo_b + min_span_tp).clamp(0.0, 1.0)
+            tp_lo_b = torch.minimum(tp_lo_b, tp_hi_b - min_span_tp).clamp(0.0, 1.0)
+            n_tp_hi = torch.maximum(n_tp_hi, n_tp_lo + min_span_tp).clamp(0.0, 1.0)
+            n_tp_lo = torch.minimum(n_tp_lo, n_tp_hi - min_span_tp).clamp(0.0, 1.0)
+        if min_span_bat > 0.0:
+            bat_hi_b = torch.maximum(bat_hi_b, bat_lo_b + min_span_bat).clamp(-1.0, 1.0)
+            bat_lo_b = torch.minimum(bat_lo_b, bat_hi_b - min_span_bat).clamp(-1.0, 1.0)
+            n_bat_hi = torch.maximum(n_bat_hi, n_bat_lo + min_span_bat).clamp(-1.0, 1.0)
+            n_bat_lo = torch.minimum(n_bat_lo, n_bat_hi - min_span_bat).clamp(-1.0, 1.0)
+        mask = torch.as_tensor(b["mode_mask"], device=self.device)
+        all_false = ~mask.any(dim=-1, keepdim=True)
+        mask = torch.where(all_false, torch.ones_like(mask), mask)
+        next_mask = torch.where(
+            ~next_mask.any(dim=-1, keepdim=True), torch.ones_like(next_mask), next_mask
+        )
+
+        with torch.no_grad():
+            na = self.lo_actor.forward_action(
+                next_obs,
+                next_goal,
+                n_tp_lo,
+                n_tp_hi,
+                n_bat_lo,
+                n_bat_hi,
+                next_mask,
+                deterministic=False,
+            )
+            q1t, q2t = self.lo_critic_t(
+                next_obs,
+                next_goal,
+                na["u_tp"],
+                na["u_battery"],
+                na["caes_mode_oh"],
+                na["caes_magnitude"],
+            )
+            min_q_t = torch.min(q1t, q2t) - self.lo_alpha.detach() * na["log_prob"]
+            target = reward + (1.0 - done) * self.gamma * min_q_t.clamp(-self.q_clip, self.q_clip)
+
+        self.lo_actor.train()
+        self.lo_critic.train()
+        q1, q2 = self.lo_critic(obs, goal, u_tp, u_bat, mode_oh, mag)
+        loss = F.smooth_l1_loss(q1, target) + F.smooth_l1_loss(q2, target)
+        self.lo_critic_opt.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.lo_critic.parameters(), 10.0)
+        self.lo_critic_opt.step()
+
+        cur = self.lo_actor.forward_action(
+            obs, goal, tp_lo_b, tp_hi_b, bat_lo_b, bat_hi_b, mask, deterministic=False
+        )
+        q_pi = torch.min(
+            *self.lo_critic(
+                obs,
+                goal,
+                cur["u_tp"],
+                cur["u_battery"],
+                cur["caes_mode_oh"],
+                cur["caes_magnitude"],
+            )
+        )
+        actor_loss = (self.lo_alpha.detach() * cur["log_prob"] - q_pi).mean()
+        self.lo_actor_opt.zero_grad()
+        actor_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.lo_actor.parameters(), 10.0)
+        self.lo_actor_opt.step()
+
+        # Auto temperature with clamp (prevent α blow-up seen in long single-layer SAC runs)
+        alpha_loss = -(
+            self.lo_log_alpha * (cur["log_prob"].detach() + self.lo_target_entropy)
+        ).mean()
+        self.lo_alpha_opt.zero_grad()
+        alpha_loss.backward()
+        self.lo_alpha_opt.step()
+        with torch.no_grad():
+            # clamp log_alpha so α ∈ (1e-4, lo_alpha_max)
+            lo = float(np.log(1e-4))
+            hi = float(np.log(max(self.lo_alpha_max, 1e-3)))
+            self.lo_log_alpha.clamp_(lo, hi)
+
+        self._soft(self.lo_critic, self.lo_critic_t)
+        # Soft-update stochastic actor target lightly (for optional target-policy diagnostics)
+        self._soft(self.lo_actor, self.lo_actor_t)
+
+        metrics = {
+            "lo_critic_loss": float(loss.item()),
+            "lo_actor_loss": float(actor_loss.item()),
+            "lo_q1_mean": float(q1.mean().item()),
+            "lo_alpha": float(self.lo_alpha.detach().item()),
+            "lo_entropy": float(cur["entropy"].mean().item()),
+        }
+        self.last_metrics.update(metrics)
+        return metrics
+
     def _achieved_delta(self, tr: HighTransition) -> np.ndarray | None:
         if tr.achieved_delta is not None:
             d = np.asarray(tr.achieved_delta, dtype=np.float32).ravel()
@@ -960,7 +1144,7 @@ class GHTD3Agent:
         b = self.hi_buffer.sample_batch(batch_size)
         obs = self._prep_obs(torch.as_tensor(b["obs"], device=self.device))
         next_obs = self._prep_obs(torch.as_tensor(b["next_obs"], device=self.device))
-        reward = torch.as_tensor(b["reward"], device=self.device).clamp(*self.reward_clip)
+        reward = torch.as_tensor(b["reward"], device=self.device)
         done = torch.as_tensor(b["done"], device=self.device)
         if self.cfg.get("goal_relabel", True):
             goal_np = self._relabel_goals(b["transitions"])
@@ -992,7 +1176,10 @@ class GHTD3Agent:
         if self.hi_it % self.policy_delay == 0:
             g_pi = self.hi_actor(obs, self._goal_low_t.expand(obs.size(0), -1), self._goal_high_t.expand(obs.size(0), -1))
             q_pi = self.hi_critic.q1_only(obs, g_pi)
-            aloss = -q_pi.clamp(-self.q_clip_high, self.q_clip_high).mean()
+            # Do not clamp actor Q by default: hard clip flattens high-level preference.
+            if self.clamp_high_actor_q:
+                q_pi = q_pi.clamp(-self.q_clip_high, self.q_clip_high)
+            aloss = -q_pi.mean()
             self.hi_actor_opt.zero_grad()
             aloss.backward()
             torch.nn.utils.clip_grad_norm_(self.hi_actor.parameters(), 5.0)
@@ -1017,18 +1204,19 @@ class GHTD3Agent:
     def save(self, path: str | Path) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save(
-            {
-                "hi_actor": self.hi_actor.state_dict(),
-                "hi_critic": self.hi_critic.state_dict(),
-                "lo_actor": self.lo_actor.state_dict(),
-                "lo_critic": self.lo_critic.state_dict(),
-                "hi_it": self.hi_it,
-                "lo_it": self.lo_it,
-                "cfg": self.cfg,
-            },
-            path,
-        )
+        payload = {
+            "hi_actor": self.hi_actor.state_dict(),
+            "hi_critic": self.hi_critic.state_dict(),
+            "lo_actor": self.lo_actor.state_dict(),
+            "lo_critic": self.lo_critic.state_dict(),
+            "hi_it": self.hi_it,
+            "lo_it": self.lo_it,
+            "cfg": self.cfg,
+            "low_level_algo": self.low_level_algo,
+        }
+        if self.low_sac and self.lo_log_alpha is not None:
+            payload["lo_log_alpha"] = float(self.lo_log_alpha.detach().cpu().item())
+        torch.save(payload, path)
 
     def load(self, path: str | Path, *, strict: bool = True) -> None:
         data = torch.load(path, map_location=self.device, weights_only=False)
@@ -1047,10 +1235,15 @@ class GHTD3Agent:
         self.lo_critic_t = deepcopy(self.lo_critic)
         self.hi_it = int(data.get("hi_it", 0))
         self.lo_it = int(data.get("lo_it", 0))
-        # 关键优化器绑定当前参数（避免 resume 后 Adam 状态/引用异常导致 actor 不更新）
+        if self.low_sac and self.lo_log_alpha is not None and "lo_log_alpha" in data:
+            with torch.no_grad():
+                self.lo_log_alpha.fill_(float(data["lo_log_alpha"]))
+        # 重建优化器绑定当前参数（避免 resume 后 Adam 状态/引用异常导致 actor 不更新）
         alr = float(self.cfg.get("actor_lr", 3e-4))
         clr = float(self.cfg.get("critic_lr", 3e-4))
         self.hi_actor_opt = torch.optim.Adam(self.hi_actor.parameters(), lr=alr)
         self.hi_critic_opt = torch.optim.Adam(self.hi_critic.parameters(), lr=clr)
         self.lo_actor_opt = torch.optim.Adam(self.lo_actor.parameters(), lr=alr)
         self.lo_critic_opt = torch.optim.Adam(self.lo_critic.parameters(), lr=clr)
+        if self.low_sac:
+            self.lo_alpha_opt = torch.optim.Adam([self.lo_log_alpha], lr=self.lo_alpha_lr)

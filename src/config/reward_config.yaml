@@ -44,8 +44,51 @@ terminal_soc:
     recovery_absolute_scale: 4.0
 gamma: 0.99
 episode_steps: 168
-reward_clip:
+# Scheme B (Python = authoritative economic layer):
+# ΔJ_gen = ΔJ_cash − π·Δm_CO2 − C^CUT − C^deg
+# FMU: physics + device energy-bookkeeping cash. TOU grid / carbon / CUT / deg settled here.
+carbon:
   enabled: true
-  min: -25.0
-  max: 25.0
-parameter_status: 'market SOC recovery gas-first + last-40h shaping 2026-08-03'
+  price_cny_per_t: 80.0
+  price_source: "China National ETS CEA secondary market; operating point 80 CNY/tCO2e"
+  price_note: "ICAP 2025 avg ~70.78; 2024 YE close ~97–98; range ~69–106 in 2024"
+  eta_thermal_t_per_mwh: 0.85
+  eta_grid_t_per_mwh: 0.5703
+  eta_thermal_source: "coal-power CO2 intensity proxy ~0.85 t/MWh"
+  eta_grid_source: "China grid average EF proxy 0.5703 t/MWh"
+  thermal_power_key: p_thermal
+  grid_power_key: p_grid
+  count_grid_import_only: true
+  double_count_note: "external_ETS_cost_not_fuel_rescaling"
+curtailment:
+  enabled: true
+  nu_curt_cny_per_mwh: 300.0
+  nu_uns_cny_per_mwh: 1000.0
+  curtail_power_key: p_curtailment
+  unserved_power_key: p_unserved
+  note: "FMU Bus powers; Cui-style C^CUT priced in Python"
+battery_degradation:
+  enabled: true
+  # Cui-style convex cumulative discharge: ψ(δ)=a0·δ^p, C_t=ψ(δ_t)-ψ(δ_{t-1})
+  # δ = cumulative discharge energy [MWh]. Discharge only (not charge).
+  mode: convex_cumulative  # or linear_throughput (legacy)
+  power_exp: 2.03
+  # Plant battery energy capacity [MWh] (twin default ~400 MWh)
+  e_cap_mwh: 400.0
+  # Lifetime economics for a0 calibration: ψ(E_life)=Capex_total
+  # Capex_total = capex_cny_per_kwh * e_cap_mwh * 1000
+  # E_life = n_cycles * dod_eq * e_cap_mwh
+  # a0 = Capex_total / E_life^power_exp
+  capex_cny_per_kwh: 1000.0
+  n_cycles: 5000.0
+  dod_eq: 0.8
+  # Mid-life offset so weekly episodes are not stuck near δ=0 (where marginal≈0).
+  # δ_used = δ_offset + δ_episode, δ_offset = offset_frac_of_life * E_life
+  offset_frac_of_life: 0.25
+  # Optional hard override of a0 [CNY / (MWh)^p]:
+  # a0: null
+  battery_power_key: p_battery
+  # Sign: discharge contributes when p_battery < 0 (Python academic / export convention)
+  discharge_negative_power: true
+  note: "Cui D_BESS ψ(δ)=a0 δ^2.03; a0 from Capex/life; Modelica has no cycle cash"
+parameter_status: 'comprehensive J_gen cash+carbon+CUT+convex-deg 2026-08-07'
