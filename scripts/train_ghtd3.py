@@ -25,8 +25,13 @@ def main() -> None:
     p.add_argument("--run-dir", type=str, default=None)
     p.add_argument("--annual-eval", action="store_true")
     p.add_argument("--resume", type=str, default=None, help="从 ghtd3.pt 续训")
-    p.add_argument("--skip-bc", action="store_true", help="跳过分层 BC 预热")
-    p.add_argument("--config", type=str, default=None, help="ghtd3 yaml（默认 src/config/ghtd3_config.yaml）")
+    p.add_argument("--skip-bc", action="store_true", help="跳过 F-MLE 预热（from-scratch RL）")
+    p.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="ghtd3 yaml（默认 src/config/ghtd3_config.yaml，2D+HER 主线）",
+    )
     args = p.parse_args()
 
     if args.mode == "smoke":

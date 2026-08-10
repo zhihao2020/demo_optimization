@@ -47,8 +47,7 @@ def _action(mode, magnitude=0.0):
     return {
         "u_tp": np.asarray([1.0], dtype=np.float32),
         "u_battery": np.asarray([0.0], dtype=np.float32),
-        "caes_mode": int(mode),
-        "caes_magnitude": np.asarray([magnitude], dtype=np.float32),
+        "u_caes": np.asarray([float((__import__("actions.caes_u", fromlist=["u_from_mode_mag"]).u_from_mode_mag(mode, magnitude)))], dtype=np.float32),
     }
 
 

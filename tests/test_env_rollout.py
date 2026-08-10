@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from actions import CaesMode, HybridAction
+from actions import CaesMode, PhysicalFmuAction
 from envs.power_system_env import PowerSystemEnv
 from test_env_reset import FakeAdapter
 
@@ -16,8 +16,7 @@ def _idle_action():
     return {
         "u_tp": np.asarray([1.0], dtype=np.float32),
         "u_battery": np.asarray([0.0], dtype=np.float32),
-        "caes_mode": int(CaesMode.IDLE),
-        "caes_magnitude": np.asarray([0.0], dtype=np.float32),
+        "u_caes": np.asarray([0.0], dtype=np.float32),
     }
 
 
@@ -33,7 +32,7 @@ def test_step_preserves_hybrid_action_and_check_env():
     assert env.observation_space.contains(observation)
     # Dict+动态可行域下 gymnasium check_env 对 info 全等过严；改为自检 sample 接口
     sample = env.action_space.sample()
-    assert sample["caes_mode"] == int(CaesMode.IDLE)
+    assert float(sample["u_caes"][0]) == 0.0
     env2 = PowerSystemEnv(adapter=FakeAdapter())
     env2.reset(seed=0)
     o2, _, _, _, info2 = env2.step(sample)

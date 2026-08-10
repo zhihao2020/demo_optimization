@@ -20,8 +20,7 @@ def test_illegal_mode_does_not_call_fmu():
     action = {
         "u_tp": np.asarray([1.0], dtype=np.float32),
         "u_battery": np.asarray([0.0], dtype=np.float32),
-        "caes_mode": int(CaesMode.CHARGE),
-        "caes_magnitude": np.asarray([1.0], dtype=np.float32),
+        "u_caes": np.asarray([1.0], dtype=np.float32),
     }
     _, _, _, truncated, info = env.step(action)
     assert adapter.step_calls == before

@@ -5,10 +5,11 @@ from pathlib import Path
 from typing import Any, Mapping
 import numpy as np
 import yaml
-from .decoder import HybridActionDecoder
+from .caes_u import mode_from_u, u_from_mode_mag
 from .feasible_set import DynamicFeasibleActionSet
 from .mode_mask import ModeMask
-from .types import CaesMode, HybridAction, PhysicalFmuAction
+from .types import CaesMode, PhysicalFmuAction
+from .validator import physical_from_dict
 
 # FMU 输出变量
 OBS_NAMES = (
@@ -106,7 +107,6 @@ class FeasibilityOracle:
                 params = yaml.safe_load(stream)
         self.params = dict(params)
         self.dt = float(self.params.get("decision_interval_seconds", 3600))
-        self.decoder = HybridActionDecoder()
         if margins is None:
             mpath = (
                 Path(margins_path)
@@ -215,29 +215,16 @@ class FeasibilityOracle:
 
     def check_action_executable(
         self,
-        action: HybridAction,
+        action: PhysicalFmuAction,
         outputs: Mapping[str, float],
         feasible: DynamicFeasibleActionSet | None = None,
         previous_thermal_w: float | None = None,
     ) -> tuple[bool, str | None]:
-        """预执行电网容量与联合下一状态硬约束检查。
-
-        Args:
-            action: 待检混合动作(HybridAction)。
-            outputs: 当前 FMU 输出。
-            feasible: 可选，已计算的动态可行域；None 则内部 compute。
-            previous_thermal_w: 上一决策步实际 p_thermal（W）。
-
-        Returns:
-            (ok, reason)：可执行则 (True, None)，否则 (False, 拒绝原因字符串)。
-
-        Raises:
-            无。
-        """
+        """预执行电网容量与联合下一状态硬约束检查。"""
         feasible = feasible or self.compute(outputs, previous_thermal_w)
         if self.is_feasible_set_empty(feasible):
             return False, "可行集为空"
-        physical = self.decoder.decode(action)
+        physical = action
         pred = self.predict_p_grid(outputs, physical)
         g = self.params["grid"]
         gm = float(self.margins.get("grid", {}).get("margin_W", 0.0))
@@ -246,11 +233,11 @@ class FeasibilityOracle:
             or pred < float(g["P_max_sell_W"]) + gm - 1.0
         ):
             return False, f"预测 p_grid={pred} W 超出联络线安全界"
-        if action.caes_mode == CaesMode.CHARGE and not feasible.mode_mask.charge:
+        mode = mode_from_u(physical.u_caes)
+        if mode == CaesMode.CHARGE and not feasible.mode_mask.charge:
             return False, "CHARGE 被 mask 禁止"
-        if action.caes_mode == CaesMode.DISCHARGE and not feasible.mode_mask.discharge:
+        if mode == CaesMode.DISCHARGE and not feasible.mode_mask.discharge:
             return False, "DISCHARGE 被 mask 禁止"
-        # 联合预测：若预测下一状态越物理界则拒绝
         predicted = self.predict_next_state(outputs, action, previous_thermal_w)
         ok, reason = self.post_step_hard_ok(predicted, use_safe=False)
         if not ok:
@@ -287,59 +274,16 @@ class FeasibilityOracle:
     def predict_next_state(
         self,
         outputs: Mapping[str, float],
-        action: HybridAction | PhysicalFmuAction | Mapping[str, Any],
+        action: PhysicalFmuAction | Mapping[str, Any],
         previous_thermal_w: float | None = None,
     ) -> dict[str, float]:
-        """一阶预测下一决策步状态（residual = actual - predicted）。
-
-        Args:
-            outputs: 当前 FMU 输出。
-            action: 混合动作、物理动作或 dict 形式的动作。
-            previous_thermal_w: 上一决策步实际 p_thermal；仅 dict/physical 路径间接使用。
-
-        Returns:
-            含 PREDICTED_STATE_KEYS 及 caes_mode/caes_magnitude 的预测状态字典。
-
-        Raises:
-            无。
-        """
-        if isinstance(action, HybridAction):
-            physical = self.decoder.decode(action)
-            mode = action.caes_mode
-            mag = 0.0 if mode == CaesMode.IDLE else float(action.caes_magnitude)
-        elif isinstance(action, PhysicalFmuAction):
+        """一阶预测下一决策步状态（residual = actual - predicted）。"""
+        _ = previous_thermal_w
+        if isinstance(action, PhysicalFmuAction):
             physical = action
-            mode = self._mode_from_u(physical.u_caes)
-            mag = self._mag_from_u(physical.u_caes, mode)
         else:
-            # dict 混合动作或物理动作
-            if "caes_mode" in action:
-                ha = HybridAction(
-                    float(
-                        action["u_tp"][0]
-                        if hasattr(action["u_tp"], "__len__")
-                        else action["u_tp"]
-                    ),
-                    float(
-                        action["u_battery"][0]
-                        if hasattr(action["u_battery"], "__len__")
-                        else action["u_battery"]
-                    ),
-                    CaesMode(int(action["caes_mode"])),
-                    float(
-                        action["caes_magnitude"][0]
-                        if hasattr(action["caes_magnitude"], "__len__")
-                        else action["caes_magnitude"]
-                    ),
-                )
-                return self.predict_next_state(outputs, ha, previous_thermal_w)
-            physical = PhysicalFmuAction(
-                float(action["u_tp"]),
-                float(action["u_battery"]),
-                float(action["u_caes"]),
-            )
-            mode = self._mode_from_u(physical.u_caes)
-            mag = self._mag_from_u(physical.u_caes, mode)
+            physical = physical_from_dict(dict(action))
+        mode = mode_from_u(physical.u_caes)
         bat = self.params["battery"]
         p_cap_b = float(bat["P_cap_W"])
         e_cap = float(bat["E_cap_J"])
@@ -387,8 +331,8 @@ class FeasibilityOracle:
             "p_battery": float(p_bat),
             "p_caes": float(p_caes),
             "p_grid": float(pred_grid),
-            "caes_mode": int(mode),
-            "caes_magnitude": float(mag),
+            "u_caes": float(physical.u_caes),
+            "caes_mode": int(mode),  # 派生诊断字段
         }
 
     def residual(
@@ -602,7 +546,7 @@ class FeasibilityOracle:
                     f"p_grid={pg} 越联络线 [{g['P_max_sell_W']}, {g['P_max_buy_W']}]",
                 )
         for name, val in outputs.items():
-            if name in ("caes_mode", "caes_magnitude"):
+            if name in ("caes_mode", "u_caes"):
                 continue
             if not np.isfinite(float(val)):
                 return False, f"{name} 非有限"
@@ -792,14 +736,13 @@ class FeasibilityOracle:
         Raises:
             无。
         """
-        action = HybridAction(
-            u_tp=1.0, u_battery=0.0, caes_mode=mode, caes_magnitude=mag
+        action = PhysicalFmuAction(
+            u_tp=1.0, u_battery=0.0, u_caes=u_from_mode_mag(mode, mag)
         )
         pred = self.predict_next_state(outputs, action)
         ok, _ = self.post_step_hard_ok(pred, use_safe=False)
         if not ok:
             return False
-        # 对危险方向叠加 residual 裕度再验
         c = self.params["caes"]
         if direction in ("high", "both"):
             if float(pred["caes_gas_soc"]) > float(c["gas_SOC_max"]) - float(
@@ -818,17 +761,7 @@ class FeasibilityOracle:
         return True
 
     def _caes_magnitude_caps(self, outputs: Mapping[str, float]) -> dict[str, float]:
-        """二分搜索各模式下最大安全幅值（0–1），供动作流水线收紧。
-
-        Args:
-            outputs: 当前 FMU 输出。
-
-        Returns:
-            {"discharge": cap, "charge": cap} 字典。
-
-        Raises:
-            无。
-        """
+        """二分搜索各方向最大安全幅值 [0,1]（metadata/诊断用）。"""
         caps = {"discharge": 0.0, "charge": 0.0}
         for mode, key in (
             (CaesMode.DISCHARGE, "discharge"),
@@ -838,7 +771,7 @@ class FeasibilityOracle:
             best = 0.0
             for _ in range(8):
                 mid = 0.5 * (lo + hi)
-                action = HybridAction(1.0, 0.0, mode, mid)
+                action = PhysicalFmuAction(1.0, 0.0, u_from_mode_mag(mode, mid))
                 pred = self.predict_next_state(outputs, action)
                 ok, _ = self.post_step_hard_ok(pred, use_safe=False)
                 if ok:
@@ -848,40 +781,3 @@ class FeasibilityOracle:
                     hi = mid
             caps[key] = float(best)
         return caps
-
-    @staticmethod
-    def _mode_from_u(u: float) -> CaesMode:
-        """由物理 u_caes 符号推断 CAES 模式。
-
-        Args:
-            u: 归一化 CAES 功率指令。
-
-        Returns:
-            CaesMode.IDLE / DISCHARGE / CHARGE。
-
-        Raises:
-            无。
-        """
-        if abs(u) <= 1e-9:
-            return CaesMode.IDLE
-        return CaesMode.DISCHARGE if u < 0 else CaesMode.CHARGE
-
-    @staticmethod
-    def _mag_from_u(u: float, mode: CaesMode) -> float:
-        """由物理 u_caes 与模式反推混合动作幅值 [0, 1]。
-
-        Args:
-            u: 归一化 CAES 功率指令。
-            mode: 已知 CAES 模式。
-
-        Returns:
-            混合动作 caes_magnitude；IDLE 时为 0。
-
-        Raises:
-            无。
-        """
-        if mode == CaesMode.IDLE:
-            return 0.0
-        if mode == CaesMode.DISCHARGE:
-            return float(np.clip((u - (-1.0)) / (-0.33 - (-1.0)), 0.0, 1.0))
-        return float(np.clip((u - 0.86) / (1.0 - 0.86), 0.0, 1.0))

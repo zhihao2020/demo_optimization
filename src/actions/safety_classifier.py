@@ -19,7 +19,7 @@ FEATURE_KEYS = (
     "mode_discharge",
     "mode_idle",
     "mode_charge",
-    "caes_magnitude",
+    "u_caes",
     "dist_bat_min",
     "dist_bat_max",
     "dist_gas_min",
@@ -112,23 +112,15 @@ class SafetyClassifier:
 
         Args:
             outputs: 当前 FMU 输出字典。
-            action: 混合动作 dict（含 u_tp、u_battery、caes_mode、caes_magnitude）。
+            action: 物理动作 dict（u_tp、u_battery、u_caes）。
             distances: 可选，到物理界的距离字典；缺省时用 outputs 近似。
-
-        Returns:
-            长度为 len(FEATURE_KEYS) 的 float64 特征向量。
-
-        Raises:
-            无。
         """
-        mode = int(action.get("caes_mode", 1))
-        u_tp = float(action["u_tp"][0] if hasattr(action.get("u_tp"), "__len__") else action.get("u_tp", 1.0))
-        u_bat = float(action["u_battery"][0] if hasattr(action.get("u_battery"), "__len__") else action.get("u_battery", 0.0))
-        mag = float(
-            action["caes_magnitude"][0]
-            if hasattr(action.get("caes_magnitude"), "__len__")
-            else action.get("caes_magnitude", 0.0)
-        )
+        from actions.caes_u import mode_from_u, np_as_scalar
+
+        u_tp = float(np_as_scalar(action.get("u_tp", 1.0)))
+        u_bat = float(np_as_scalar(action.get("u_battery", 0.0)))
+        u_caes = float(np_as_scalar(action.get("u_caes", 0.0)))
+        mode = int(mode_from_u(u_caes))
         dist = distances or {}
         feats = np.asarray(
             [
@@ -143,7 +135,7 @@ class SafetyClassifier:
                 1.0 if mode == 0 else 0.0,
                 1.0 if mode == 1 else 0.0,
                 1.0 if mode == 2 else 0.0,
-                mag,
+                u_caes,
                 float(dist.get("battery_soc_to_min", outputs.get("battery_soc", 0.5) - 0.1)),
                 float(dist.get("battery_soc_to_max", 0.9 - float(outputs.get("battery_soc", 0.5)))),
                 float(dist.get("caes_gas_soc_to_min", float(outputs.get("caes_gas_soc", 0.8)) - 0.6)),

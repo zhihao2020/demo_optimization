@@ -61,9 +61,6 @@ def f_mle_pretrain(
         含 n_demos、low/high 指标与 principle 标签的字典。
     """
     cfg = dict(cfg or agent.cfg)
-    if bool(cfg.get("hybrid_anchor", False)) and agent._hybrid_anchor is not None:
-        # 仍允许在 abs 误配时跑，但打警告语义：F-MLE 设计为无教师
-        pass
 
     demos = collect_feasible_demos(
         env,

@@ -10,8 +10,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from actions import FeasibilityOracle, HybridAction, HybridActionDecoder
-from actions.validator import hybrid_from_dict
+from actions import FeasibilityOracle, PhysicalFmuAction
+from actions.validator import physical_from_dict
 from fmu.exceptions import FmuSolverError
 
 from .safety_result import SafetyCheckResult
@@ -49,7 +49,6 @@ class ShadowFmuValidator:
         self.enabled = enabled
         self.mode = mode
         self.near_boundary_fraction = float(near_boundary_fraction)
-        self.decoder = HybridActionDecoder()
         self.episode_start_time = 0.0
         self.physical_action_history: list[dict[str, float]] = []
         self._shadow: Any | None = None
@@ -185,13 +184,13 @@ class ShadowFmuValidator:
 
     def validate(
         self,
-        action: dict | HybridAction,
+        action: dict | PhysicalFmuAction,
         level1: SafetyCheckResult,
     ) -> SafetyCheckResult:
         """在 Shadow FMU 上试探性执行候选动作并做硬约束后验检查。
 
         Args:
-            action: 候选混合动作（dict 或 HybridAction）。
+            action: 候选混合动作（dict 或 PhysicalFmuAction）。
             level1: 一级 Oracle 已通过的安全检查结果（将被 deepcopy 扩展）。
 
         Returns:
@@ -205,8 +204,10 @@ class ShadowFmuValidator:
             result.shadow_validation_used = False
             result.shadow_safe = None
             return result
-        hybrid = action if isinstance(action, HybridAction) else hybrid_from_dict(action)
-        physical = self.decoder.decode(hybrid).as_dict()
+        physical_obj = (
+            action if isinstance(action, PhysicalFmuAction) else physical_from_dict(action)
+        )
+        physical = physical_obj.as_dict()
         # 上一次候选若未获主 FMU确认，不能复用其已推进的 Shadow 状态。
         if self._pending_action is not None:
             self._dispose_shadow()

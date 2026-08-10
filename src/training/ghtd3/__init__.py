@@ -1,4 +1,4 @@
-"""GHTD3：goal-conditioned hierarchical TD3（适配 Hybrid-GiveSafe + FMU）。"""
+"""HMSD / GHTD3: absolute goal-conditioned hierarchical TD3 + GiveSafe (no Hybrid teacher)."""
 
 from .agent import GHTD3Agent
 from .train import run_ghtd3_training

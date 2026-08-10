@@ -40,8 +40,8 @@ def test_rule_controller_outputs_hybrid_dict():
     env.reset(seed=1)
     ctrl = RuleBasedController(env)
     action = ctrl.predict(env.build_observation())
-    assert set(action) >= {"u_tp", "u_battery", "caes_mode", "caes_magnitude"}
-    assert action["caes_mode"] == int(CaesMode.IDLE)
+    assert set(action) >= {"u_tp", "u_battery", "u_caes"}
+    assert float(action["u_caes"][0] if hasattr(action["u_caes"], "__len__") else action["u_caes"]) == 0.0
     _, _, _, _, info = env.step(action)
     assert info["transition_valid"] is True
     env.close()

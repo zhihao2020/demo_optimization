@@ -116,7 +116,7 @@ def build_policy(method: str, env: PowerSystemEnv, args: argparse.Namespace) -> 
         agent.load(Path(args.hybrid_ckpt))
         return GiveSafeWrappedPolicy(agent, env, ctrl)
     if method == "ghtd3":
-        full_cfg = load_ghtd3_config(ROOT / "src/config/ghtd3_config.yaml")
+        full_cfg = load_ghtd3_config(ROOT / "src/config/ghtd3_config_abs.yaml")
         cfg = dict(full_cfg.get("ghtd3") or full_cfg)
         agent = GHTD3Agent(dim, cfg)
         agent.load(Path(args.ghtd3_ckpt))

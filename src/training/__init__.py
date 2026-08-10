@@ -1,6 +1,6 @@
-"""训练子包：混合动作强化学习、策略评估与运行报告。
+"""训练子包：HMSD/GHTD3 主线、Hybrid 基线、评估与运行报告。
 
-导出说明：各算法入口见 ``training.hybrid_td3``、``training.hybrid_ppo``、
-``training.hybrid_sac``；评估见 ``training.evaluate_td3``；报告见
-``training.report_policy_run``。
+主线：``training.ghtd3``（连续 CAES z→mode/mag + 目标条件层次 TD3）。
+基线：``training.hybrid_td3``、``training.hybrid_sac``（共享 ``hybrid_common``）。
+评估：``training.evaluate_td3``；报告：``training.report_policy_run``。
 """

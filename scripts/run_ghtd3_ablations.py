@@ -100,28 +100,17 @@ def run_ablations(args: argparse.Namespace) -> list[dict[str, Any]]:
         (
             "full",
             {},
-            "完整 Safe Market-GHTD3",
+            "HMSD-min mainline (2D + plain HER)",
         ),
         (
-            "no_market_prior",
-            {"market_goal_prior": False},
-            "去掉市场 goal 先验",
-        ),
-        (
-            "no_recovery_goal",
-            {"recovery_goal_horizon_steps": 0, "recovery_prior_weight": 0.0},
-            "去掉上层回收 goal（环境硬回收仍在）",
-        ),
-        (
-            "no_bc",
-            {"bc_pretrain": False},
-            "去掉分层 BC",
+            "no_her",
+            {"goal_relabel": False, "goal_relabel_mode": "none"},
+            "no historical goal relabeling",
         ),
         (
             "gamma_not_c",
-            # agent 用 subgoal_interval=1 近似 γ^1；仍每 8 步换 goal
             {"subgoal_interval": 1, "note_ablation": "gamma_not_c via c=1"},
-            "SMDP 折扣退化为 γ（c=1）",
+            "SMDP discount γ (c=1)",
         ),
     ]
     rows: list[dict[str, Any]] = []

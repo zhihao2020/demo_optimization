@@ -1,4 +1,4 @@
-"""混合动作 Gymnasium 环境：Dict 动作空间 + 动态可行域 + 硬约束预检。"""
+"""物理三元组 Gymnasium 环境：Dict 动作空间 + 动态可行域 + 硬约束预检。"""
 
 from __future__ import annotations
 
@@ -9,20 +9,18 @@ from dataclasses import replace
 import gymnasium as gym
 import numpy as np
 import yaml
-from gymnasium.spaces import Box, Dict, Discrete
+from gymnasium.spaces import Box, Dict
 
 from actions import (
     CaesMode,
     CaesMinimumRunController,
     DynamicFeasibleActionSet,
     FeasibilityOracle,
-    HybridAction,
-    HybridActionDecoder,
-    HybridActionValidator,
     PhysicalFmuAction,
 )
+from actions.caes_u import mode_from_u, u_from_mode_mag
 from actions.failure_taxonomy import classify_failure
-from actions.validator import hybrid_from_dict
+from actions.validator import PhysicalActionValidator, physical_from_dict
 from envs.failures import (
     ConstraintFailure,
     DynamicStateConstraintViolation,
@@ -43,34 +41,25 @@ from .reward_calculator import RewardCalculator
 from .termination_checker import TerminationChecker
 
 
-class HybridDictSpace(Dict):
-    """混合 Dict 动作空间(HybridDictSpace)。
+class PhysicalDictSpace(Dict):
+    """物理 Dict 动作空间：u_tp / u_battery / u_caes。
 
     ``sample()`` 返回保守合法点，供 ``check_env``/基线使用；不修正策略输出。
     """
 
     def sample(self, mask: Any = None) -> dict:
-        """采样保守合法混合动作（满火电、储能待机、CAES 空闲）。
-
-        Args:
-            mask: Gymnasium 掩码（本实现忽略）。
-
-        Returns:
-            含 ``u_tp``、``u_battery``、``caes_mode``、``caes_magnitude`` 的字典。
-        """
-        # 固定合法：满火电、储能待机。策略/随机探索必须经 FeasibilityOracle。
+        _ = mask
         return {
             "u_tp": np.asarray([1.0], dtype=np.float32),
             "u_battery": np.asarray([0.0], dtype=np.float32),
-            "caes_mode": 1,  # IDLE
-            "caes_magnitude": np.asarray([0.0], dtype=np.float32),
+            "u_caes": np.asarray([0.0], dtype=np.float32),
         }
 
 
 class PowerSystemEnv(gym.Env):
     """电力系统 Gymnasium 环境(PowerSystemEnv)。
 
-    混合 Dict 动作 + 动态可行域 Oracle 预检 + FMU 物理步进；失败不伪造转移。
+    物理三元组动作 + 动态可行域 Oracle 预检 + FMU 步进；失败不伪造转移。
     """
 
     metadata = {"render_modes": []}
@@ -150,7 +139,7 @@ class PowerSystemEnv(gym.Env):
             high=np.concatenate((self.observation_builder.high, forecast_high, price_high)),
             dtype=np.float32,
         )
-        self.action_space = HybridDictSpace(
+        self.action_space = PhysicalDictSpace(
             {
                 "u_tp": Box(
                     low=np.array([1.0 / 3.0], dtype=np.float32),
@@ -162,16 +151,14 @@ class PowerSystemEnv(gym.Env):
                     high=np.array([1.0], dtype=np.float32),
                     dtype=np.float32,
                 ),
-                "caes_mode": Discrete(3),
-                "caes_magnitude": Box(
-                    low=np.array([0.0], dtype=np.float32),
+                "u_caes": Box(
+                    low=np.array([-1.0], dtype=np.float32),
                     high=np.array([1.0], dtype=np.float32),
                     dtype=np.float32,
                 ),
             }
         )
-        self.decoder = HybridActionDecoder()
-        self.hybrid_validator = HybridActionValidator()
+        self.action_validator = PhysicalActionValidator()
         self.oracle = FeasibilityOracle(
             params_path=self._resolve(device_params_path),
             margins_path=self._resolve(margins_path),
@@ -231,25 +218,21 @@ class PowerSystemEnv(gym.Env):
 
     def _apply_terminal_soc_recovery(
         self,
-        hybrid: HybridAction,
+        action: PhysicalFmuAction,
         feasible: DynamicFeasibleActionSet,
-    ) -> tuple[HybridAction, bool]:
-        """末段多罐联合回收：battery + CAES gas/hot/cold 扭向初始 SOC。
-
-        物理关系（本 FMU）：
-        - CHARGE: gas↑ hot↑ cold↓
-        - DISCHARGE: gas↓ hot↓ cold↑
-        冷罐偏离是过往不过周 SOC 的主因，回收必须显式处理。
-        """
+    ) -> tuple[PhysicalFmuAction, bool]:
+        """末段多罐联合回收：battery + CAES gas/hot/cold 扭向初始 SOC。"""
         market = self.config.get("market") or {}
         horizon = int(market.get("soc_recovery_horizon", 0) or 0)
-        # 电池可更早进入回收（默认 horizon+16），CAES gas 用 horizon
-        bat_horizon = int(market.get("soc_recovery_battery_horizon", 0) or (horizon + 16 if horizon > 0 else 0))
+        bat_horizon = int(
+            market.get("soc_recovery_battery_horizon", 0)
+            or (horizon + 16 if horizon > 0 else 0)
+        )
         if horizon <= 0 or self.initial_soc is None or self.last_outputs is None:
-            return hybrid, False
+            return action, False
         remaining = int(self.episode_steps - self.step_index)
         if remaining > max(horizon, bat_horizon):
-            return hybrid, False
+            return action, False
 
         outs = self.last_outputs
         init = self.initial_soc
@@ -259,19 +242,18 @@ class PowerSystemEnv(gym.Env):
         gas0 = float(init.get("caes_gas_soc", 0.5))
         cold_now = float(outs.get("caes_cold_soc", 0.5))
         cold0 = float(init.get("caes_cold_soc", 0.5))
+        _ = cold0
 
-        # 越接近结束，修正越强
         strength = 1.0 - (remaining - 1) / max(horizon if horizon > 0 else bat_horizon, 1)
         strength = float(np.clip(strength, 0.35, 1.0))
         mag = 0.50 + 0.50 * strength
-        band = 0.03  # 略放宽，减少回收段无谓 CAES 开关机
+        band = 0.03
         e_gas = gas_now - gas0
         e_cold = cold_now - cold0
         in_gas_window = horizon > 0 and remaining <= horizon
         in_bat_window = bat_horizon > 0 and remaining <= bat_horizon
 
-        # —— 电池：可更早回收 ——
-        u_bat = float(hybrid.u_battery)
+        u_bat = float(action.u_battery)
         if in_bat_window:
             if bat_now > bat0 + band:
                 u_bat = float(np.clip(-mag, feasible.u_battery_low, feasible.u_battery_high))
@@ -281,10 +263,8 @@ class PowerSystemEnv(gym.Env):
                 if feasible.u_battery_low <= 0.0 <= feasible.u_battery_high:
                     u_bat = 0.0
 
-        # —— CAES：优先 gas；gas 到位后，若 cold 严重偏低且剩余足够再回充，做单次轻量放电 ——
-        # 禁止高频振荡：仅当 remaining 较大且 cold 偏离 > 0.08 时轻修
-        mode = hybrid.caes_mode
-        caes_mag = float(hybrid.caes_magnitude)
+        mode = mode_from_u(action.u_caes)
+        caes_mag = 0.0
         if in_gas_window:
             if e_gas > band and feasible.mode_mask.discharge:
                 mode = CaesMode.DISCHARGE
@@ -298,7 +278,6 @@ class PowerSystemEnv(gym.Env):
                 and remaining >= 20
                 and feasible.mode_mask.discharge
             ):
-                # cold 严重偏低：轻放电抬 cold（放电↑cold↓hot↓gas）；幅度小
                 mode = CaesMode.DISCHARGE
                 caes_mag = 0.25
             elif feasible.mode_mask.idle:
@@ -311,17 +290,19 @@ class PowerSystemEnv(gym.Env):
                 mode = CaesMode.CHARGE
                 caes_mag = 0.15 if e_gas < 0 else 0.05
         elif feasible.mode_mask.idle and in_bat_window:
-            # 仅电池回收窗：CAES 尽量不动，避免 cold 继续恶化
             mode = CaesMode.IDLE
             caes_mag = 0.0
 
-        # 火电：回充时抬升托底
-        u_tp = float(np.clip(hybrid.u_tp, feasible.u_tp_low, feasible.u_tp_high))
+        u_tp = float(np.clip(action.u_tp, feasible.u_tp_low, feasible.u_tp_high))
         if bat_now < bat0 - band or gas_now < gas0 - band or mode == CaesMode.CHARGE:
             u_tp = float(feasible.u_tp_high)
 
         return (
-            HybridAction(u_tp=u_tp, u_battery=u_bat, caes_mode=mode, caes_magnitude=caes_mag),
+            PhysicalFmuAction(
+                u_tp=u_tp,
+                u_battery=u_bat,
+                u_caes=u_from_mode_mag(mode, caes_mag),
+            ),
             True,
         )
 
@@ -430,19 +411,8 @@ class PowerSystemEnv(gym.Env):
         self.episode_index += 1
         return observation, info
 
-    def step(self, action: dict | HybridAction):
-        """执行一步：预检 → FMU 子步 → 后验硬约束 → 奖励。
-
-        Args:
-            action: 混合动作(HybridAction)或 Gymnasium Dict。
-
-        Returns:
-            Gymnasium 五元组 ``(obs, reward, terminated, truncated, info)``。
-            预检失败或 FMU 失败时 reward=0、truncated=True、不更新物理状态。
-
-        Raises:
-            RuntimeError: 未先 ``reset``。
-        """
+    def step(self, action: dict | PhysicalFmuAction):
+        """执行一步：预检 → FMU 子步 → 后验硬约束 → 奖励。"""
         if self.last_outputs is None:
             raise RuntimeError("必须先 reset")
         action_meta = dict(self._pending_action_meta)
@@ -457,18 +427,24 @@ class PowerSystemEnv(gym.Env):
             self.episode_failed = True
             info = self._reject_info(None, feasible, exc, action_meta=action_meta)
             self._record_failure(
-                info, hybrid=None, physical=None, actual=None, predicted=None
+                info, physical=None, actual=None, predicted=None
             )
             return self.build_observation(), 0.0, False, True, info
 
-        hybrid: HybridAction | None = None
+        physical: PhysicalFmuAction | None = None
         recovery_applied = False
         try:
-            hybrid = action if isinstance(action, HybridAction) else hybrid_from_dict(action)
-            hybrid, recovery_applied = self._apply_terminal_soc_recovery(hybrid, feasible)
-            self.hybrid_validator.validate(hybrid, feasible)
+            physical = (
+                action
+                if isinstance(action, PhysicalFmuAction)
+                else physical_from_dict(action)
+            )
+            physical, recovery_applied = self._apply_terminal_soc_recovery(
+                physical, feasible
+            )
+            self.action_validator.validate(physical, feasible)
             ok, reason = self.oracle.check_action_executable(
-                hybrid, self.last_outputs, feasible, self.previous_thermal
+                physical, self.last_outputs, feasible, self.previous_thermal
             )
             if not ok:
                 raise DynamicStateConstraintViolation(reason or "预检失败")
@@ -477,22 +453,17 @@ class PowerSystemEnv(gym.Env):
                 exc = StaticActionViolation(str(exc))
             self._count(exc.failure_type)
             info = self._reject_info(
-                hybrid if hybrid is not None else action,
+                physical if physical is not None else action,
                 feasible,
                 exc,
                 action_meta=action_meta,
             )
-            # 不调用 FMU、不算经济 reward、不产生有效转移
             obs = self.build_observation()
             return obs, 0.0, False, True, info
 
-        physical = self.decoder.decode(hybrid)
-        mag_logged = (
-            0.0 if hybrid.caes_mode == CaesMode.IDLE else float(hybrid.caes_magnitude)
-        )
-        #
+        caes_mode = mode_from_u(physical.u_caes)
         predicted = self.oracle.predict_next_state(
-            self.last_outputs, hybrid, self.previous_thermal
+            self.last_outputs, physical, self.previous_thermal
         )
 
         physical_dist, safe_dist = self.oracle.distances_to_bounds(self.last_outputs)
@@ -533,9 +504,7 @@ class PowerSystemEnv(gym.Env):
             self._count(exc.failure_type)
             self.episode_failed = True
             info = self._failure_info(
-                hybrid,
                 physical,
-                mag_logged,
                 feasible,
                 exc,
                 applied=None,
@@ -547,14 +516,12 @@ class PowerSystemEnv(gym.Env):
             )
             self._record_failure(
                 info,
-                hybrid=hybrid,
                 physical=physical,
                 actual=outputs,
                 predicted=predicted,
             )
             return self.build_observation(), 0.0, False, True, info
         except FmuSolverError as exc:
-            # 分类：生命周期 vs 数值
             msg = str(exc).lower()
             if "reset" in msg or "instantiate" in msg or "lifecycle" in msg:
                 fail = FmiLifecycleFailure(
@@ -570,9 +537,7 @@ class PowerSystemEnv(gym.Env):
                 "fmu_or_post_step_failure", step=self.step_index
             )
             info = self._failure_info(
-                hybrid,
                 physical,
-                mag_logged,
                 feasible,
                 fail,
                 applied=None,
@@ -584,7 +549,6 @@ class PowerSystemEnv(gym.Env):
             )
             self._record_failure(
                 info,
-                hybrid=hybrid,
                 physical=physical,
                 actual=outputs,
                 predicted=predicted,
@@ -593,7 +557,7 @@ class PowerSystemEnv(gym.Env):
 
         residuals = self.oracle.residual(predicted, outputs)
         dang = self.oracle.dangerous_residual(
-            residuals, mode=hybrid.caes_mode, u_battery=hybrid.u_battery
+            residuals, mode=caes_mode, u_battery=physical.u_battery
         )
         next_step = self.step_index + 1
         terminated, term_reason = self.termination_checker.terminated(outputs)
@@ -602,11 +566,13 @@ class PowerSystemEnv(gym.Env):
         episode_completed = truncated and not self.episode_failed
         self.valid_episode_steps += 1
         completed_segment = self.caes_min_run.record_success(
-            hybrid.caes_mode, step=next_step
+            caes_mode, step=next_step
         )
         final_min_run_event = None
         if is_final and self.caes_min_run.active_mode is not None:
-            final_min_run_event = self.caes_min_run.interrupt("episode_ended_before_min_run", step=next_step)
+            final_min_run_event = self.caes_min_run.interrupt(
+                "episode_ended_before_min_run", step=next_step
+            )
         dt_hours = float(self.config["fmu"]["decision_interval_seconds"]) / 3600.0
         reward, terms = self.reward_calculator.calculate(
             outputs,
@@ -626,24 +592,20 @@ class PowerSystemEnv(gym.Env):
             self.oracle.compute(outputs, self.previous_thermal)
         )
         observation = self.build_observation()
+        physical_action = physical.as_dict()
         info = {
             "time": self.adapter.time,
             "step": self.step_index,
             "episode": self.episode_index - 1,
-            "requested_u_tp": hybrid.u_tp,
-            "requested_u_battery": hybrid.u_battery,
-            "requested_caes_mode": int(hybrid.caes_mode),
-            "requested_caes_magnitude": mag_logged,
+            "requested_u_tp": physical.u_tp,
+            "requested_u_battery": physical.u_battery,
+            "requested_u_caes": physical.u_caes,
+            "requested_caes_mode": int(caes_mode),  # 派生诊断
             "decoded_u_tp": physical.u_tp,
             "decoded_u_battery": physical.u_battery,
             "decoded_u_caes": physical.u_caes,
-            "applied_action": physical.as_dict(),
-            "hybrid_action": {
-                "u_tp": hybrid.u_tp,
-                "u_battery": hybrid.u_battery,
-                "caes_mode": int(hybrid.caes_mode),
-                "caes_magnitude": mag_logged,
-            },
+            "applied_action": physical_action,
+            "physical_action": physical_action,
             "reward_terms": terms,
             "fmu_status": "ok",
             "termination_reason": term_reason,
@@ -657,7 +619,7 @@ class PowerSystemEnv(gym.Env):
             "oracle_predicted_next_state": {
                 k: float(predicted[k])
                 for k in predicted
-                if k not in ("caes_mode", "caes_magnitude")
+                if k not in ("caes_mode",)
             },
             "residuals": residuals,
             "dangerous_residual": dang,
@@ -666,6 +628,7 @@ class PowerSystemEnv(gym.Env):
             "safety_probability": action_meta.get("safety_probability"),
             "safety_threshold": action_meta.get("safety_threshold"),
             "safety_model_version": action_meta.get("safety_model_version"),
+            "soc_recovery_applied": recovery_applied,
             **feasible.as_dict(),
             "observations": dict(outputs),
             "initial_soc": dict(self.initial_soc) if self.initial_soc else None,
@@ -715,18 +678,13 @@ class PowerSystemEnv(gym.Env):
         exc: ConstraintFailure,
         action_meta: dict | None = None,
     ) -> dict[str, Any]:
-        """构造预检拒绝时的 ``info``（未调用 FMU）。
-
-        Args:
-            action: 原始动作或 HybridAction。
-            feasible: 当前动态可行集。
-            exc: 约束失败异常(ConstraintFailure)。
-            action_meta: 可选 safety 元数据。
-
-        Returns:
-            含 ``transition_valid=False`` 与失败分类的 info 字典。
-        """
-        hybrid = action if isinstance(action, HybridAction) else None
+        """构造预检拒绝时的 ``info``（未调用 FMU）。"""
+        physical = action if isinstance(action, PhysicalFmuAction) else None
+        if physical is None and isinstance(action, dict) and "u_caes" in action:
+            try:
+                physical = physical_from_dict(action)
+            except Exception:
+                physical = None
         fine, trig = classify_failure(
             failure_type=exc.failure_type,
             reason=exc.reason,
@@ -765,17 +723,18 @@ class PowerSystemEnv(gym.Env):
                 dict(self.last_outputs) if self.last_outputs else None
             ),
             **feasible.as_dict(),
-            "requested_caes_mode": int(hybrid.caes_mode) if hybrid else None,
-            "requested_u_tp": hybrid.u_tp if hybrid else None,
-            "requested_u_battery": hybrid.u_battery if hybrid else None,
-            "requested_caes_magnitude": hybrid.caes_magnitude if hybrid else None,
+            "requested_u_tp": physical.u_tp if physical else None,
+            "requested_u_battery": physical.u_battery if physical else None,
+            "requested_u_caes": physical.u_caes if physical else None,
+            "requested_caes_mode": (
+                int(mode_from_u(physical.u_caes)) if physical else None
+            ),
+            "physical_action": physical.as_dict() if physical else None,
         }
 
     def _failure_info(
         self,
-        hybrid: HybridAction,
         physical: PhysicalFmuAction,
-        mag_logged: float,
         feasible: DynamicFeasibleActionSet,
         exc: ConstraintFailure,
         applied: dict | None,
@@ -786,24 +745,7 @@ class PowerSystemEnv(gym.Env):
         physical_dist: dict | None = None,
         safe_dist: dict | None = None,
     ) -> dict[str, Any]:
-        """构造 FMU/后验失败时的 ``info``。
-
-        Args:
-            hybrid: 已解码的混合动作。
-            physical: 物理 FMU 动作。
-            mag_logged: 日志用 CAES 幅度（IDLE 时为 0）。
-            feasible: 当前可行集。
-            exc: 失败异常。
-            applied: 已施加动作（失败时通常为 ``None``）。
-            predicted: Oracle 预测下一状态。
-            actual: 实际 FMU 输出（可能部分可用）。
-            action_meta: safety 元数据。
-            physical_dist: 到物理边界的距离。
-            safe_dist: 到安全边界的距离。
-
-        Returns:
-            含残差、预测/实际对比与失败分类的 info 字典。
-        """
+        """构造 FMU/后验失败时的 ``info``。"""
         fine = getattr(exc, "fine_type", None) or "unknown"
         trig = getattr(exc, "triggering_constraint", None) or fine
         if fine == "unknown":
@@ -815,29 +757,25 @@ class PowerSystemEnv(gym.Env):
             )
         residuals = None
         dang = None
+        caes_mode = mode_from_u(physical.u_caes)
         if predicted is not None and actual is not None:
             residuals = self.oracle.residual(predicted, actual)
             dang = self.oracle.dangerous_residual(
-                residuals, mode=hybrid.caes_mode, u_battery=hybrid.u_battery
+                residuals, mode=caes_mode, u_battery=physical.u_battery
             )
         meta = action_meta or {}
         return {
             "time": self.adapter.time,
             "step": self.step_index,
             "episode": self.episode_index - 1,
-            "requested_u_tp": hybrid.u_tp,
-            "requested_u_battery": hybrid.u_battery,
-            "requested_caes_mode": int(hybrid.caes_mode),
-            "requested_caes_magnitude": mag_logged,
+            "requested_u_tp": physical.u_tp,
+            "requested_u_battery": physical.u_battery,
+            "requested_u_caes": physical.u_caes,
+            "requested_caes_mode": int(caes_mode),
             "decoded_u_tp": physical.u_tp,
             "decoded_u_battery": physical.u_battery,
             "decoded_u_caes": physical.u_caes,
-            "hybrid_action": {
-                "u_tp": hybrid.u_tp,
-                "u_battery": hybrid.u_battery,
-                "caes_mode": int(hybrid.caes_mode),
-                "caes_magnitude": mag_logged,
-            },
+            "physical_action": physical.as_dict(),
             "decoded_fmu_action": physical.as_dict(),
             "applied_action": applied,
             "transition_valid": False,
@@ -871,23 +809,11 @@ class PowerSystemEnv(gym.Env):
         self,
         info: dict[str, Any],
         *,
-        hybrid: HybridAction | None,
         physical: PhysicalFmuAction | None,
         actual: dict | None,
         predicted: dict | None,
     ) -> FailureRecord:
-        """追加结构化失败记录并写回 ``info['failure_record']``。
-
-        Args:
-            info: 当前步 info 字典（会被就地更新）。
-            hybrid: 混合动作；可为 ``None``。
-            physical: 物理动作；可为 ``None``。
-            actual: 实际 FMU 输出。
-            predicted: Oracle 预测状态。
-
-        Returns:
-            新建的 FailureRecord 实例。
-        """
+        """追加结构化失败记录并写回 ``info['failure_record']``。"""
         rec = FailureRecord(
             run_id=self.run_id,
             episode=int(info.get("episode") or 0),
@@ -897,17 +823,8 @@ class PowerSystemEnv(gym.Env):
             fine_failure_type=str(info.get("fine_failure_type") or "unknown"),
             triggering_constraint=str(info.get("triggering_constraint") or "unknown"),
             previous_observation=dict(self.last_outputs) if self.last_outputs else None,
-            hybrid_action=info.get("hybrid_action")
-            or (
-                {
-                    "u_tp": hybrid.u_tp,
-                    "u_battery": hybrid.u_battery,
-                    "caes_mode": int(hybrid.caes_mode),
-                    "caes_magnitude": hybrid.caes_magnitude,
-                }
-                if hybrid
-                else None
-            ),
+            hybrid_action=info.get("physical_action")
+            or (physical.as_dict() if physical else None),
             decoded_fmu_action=(
                 physical.as_dict() if physical else info.get("decoded_fmu_action")
             ),

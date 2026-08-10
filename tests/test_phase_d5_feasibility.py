@@ -52,7 +52,7 @@ def test_failure_record_roundtrip():
         failure_type="PostStepHardConstraintViolation",
         fine_failure_type="battery_soc_high",
         triggering_constraint="battery_soc",
-        hybrid_action={"u_tp": 1.0, "u_battery": 1.0, "caes_mode": 1, "caes_magnitude": 0.0},
+        hybrid_action={"u_tp": 1.0, "u_battery": 1.0, "u_caes": 0.0},
     )
     d = rec.to_dict()
     rec2 = FailureRecord.from_dict(d)
@@ -75,8 +75,8 @@ def test_oracle_predict_residual_and_version():
         "p_pv_actual": 0.0,
         "p_load_actual": 1.5e8,
     }
-    from actions import HybridAction
-    action = HybridAction(1.0, 0.5, CaesMode.IDLE, 0.0)
+    from actions import PhysicalFmuAction
+    action = PhysicalFmuAction(1.0, 0.5, 0.0)
     pred = oracle.predict_next_state(outputs, action, previous_thermal_w=-1.5e8)
     for k in ("battery_soc", "p_thermal", "p_grid"):
         assert k in pred
@@ -136,7 +136,7 @@ def test_economic_buffer_rejects_poison_reward_and_invalid():
     buf = EconomicReplayBuffer(capacity=10)
     t = Transition(
         observation=np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32),
-        hybrid_action={"u_tp": 1.0, "u_battery": 0.0, "caes_mode": 1, "caes_magnitude": 0.0},
+        hybrid_action={"u_tp": 1.0, "u_battery": 0.0, "u_caes": 0.0},
         decoded_fmu_action={"u_tp": 1.0, "u_battery": 0.0, "u_caes": 0.0},
         reward=-1e9,
         next_observation=np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32),
@@ -155,7 +155,7 @@ def test_safety_dataset_separate_from_economic():
         {
             "fine_failure_type": "battery_soc_high",
             "previous_observation": {"battery_soc": 0.88},
-            "hybrid_action": {"u_tp": 1.0, "u_battery": 1.0, "caes_mode": 1, "caes_magnitude": 0.0},
+            "hybrid_action": {"u_tp": 1.0, "u_battery": 1.0, "u_caes": 0.0},
         }
     )
     buf = FilteredReplayBuffer()
@@ -171,7 +171,7 @@ def test_safety_classifier_false_safe_metric():
     for soc, ub, label in [(0.2, -0.5, 1.0), (0.3, 0.0, 1.0), (0.85, 1.0, 0.0), (0.88, 0.8, 0.0)] * 20:
         outputs = {"battery_soc": soc, "caes_gas_soc": 0.8, "caes_hot_soc": 0.5, "caes_cold_soc": 0.5,
                    "caes_gas_pressure": 8e6, "caes_gas_temperature": 300.0}
-        action = {"u_tp": 1.0, "u_battery": ub, "caes_mode": 1, "caes_magnitude": 0.0}
+        action = {"u_tp": 1.0, "u_battery": ub, "u_caes": 0.0}
         X.append(clf.featurize(outputs, action))
         y.append(label)
         ftypes.append("" if label > 0.5 else "battery_soc_high")
@@ -228,7 +228,7 @@ def test_empty_feasible_set_raises():
              "caes_cold_temperature": 290, "p_thermal": -1.5e8, "p_wind_actual": 0, "p_pv_actual": 0,
              "p_load_actual": 1e8},
             -1.5e8,
-            lambda feas: {"u_tp": np.asarray([1.0]), "u_battery": np.asarray([0.0]), "caes_mode": 1, "caes_magnitude": np.asarray([0.0])},
+            lambda feas: {"u_tp": np.asarray([1.0]), "u_battery": np.asarray([0.0]), "u_caes": np.asarray([0.0])},
         )
 def test_boundary_stress_tester_unit_sampling():
     """验证边界应力测试器能采样出合法场景与动作字段。"""
@@ -258,8 +258,7 @@ def test_env_logs_predicted_next_state_on_success():
     action = {
         "u_tp": np.asarray([1.0], dtype=np.float32),
         "u_battery": np.asarray([0.0], dtype=np.float32),
-        "caes_mode": int(CaesMode.IDLE),
-        "caes_magnitude": np.asarray([0.0], dtype=np.float32),
+        "u_caes": np.asarray([0.0], dtype=np.float32),
     }
     obs, reward, term, trunc, info = env.step(action)
     assert info.get("oracle_predicted_next_state") is not None

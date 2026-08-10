@@ -59,7 +59,7 @@ def collect_hierarchical_demos(
     windows = max(int(n_windows), 1)
 
     obs_l, goal_l = [], []
-    u_tp_l, u_bat_l, mode_l, mag_l = [], [], [], []
+    u_tp_l, u_bat_l, u_caes_l = [], [], []
     tp_lo, tp_hi, bat_lo, bat_hi, masks = [], [], [], [], []
 
     for w in range(windows):
@@ -114,7 +114,7 @@ def collect_hierarchical_demos(
                 goal[G_UTP] = 0.0
             if goal.size > G_ARB:
                 thr = abs(float(np.asarray(action.get("u_battery", 0)).reshape(-1)[0])) + abs(
-                    float(np.asarray(action.get("caes_magnitude", 0)).reshape(-1)[0])
+                    float(np.asarray(action.get("u_caes", 0)).reshape(-1)[0])
                 )
                 goal[G_ARB] = float(np.clip(thr, 0.0, 1.0))
             goal = clip_goal(0.5 * goal + 0.5 * prior, agent.goal_low, agent.goal_high)
@@ -123,8 +123,7 @@ def collect_hierarchical_demos(
             goal_l.append(goal.astype(np.float32))
             u_tp_l.append(float(np.asarray(action["u_tp"]).ravel()[0]))
             u_bat_l.append(float(np.asarray(action["u_battery"]).ravel()[0]))
-            mode_l.append(int(action["caes_mode"]))
-            mag_l.append(float(np.asarray(action["caes_magnitude"]).ravel()[0]))
+            u_caes_l.append(float(np.asarray(action["u_caes"]).ravel()[0]))
             tp_lo.append(float(feasible.u_tp_low))
             tp_hi.append(float(feasible.u_tp_high))
             bat_lo.append(float(feasible.u_battery_low))
@@ -143,8 +142,7 @@ def collect_hierarchical_demos(
         "goal": np.stack(goal_l).astype(np.float32),
         "u_tp": np.asarray(u_tp_l, dtype=np.float32),
         "u_battery": np.asarray(u_bat_l, dtype=np.float32),
-        "caes_mode": np.asarray(mode_l, dtype=np.int64),
-        "caes_magnitude": np.asarray(mag_l, dtype=np.float32),
+        "u_caes": np.asarray(u_caes_l, dtype=np.float32),
         "u_tp_low": np.asarray(tp_lo, dtype=np.float32),
         "u_tp_high": np.asarray(tp_hi, dtype=np.float32),
         "u_bat_low": np.asarray(bat_lo, dtype=np.float32),
@@ -174,8 +172,7 @@ def behavior_clone_low_actor(
     goal_t = torch.as_tensor(demos["goal"], device=device)
     u_tp_t = torch.as_tensor(demos["u_tp"], device=device)
     u_bat_t = torch.as_tensor(demos["u_battery"], device=device)
-    mode_t = torch.as_tensor(demos["caes_mode"], device=device, dtype=torch.int64)
-    mag_t = torch.as_tensor(demos["caes_magnitude"], device=device)
+    u_caes_t = torch.as_tensor(demos["u_caes"], device=device)
     tp_lo = torch.as_tensor(demos["u_tp_low"], device=device)
     tp_hi = torch.as_tensor(demos["u_tp_high"], device=device)
     bat_lo = torch.as_tensor(demos["u_bat_low"], device=device)
@@ -184,6 +181,8 @@ def behavior_clone_low_actor(
 
     z_tp_tgt = _inv_sigmoid_target(u_tp_t, tp_lo, tp_hi)
     z_bat_tgt = _inv_sigmoid_target(u_bat_t, bat_lo, bat_hi)
+    # u_caes already in [-1,1] legal bands; regress pre-tanh via atanh-ish soft target
+    z_caes_tgt = torch.atanh(u_caes_t.clamp(-0.999, 0.999))
 
     for _ in range(epochs):
         np.random.shuffle(idx)
@@ -194,19 +193,8 @@ def behavior_clone_low_actor(
             out = actor.forward_logits(obs_t[b], goal_t[b])
             loss_tp = F.mse_loss(out["z_tp"], z_tp_tgt[b])
             loss_bat = F.mse_loss(out["z_bat"], z_bat_tgt[b])
-            logits = out["logits_mode"].masked_fill(~mask[b].bool(), -1e9)
-            loss_mode = F.cross_entropy(logits, mode_t[b])
-            mag_pred_d = torch.sigmoid(out["z_discharge"])
-            mag_pred_c = torch.sigmoid(out["z_charge"])
-            mag_pred = torch.where(
-                mode_t[b] == 0,
-                mag_pred_d,
-                torch.where(mode_t[b] == 2, mag_pred_c, torch.zeros_like(mag_pred_d)),
-            )
-            mag_target = mag_t[b] * (mode_t[b] != 1).float()
-            loss_mag = F.mse_loss(mag_pred, mag_target)
-            # 电池套利权重更高
-            loss = 2.0 * loss_tp + 8.0 * loss_bat + 2.0 * loss_mode + 0.25 * loss_mag
+            loss_caes = F.mse_loss(out["z_caes"], z_caes_tgt[b])
+            loss = 2.0 * loss_tp + 8.0 * loss_bat + 2.0 * loss_caes
             opt.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(actor.parameters(), 5.0)
@@ -225,7 +213,7 @@ def behavior_clone_low_actor(
         )
         mae_tp = float((pred["u_tp"] - u_tp_t).abs().mean().item())
         mae_bat = float((pred["u_battery"] - u_bat_t).abs().mean().item())
-        mode_acc = float((pred["caes_mode"] == mode_t).float().mean().item())
+        mae_caes = float((pred["u_caes"] - u_caes_t).abs().mean().item())
 
     return {
         "n_demos": float(n),
@@ -233,7 +221,7 @@ def behavior_clone_low_actor(
         "final_loss": float(history[-1]) if history else float("nan"),
         "mae_u_tp": mae_tp,
         "mae_u_battery": mae_bat,
-        "mode_accuracy": mode_acc,
+        "mae_u_caes": mae_caes,
     }
 
 

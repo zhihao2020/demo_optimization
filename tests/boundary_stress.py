@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 import numpy as np
 from actions import CaesMode, FeasibilityOracle
-from actions.validator import hybrid_from_dict
+from actions.validator import physical_from_dict
 from envs.failures import ConstraintFailure
 
 
@@ -192,8 +192,7 @@ class BoundaryStressTester:
         action = {
             "u_tp": np.asarray([u_tp], dtype=np.float32),
             "u_battery": np.asarray([u_bat], dtype=np.float32),
-            "caes_mode": int(mode),
-            "caes_magnitude": np.asarray([mag], dtype=np.float32),
+            "u_caes": np.asarray([float((__import__("actions.caes_u", fromlist=["u_from_mode_mag"]).u_from_mode_mag(mode, mag)))], dtype=np.float32),
         }
         return action, scenario
 
@@ -236,7 +235,7 @@ class BoundaryStressTester:
             # 预检（与 env 一致：validator + oracle）
             feasible = env.get_feasible_action_spec()
             try:
-                hybrid = hybrid_from_dict(action)
+                hybrid = physical_from_dict(action)
                 env.hybrid_validator.validate(hybrid, feasible)
                 ok, reason = self.oracle.check_action_executable(
                     hybrid, outputs, feasible, prev_th

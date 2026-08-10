@@ -96,7 +96,7 @@ def evaluate_policy(
             "requested_u_tp": info.get("requested_u_tp"),
             "requested_u_battery": info.get("requested_u_battery"),
             "requested_caes_mode": info.get("requested_caes_mode"),
-            "requested_caes_magnitude": info.get("requested_caes_magnitude"),
+            "requested_u_caes": info.get("requested_u_caes"),
             "decoded_u_tp": info.get("decoded_u_tp"),
             "decoded_u_battery": info.get("decoded_u_battery"),
             "decoded_u_caes": info.get("decoded_u_caes"),

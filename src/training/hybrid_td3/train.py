@@ -19,6 +19,7 @@ from envs.reward_calculator import IncompleteRewardConfigError
 from fmu import FmuAdapter
 from replay import HybridGiveSafeReplayBuffer
 from safety import GiveSafeController, NoSafeActionFoundError, ShadowFmuValidator, load_givesafe_config
+from training.episode_starts import eval_start_seconds, training_start_seconds
 from training.evaluate_td3 import evaluate_annual_policy, evaluate_policy
 from controllers.price_aware_rule import PriceAwareRuleController
 from controllers.rule_based_controller import RuleBasedController
@@ -79,8 +80,7 @@ class RandomFeasiblePolicy:
         return {
             "u_tp": np.asarray([u_tp], dtype=np.float32),
             "u_battery": np.asarray([u_bat], dtype=np.float32),
-            "caes_mode": int(mode),
-            "caes_magnitude": np.asarray([mag], dtype=np.float32),
+            "u_caes": np.asarray([float((__import__("actions.caes_u", fromlist=["u_from_mode_mag"]).u_from_mode_mag(mode, mag)))], dtype=np.float32),
         }
 
 
@@ -138,8 +138,7 @@ class HybridPolicyWrapper:
             return {
                 "u_tp": np.asarray([float(feasible.u_tp_high)], dtype=np.float32),
                 "u_battery": np.asarray([float(u_bat)], dtype=np.float32),
-                "caes_mode": mode,
-                "caes_magnitude": np.asarray([0.0], dtype=np.float32),
+                "u_caes": np.asarray([0.0], dtype=np.float32),
             }
 
     def on_episode_reset(self, info: dict[str, Any]) -> None:
@@ -443,7 +442,12 @@ def run_hybrid_training(
         Returns:
             (obs, reset_info) 元组。
         """
-        start_time = annual_episode_start_seconds(env.config["fmu"], env.episode_steps, index)
+        start_time = training_start_seconds(
+            env.config["fmu"],
+            env.episode_steps,
+            index,
+            annual_episode_start_seconds=annual_episode_start_seconds,
+        )
         next_obs, reset_info = env.reset(seed=seed + index, options={"start_time": start_time})
         actual_start = float(reset_info.get("time", start_time) or start_time)
         episode_start_times.append(actual_start)
@@ -553,9 +557,14 @@ def run_hybrid_training(
         agent.save(run_dir / "checkpoints" / "hybrid_givesafe_td3.pt")
         safety_dataset.save(run_dir / "train" / "safety_dataset.json")
 
-        # 规则仅作独立基准，不参与 GiveSafe
+        eval_opts = {"start_time": eval_start_seconds(env.config["fmu"])}
         rule_env = PowerSystemEnv(run_id=f"{run_dir.name}_rule", forecast_enabled=forecast_enabled)
-        rule_result = evaluate_policy(rule_env, RuleBasedController(rule_env), run_dir / "trajectories" / "rule.csv")
+        rule_result = evaluate_policy(
+            rule_env,
+            RuleBasedController(rule_env),
+            run_dir / "trajectories" / "rule.csv",
+            reset_options=eval_opts,
+        )
         rule_env.close()
 
         eval_env = PowerSystemEnv(run_id=f"{run_dir.name}_eval", forecast_enabled=forecast_enabled)
@@ -565,7 +574,6 @@ def run_hybrid_training(
             step = float(eval_env.config["fmu"]["communication_step_seconds"])
 
             def efactory():
-                """构造评估用功能模型单元适配器(FmuAdapter)。"""
                 return FmuAdapter(fmu_path, step, eval_env.registry)
 
             eval_shadow = ShadowFmuValidator(
@@ -576,13 +584,18 @@ def run_hybrid_training(
             )
         eval_ctrl = GiveSafeController(oracle=eval_env.oracle, shadow=eval_shadow, config=gs_cfg)
         eval_policy = HybridPolicyWrapper(agent, eval_env, eval_ctrl, deterministic=True)
-        # 简单确定性 rollout：手动统计拒绝
-        # evaluate_policy 直接 step；对 GiveSafe 评估用 wrapper.predict 已含安全环
         try:
-            eval_result = evaluate_policy(eval_env, eval_policy, run_dir / "trajectories" / "eval.csv")
+            eval_result = evaluate_policy(
+                eval_env,
+                eval_policy,
+                run_dir / "trajectories" / "eval.csv",
+                reset_options=eval_opts,
+            )
         finally:
-            eval_shadow.close() if eval_shadow is not None else None
+            if eval_shadow is not None:
+                eval_shadow.close()
             eval_env.close()
+        result["eval_start_time_seconds"] = eval_opts["start_time"]
 
         annual_eval_result = None
         if annual_evaluation:

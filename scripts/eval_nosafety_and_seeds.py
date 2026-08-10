@@ -113,7 +113,7 @@ class GHTD3NoSafe:
                 market_conditioned_goal_prior,
             )
             goal = self.agent.select_goal(obs, deterministic=True, random=False)
-            if bool(self.cfg.get("market_goal_prior", True)):
+            if bool(self.cfg.get("market_goal_prior", False)):
                 buy = None
                 if getattr(self.env, "price_profile", None) is not None:
                     try:

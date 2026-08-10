@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+from actions.caes_u import physical_dict, u_from_mode_mag
 
 from actions import CaesMode
 from envs.power_system_env import PowerSystemEnv
@@ -93,16 +94,12 @@ class ParametricPricePolicy:
                 if self.caes_mag > 0.05 and gas > 0.3 and feas.mode_mask.discharge:
                     mode, mag = CaesMode.DISCHARGE, self.caes_mag
 
-        return {
-            "u_tp": np.asarray([float(np.clip(u_tp, lo, hi))], dtype=np.float32),
-            "u_battery": np.asarray([u_bat], dtype=np.float32),
-            "caes_mode": int(mode),
-            "caes_magnitude": np.asarray([float(mag)], dtype=np.float32),
-        }
+        return physical_dict(float(np.clip(u_tp, lo, hi)), float(u_bat), u_from_mode_mag(mode, mag))
 
 
 def _fitness_from_eval(kpi: dict[str, Any], cfg: PSOConfig) -> float:
-    j = float(kpi.get("net_cashflow_j") or 0.0)
+    # Same primary objective as RL eval: maximize sum ΔJ_gen (soft-penalize violations for search).
+    j = float(kpi.get("sum_delta_j_gen") if kpi.get("sum_delta_j_gen") is not None else kpi.get("net_cashflow_j") or 0.0)
     uns = float(kpi.get("unserved_mwh") or 0.0)
     fail = float(kpi.get("fmu_failure_count") or 0.0) + float(kpi.get("invalid_transition_count") or 0.0)
     l1 = float(kpi.get("terminal_soc_l1") or 0.0)

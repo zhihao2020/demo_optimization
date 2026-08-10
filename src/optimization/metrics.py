@@ -8,16 +8,18 @@ from typing import Any
 def extract_kpi_from_eval(res: dict[str, Any], *, wall_s: float = 0.0, fmu_steps: int | None = None) -> dict[str, Any]:
     terms = res.get("cost_terms") or {}
     metrics = res.get("metrics") or {}
-    # 净现金流：优先周内 economic_cashflow_delta 累计（evaluate 已在 cost_terms 中给出末步累计语义时需注意）
-    # evaluate_policy 的 cost_terms 末行累计差分在 weekly 汇总中：
-    j = float(terms.get("economic_cashflow_delta", 0.0))
-    # 若为末步单点，使用 episode 级：部分版本把总和放在 economic 分量
-    if abs(j) < 1e-12 and "economic_cashflow_components" in res:
-        # fallback: 不使用
-        pass
+    # Primary: generalized cashflow sum (ΔJ_gen = CF - carbon - CUT - deg).
+    # evaluate_policy accumulates per-step terms into cost_terms.
+    j_gen = terms.get("generalized_cashflow_delta")
+    j_cf = terms.get("economic_cashflow_delta") or terms.get("cashflow_delta")
+    if j_gen is None:
+        j_gen = j_cf if j_cf is not None else 0.0
+    if j_cf is None:
+        j_cf = j_gen
     return {
         "episode_reward": res.get("episode_reward"),
-        "net_cashflow_j": j,
+        "sum_delta_j_gen": float(j_gen),
+        "net_cashflow_j": float(j_cf),
         "raw_total_cost": terms.get("raw_total_cost") or res.get("weekly_raw_total_cost"),
         "economic_reward": terms.get("economic_reward"),
         "market_buy_cost": terms.get("market_buy_cost"),

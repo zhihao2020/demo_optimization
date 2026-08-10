@@ -113,8 +113,7 @@ class FilteredReplayBuffer:
         next_obs = np.stack([t.next_observation for t in batch]).astype(np.float32)
         u_tp = np.asarray([t.hybrid_action["u_tp"] for t in batch], dtype=np.float32)
         u_bat = np.asarray([t.hybrid_action["u_battery"] for t in batch], dtype=np.float32)
-        mode = np.asarray([t.hybrid_action["caes_mode"] for t in batch], dtype=np.int64)
-        mag = np.asarray([t.hybrid_action["caes_magnitude"] for t in batch], dtype=np.float32)
+        u_caes = np.asarray([t.hybrid_action["u_caes"] for t in batch], dtype=np.float32)
         reward = np.asarray([t.reward for t in batch], dtype=np.float32)
         done = np.asarray([t.terminated for t in batch], dtype=np.float32)
         mask = np.stack([t.valid_mode_mask for t in batch]).astype(np.bool_)
@@ -135,8 +134,7 @@ class FilteredReplayBuffer:
             "next_obs": next_obs,
             "u_tp": u_tp,
             "u_battery": u_bat,
-            "caes_mode": mode,
-            "caes_magnitude": mag,
+            "u_caes": u_caes,
             "reward": reward,
             "done": done,
             "mode_mask": mask,

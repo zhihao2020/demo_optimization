@@ -36,12 +36,16 @@ apply_process_cache_env()
 
 from envs.power_system_env import PowerSystemEnv  # noqa: E402
 from training.ghtd3.agent import GHTD3Agent  # noqa: E402
-from training.ghtd3.goals import GOAL_NAMES, residual_scale_from_goal  # noqa: E402
-from training.ghtd3.hybrid_anchor import HybridAnchor  # noqa: E402
+from training.ghtd3.goals import GOAL_NAMES  # noqa: E402
+
+def residual_scale_from_goal(goal, *, alpha0=0.0, alpha_max=0.30):
+    g = __import__('numpy').asarray(goal).ravel()
+    arb = float(g[4]) if g.size > 4 else 0.0
+    return float(max(0.0, min(alpha_max, alpha0 + (alpha_max - alpha0) * max(0.0, min(1.0, arb)))))
 
 
 def _load_cfg(path: str | Path | None = None) -> dict[str, Any]:
-    p = Path(path) if path else ROOT / "src/config/ghtd3_config.yaml"
+    p = Path(path) if path else ROOT / "src/config/ghtd3_config_abs.yaml"
     if not p.is_file():
         p = ROOT / p
     with open(p, encoding="utf-8") as f:
@@ -304,33 +308,20 @@ def _build_agent(
         gd = _infer_goal_dim(ckpt, obs_dim)
         if gd is not None and gd > 0:
             local_cfg["goal_dim"] = gd
+    local_cfg["execution_mode"] = "goal_conditioned"
     agent = GHTD3Agent(obs_dim, local_cfg)
-    meta: dict[str, Any] = {"transplant": False, "ckpt": None, "goal_dim": agent.goal_dim}
-    hp = Path(cfg.get("hybrid_anchor_path") or "")
-    if not hp.is_file():
-        hp = ROOT / str(cfg.get("hybrid_anchor_path") or "")
-    mode = str(local_cfg.get("execution_mode", "action_residual")).lower()
-    use_anchor = bool(local_cfg.get("hybrid_anchor", False)) and hp.is_file()
-    if use_anchor:
-        anchor = HybridAnchor(obs_dim, hp, device=str(agent.device))
-        # action_residual：永不移植；goal_conditioned 仅 fresh+transplant 标志时移植
-        do_tx = bool(transplant) and mode not in ("action_residual", "tea") and ckpt is None
-        meta = agent.attach_hybrid_anchor(anchor, transplant=do_tx)
-        meta["hybrid_path"] = str(hp)
-        meta["execution_mode"] = mode
-    else:
-        meta["execution_mode"] = mode
-        meta["hybrid_path"] = None
+    meta: dict[str, Any] = {
+        "transplant": False,
+        "ckpt": None,
+        "goal_dim": agent.goal_dim,
+        "execution_mode": "goal_conditioned",
+        "hybrid_path": None,
+    }
+    _ = transplant  # legacy CLI flag retained for call-site compatibility
     if ckpt is not None and ckpt.is_file():
         agent.load(ckpt, strict=False)
-        agent.execution_mode = mode
-        if mode in ("action_residual", "tea", "goal_conditioned"):
-            agent.low_use_raw_obs = bool(local_cfg.get("low_use_raw_obs", False))
-        else:
-            agent.low_use_raw_obs = bool(local_cfg.get("low_use_raw_obs", True))
-        if use_anchor and agent._hybrid_anchor is None and hp.is_file():
-            agent._hybrid_anchor = HybridAnchor(obs_dim, hp, device=str(agent.device))
-            agent.hybrid_anchor_enabled = True
+        agent.execution_mode = "goal_conditioned"
+        agent.low_use_raw_obs = bool(local_cfg.get("low_use_raw_obs", False))
         meta["ckpt"] = str(ckpt)
         meta["lo_it"] = agent.lo_it
         meta["hi_it"] = agent.hi_it

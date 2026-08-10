@@ -103,9 +103,7 @@ class HybridTD3:
         next_obs = torch.as_tensor(batch["next_obs"], device=self.device)
         u_tp = torch.as_tensor(batch["u_tp"], device=self.device)
         u_bat = torch.as_tensor(batch["u_battery"], device=self.device)
-        mode = torch.as_tensor(batch["caes_mode"], device=self.device, dtype=torch.int64)
-        mode_oh = F.one_hot(mode, num_classes=3).float()
-        mag = torch.as_tensor(batch["caes_magnitude"], device=self.device)
+        u_caes = torch.as_tensor(batch["u_caes"], device=self.device)
         reward = torch.as_tensor(batch["reward"], device=self.device)
         done = torch.as_tensor(batch["done"], device=self.device)
         next_mask = torch.as_tensor(batch["next_mode_mask"], device=self.device)
@@ -124,7 +122,7 @@ class HybridTD3:
             # target policy smoothing 仅作用于连续动作
             noise_tp = (torch.randn_like(next_act["u_tp"]) * self.target_noise).clamp(-self.noise_clip, self.noise_clip)
             noise_bat = (torch.randn_like(next_act["u_battery"]) * self.target_noise).clamp(-self.noise_clip, self.noise_clip)
-            noise_mag = (torch.randn_like(next_act["caes_magnitude"]) * self.target_noise).clamp(-self.noise_clip, self.noise_clip)
+            noise_caes = (torch.randn_like(next_act["u_caes"]) * self.target_noise).clamp(-self.noise_clip, self.noise_clip)
             n_tp = torch.clamp(
                 next_act["u_tp"] + noise_tp,
                 torch.as_tensor(batch["next_u_tp_low"], device=self.device),
@@ -135,14 +133,14 @@ class HybridTD3:
                 torch.as_tensor(batch["next_u_bat_low"], device=self.device),
                 torch.as_tensor(batch["next_u_bat_high"], device=self.device),
             )
-            n_mag = torch.clamp(next_act["caes_magnitude"] + noise_mag, 0.0, 1.0)
-            # 不对离散模式加高斯噪声
-            q1_t, q2_t = self.critic_target(next_obs, n_tp, n_bat, next_act["caes_mode_oh"], n_mag)
+            from actions.caes_u import project_u_caes_torch
+            n_caes = project_u_caes_torch(torch.clamp(next_act["u_caes"] + noise_caes, -1.0, 1.0))
+            q1_t, q2_t = self.critic_target(next_obs, n_tp, n_bat, n_caes)
             # 防止目标 Q 爆炸（此前训练曾出现 |Q|~1e10）
             q_t = torch.min(q1_t, q2_t).clamp(-self.q_clip, self.q_clip)
             target_q = reward + (1.0 - done) * self.gamma * q_t
 
-        q1, q2 = self.critic(obs, u_tp, u_bat, mode_oh, mag)
+        q1, q2 = self.critic(obs, u_tp, u_bat, u_caes)
         critic_loss = F.mse_loss(q1, target_q) + F.mse_loss(q2, target_q)
         self.critic_opt.zero_grad()
         critic_loss.backward()
@@ -161,7 +159,7 @@ class HybridTD3:
                 explore_noise_std=0.0,
             )
             actor_loss = -self.critic.q1_only(
-                obs, cur["u_tp"], cur["u_battery"], cur["caes_mode_oh"], cur["caes_magnitude"]
+                obs, cur["u_tp"], cur["u_battery"], cur["u_caes"]
             ).mean()
             self.actor_opt.zero_grad()
             actor_loss.backward()

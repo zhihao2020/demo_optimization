@@ -1,8 +1,10 @@
 #!/usr/bin/env python
-"""Matched-budget multi-seed ablations for MSGP / MS-HER / F-MLE.
+"""Legacy multi-seed ablations for archived 5D+MSGP+MS-HER+F-MLE configs.
 
-Default: 15k steps, seeds 0,1,2; variants full + no prior/her/fmle.
-Launches local sequential training unless --dry-run.
+Mainline training uses src/config/ghtd3_config.yaml (2D + plain HER).
+These variants live under src/config/legacy/ for reference only.
+
+Default: 15k steps, seeds 0,1,2. Launches local sequential training unless --dry-run.
 """
 from __future__ import annotations
 
@@ -15,10 +17,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 VARIANTS = [
-    ("full", "src/config/ghtd3_config_abs.yaml"),
-    ("noprior", "src/config/ghtd3_config_abs_noprior.yaml"),
-    ("noher", "src/config/ghtd3_config_abs_noher.yaml"),
-    ("nofmle", "src/config/ghtd3_config_abs_nofmle.yaml"),
+    ("full", "src/config/legacy/ghtd3_config_abs_5d_msher.yaml"),
+    ("noprior", "src/config/legacy/ghtd3_config_abs_noprior.yaml"),
+    ("noher", "src/config/legacy/ghtd3_config_abs_noher.yaml"),
+    ("nofmle", "src/config/legacy/ghtd3_config_abs_nofmle.yaml"),
 ]
 
 

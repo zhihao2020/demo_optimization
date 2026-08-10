@@ -1,8 +1,7 @@
 #!/usr/bin/env python
-"""Train Safe Market-GHTD3 sensitivity grid over c and alpha_end (seed 0).
+"""Sensitivity grid over c / alpha (legacy 5D pack configs under src/config/legacy/).
 
-Each run uses 15k valid steps by default. After all runs (or using existing),
-writes runs/ghtd3_sens_summary.json for plotting.
+Mainline is 2D+HER (`ghtd3_config.yaml`). Prefer train_seasonal.py for formal runs.
 """
 from __future__ import annotations
 
@@ -14,17 +13,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# (tag, config relative path, kind, value)
+# (tag, config relative path, kind, value) — archived 5D pack
 GRID = [
-    ("c4", "src/config/ghtd3_config_abs_sens_c4.yaml", "c", 4),
-    ("c8", "src/config/ghtd3_config_abs.yaml", "c", 8),
-    ("c12", "src/config/ghtd3_config_abs_sens_c12.yaml", "c", 12),
-    ("c24", "src/config/ghtd3_config_abs_sens_c24.yaml", "c", 24),
-    ("a010", "src/config/ghtd3_config_abs_sens_a010.yaml", "alpha", 0.10),
-    ("a022", "src/config/ghtd3_config_abs.yaml", "alpha", 0.22),
-    ("a035", "src/config/ghtd3_config_abs_sens_a035.yaml", "alpha", 0.35),
-    ("a050", "src/config/ghtd3_config_abs_sens_a050.yaml", "alpha", 0.50),
-    ("a070", "src/config/ghtd3_config_abs_sens_a070.yaml", "alpha", 0.70),
+    ("c4", "src/config/legacy/ghtd3_config_abs_sens_c4.yaml", "c", 4),
+    ("c8", "src/config/legacy/ghtd3_config_abs_5d_msher.yaml", "c", 8),
+    ("c12", "src/config/legacy/ghtd3_config_abs_sens_c12.yaml", "c", 12),
+    ("c24", "src/config/legacy/ghtd3_config_abs_sens_c24.yaml", "c", 24),
+    ("a010", "src/config/legacy/ghtd3_config_abs_sens_a010.yaml", "alpha", 0.10),
+    ("a022", "src/config/legacy/ghtd3_config_abs_5d_msher.yaml", "alpha", 0.22),
+    ("a035", "src/config/legacy/ghtd3_config_abs_sens_a035.yaml", "alpha", 0.35),
+    ("a050", "src/config/legacy/ghtd3_config_abs_sens_a050.yaml", "alpha", 0.50),
+    ("a070", "src/config/legacy/ghtd3_config_abs_sens_a070.yaml", "alpha", 0.70),
 ]
 
 

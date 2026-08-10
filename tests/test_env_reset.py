@@ -80,8 +80,7 @@ def _action(mode=CaesMode.IDLE, u_tp=1.0, u_bat=0.0, mag=0.0):
     return {
         "u_tp": np.asarray([u_tp], dtype=np.float32),
         "u_battery": np.asarray([u_bat], dtype=np.float32),
-        "caes_mode": int(mode),
-        "caes_magnitude": np.asarray([mag], dtype=np.float32),
+        "u_caes": np.asarray([float((__import__("actions.caes_u", fromlist=["u_from_mode_mag"]).u_from_mode_mag(mode, mag)))], dtype=np.float32),
     }
 
 

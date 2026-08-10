@@ -5,7 +5,8 @@ from typing import Any
 
 import numpy as np
 
-from actions import CaesMode, FeasibilityOracle, HybridAction
+from actions import CaesMode, FeasibilityOracle
+from actions.caes_u import physical_dict, u_from_mode_mag
 from controllers.rule_based_controller import RuleBasedController
 
 
@@ -120,10 +121,4 @@ class PriceAwareRuleController(RuleBasedController):
                 elif feasible.mode_mask.charge:
                     mode = CaesMode.CHARGE
 
-        hybrid = HybridAction(u_tp=u_tp, u_battery=u_bat, caes_mode=mode, caes_magnitude=mag)
-        return {
-            "u_tp": np.asarray([hybrid.u_tp], dtype=np.float32),
-            "u_battery": np.asarray([hybrid.u_battery], dtype=np.float32),
-            "caes_mode": int(hybrid.caes_mode),
-            "caes_magnitude": np.asarray([hybrid.caes_magnitude], dtype=np.float32),
-        }
+        return physical_dict(u_tp, u_bat, u_from_mode_mag(mode, mag))

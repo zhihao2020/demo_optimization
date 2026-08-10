@@ -12,6 +12,7 @@ from controllers.rule_based_controller import RuleBasedController
 from envs.power_system_env import PowerSystemEnv
 from fmu import FmuAdapter
 from safety import GiveSafeController, ShadowFmuValidator
+from training.episode_starts import eval_start_seconds
 from training.evaluate_td3 import evaluate_annual_policy, evaluate_policy
 
 from .policy_wrapper import HybridGiveSafePolicyWrapper
@@ -81,9 +82,17 @@ def finalize_training_run(
     run_dir = Path(run_dir)
     agent.save(run_dir / "checkpoints" / checkpoint_name)
 
+    # Temporary env only to read fmu config for eval start; closed immediately.
+    _cfg_env = PowerSystemEnv(run_id=f"{run_dir.name}_cfg", forecast_enabled=forecast_enabled)
+    eval_opts = {"start_time": eval_start_seconds(_cfg_env.config["fmu"])}
+    _cfg_env.close()
+
     rule_env = PowerSystemEnv(run_id=f"{run_dir.name}_rule", forecast_enabled=forecast_enabled)
     rule_result = evaluate_policy(
-        rule_env, RuleBasedController(rule_env), run_dir / "trajectories" / "rule.csv"
+        rule_env,
+        RuleBasedController(rule_env),
+        run_dir / "trajectories" / "rule.csv",
+        reset_options=eval_opts,
     )
     rule_env.close()
 
@@ -110,11 +119,17 @@ def finalize_training_run(
     eval_ctrl = GiveSafeController(oracle=eval_env.oracle, shadow=eval_shadow, config=gs_cfg)
     eval_policy = HybridGiveSafePolicyWrapper(agent, eval_env, eval_ctrl, deterministic=True)
     try:
-        eval_result = evaluate_policy(eval_env, eval_policy, run_dir / "trajectories" / "eval.csv")
+        eval_result = evaluate_policy(
+            eval_env,
+            eval_policy,
+            run_dir / "trajectories" / "eval.csv",
+            reset_options=eval_opts,
+        )
     finally:
         if eval_shadow is not None:
             eval_shadow.close()
         eval_env.close()
+    result["eval_start_time_seconds"] = eval_opts["start_time"]
 
     annual_eval_result = None
     if annual_evaluation:

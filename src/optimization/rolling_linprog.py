@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+from actions.caes_u import physical_dict, u_from_mode_mag
 import yaml
 from pathlib import Path
 from scipy.optimize import linprog
@@ -255,8 +256,7 @@ class RollingLinprogController:
             return {
                 "u_tp": np.asarray([1.0], np.float32),
                 "u_battery": np.asarray([0.0], np.float32),
-                "caes_mode": int(CaesMode.IDLE),
-                "caes_magnitude": np.asarray([0.0], np.float32),
+                "u_caes": np.asarray([0.0], np.float32),
             }
 
         sol = self._solve()
@@ -295,6 +295,5 @@ class RollingLinprogController:
         return {
             "u_tp": np.asarray([u_tp], dtype=np.float32),
             "u_battery": np.asarray([u_bat], dtype=np.float32),
-            "caes_mode": int(mode),
-            "caes_magnitude": np.asarray([mag], dtype=np.float32),
+            "u_caes": np.asarray([float(u_from_mode_mag(mode, mag))], dtype=np.float32),
         }

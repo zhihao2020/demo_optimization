@@ -6,8 +6,8 @@ from typing import Any, Callable
 
 import numpy as np
 
-from actions import CaesMode, HybridAction, HybridActionDecoder
-from actions.validator import hybrid_from_dict
+from actions.caes_u import mode_from_u
+from actions.validator import physical_from_dict
 from replay.hybrid_replay_buffer import HybridGiveSafeReplayBuffer
 from safety import GiveSafeController, NoSafeActionFoundError, ShadowFmuValidator
 from safety.safety_result import SafetyCheckResult
@@ -15,7 +15,7 @@ from .buffer import SafetyDataset, Transition
 
 
 class GiveSafeTransitionCollector:
-    """GiveSafe 转移收集器(GiveSafeTransitionCollector)：拒绝自环写入 GiveSafeReplay；安全动作才执行主 FMU。"""
+    """GiveSafe 转移收集器：拒绝自环写入 GiveSafeReplay；安全动作才执行主 FMU。"""
 
     def __init__(
         self,
@@ -24,19 +24,10 @@ class GiveSafeTransitionCollector:
         shadow: ShadowFmuValidator | None = None,
         safety_dataset: SafetyDataset | None = None,
     ):
-        """绑定 GiveSafe replay、控制器与影子 FMU。
-
-        Args:
-            buffer: 混合 GiveSafe 分区 replay。
-            controller: GiveSafe 安全控制器。
-            shadow: 可选影子 FMU 校验器。
-            safety_dataset: 安全样本集；None 时自动创建。
-        """
         self.buffer = buffer
         self.controller = controller
         self.shadow = shadow
         self.safety_dataset = safety_dataset if safety_dataset is not None else SafetyDataset()
-        self.decoder = HybridActionDecoder()
         self.stats = {
             "policy_attempt_count": 0,
             "givesafe_rejection_count": 0,
@@ -56,14 +47,6 @@ class GiveSafeTransitionCollector:
         }
 
     def on_episode_reset(self, start_time: float = 0.0) -> None:
-        """回合重置时通知影子 FMU。
-
-        Args:
-            start_time: 仿真起始时间（秒）。
-
-        Returns:
-            无。
-        """
         if self.shadow is not None:
             self.shadow.on_episode_reset(start_time)
 
@@ -75,25 +58,28 @@ class GiveSafeTransitionCollector:
         safety: SafetyCheckResult,
         terms: dict[str, float],
     ) -> None:
-        """将 GiveSafe 拒绝样本以自环转移写入 givesafe replay。
-
-        Args:
-            env: 当前环境，用于查询可行域。
-            obs: 步前观测。
-            action: 被拒绝的混合动作。
-            safety: GiveSafe 检查结果。
-            terms: 约束奖励分项。
-
-        Returns:
-            无。
-        """
-        hybrid = hybrid_from_dict(action)
-        physical = self.decoder.decode(hybrid)
+        physical = physical_from_dict(action)
         bounds = {
-            "u_tp_low": float(getattr(env, "_current_feasible", None).u_tp_low if getattr(env, "_current_feasible", None) else 1 / 3),
-            "u_tp_high": float(getattr(env, "_current_feasible", None).u_tp_high if getattr(env, "_current_feasible", None) else 1.0),
-            "u_battery_low": float(getattr(env, "_current_feasible", None).u_battery_low if getattr(env, "_current_feasible", None) else -1.0),
-            "u_battery_high": float(getattr(env, "_current_feasible", None).u_battery_high if getattr(env, "_current_feasible", None) else 1.0),
+            "u_tp_low": float(
+                getattr(env, "_current_feasible", None).u_tp_low
+                if getattr(env, "_current_feasible", None)
+                else 1 / 3
+            ),
+            "u_tp_high": float(
+                getattr(env, "_current_feasible", None).u_tp_high
+                if getattr(env, "_current_feasible", None)
+                else 1.0
+            ),
+            "u_battery_low": float(
+                getattr(env, "_current_feasible", None).u_battery_low
+                if getattr(env, "_current_feasible", None)
+                else -1.0
+            ),
+            "u_battery_high": float(
+                getattr(env, "_current_feasible", None).u_battery_high
+                if getattr(env, "_current_feasible", None)
+                else 1.0
+            ),
         }
         try:
             feasible = env.get_feasible_action_spec()
@@ -106,15 +92,11 @@ class GiveSafeTransitionCollector:
             }
         except Exception:
             mask = np.ones(3, dtype=bool)
+        act = physical.as_dict()
         tr = Transition(
             observation=np.asarray(obs, dtype=np.float32),
-            hybrid_action={
-                "u_tp": float(hybrid.u_tp),
-                "u_battery": float(hybrid.u_battery),
-                "caes_mode": int(hybrid.caes_mode),
-                "caes_magnitude": float(0.0 if hybrid.caes_mode == CaesMode.IDLE else hybrid.caes_magnitude),
-            },
-            decoded_fmu_action=physical.as_dict(),
+            hybrid_action=act,
+            decoded_fmu_action=act,
             reward=float(terms["constraint_reward"]),
             next_observation=np.asarray(obs, dtype=np.float32),
             terminated=False,
@@ -145,7 +127,9 @@ class GiveSafeTransitionCollector:
         elif safety.rejection_stage == "shadow":
             self.stats["shadow_fmu_rejection_count"] += 1
         fine = safety.violation_type or "unknown"
-        self.stats["fine_failure_counts"][fine] = self.stats["fine_failure_counts"].get(fine, 0) + 1
+        self.stats["fine_failure_counts"][fine] = (
+            self.stats["fine_failure_counts"].get(fine, 0) + 1
+        )
 
     def step_with_givesafe(
         self,
@@ -154,19 +138,6 @@ class GiveSafeTransitionCollector:
         *,
         deterministic: bool = False,
     ) -> tuple[Any, ...]:
-        """经 GiveSafe 环执行一步：拒绝不推进主 FMU，成功才写入 physical replay。
-
-        Args:
-            env: 电力系统环境，需已 reset。
-            propose_fn: 无环境副作用的候选动作采样 callable。
-            deterministic: 是否确定性 GiveSafe 搜索。
-
-        Returns:
-            (obs, reward, terminated, truncated, info) 元组。
-
-        Raises:
-            RuntimeError: 环境未 reset 时抛出。
-        """
         if env.last_outputs is None:
             raise RuntimeError("环境未 reset")
         obs_before = env.build_observation()
@@ -175,7 +146,6 @@ class GiveSafeTransitionCollector:
         feasible = env.get_feasible_action_spec()
 
         def on_rejection(action, safety, terms):
-            """记录一次被安全给予拒绝的策略尝试。"""
             self.stats["policy_attempt_count"] += 1
             self._store_rejection(env, obs_before, action, safety, terms)
 
@@ -205,14 +175,12 @@ class GiveSafeTransitionCollector:
             }
             return obs_before, 0.0, False, True, info
 
-        # 计入最后一次成功尝试
         self.stats["policy_attempt_count"] += 1
         assert gs.safe_action is not None
         action = gs.safe_action
         obs, reward, terminated, truncated, info = env.step(action)
         self.stats["main_fmu_execution_count"] += 1
 
-        # 时间/物理步语义校验字段
         info["givesafe_attempt_count"] = gs.attempt_count
         info["givesafe_rejected_attempts"] = len(gs.rejected_actions)
         info["action_executed_by_main_fmu"] = bool(info.get("transition_valid"))
@@ -220,14 +188,11 @@ class GiveSafeTransitionCollector:
 
         valid = bool(info.get("physically_valid") and info.get("transition_valid"))
         if not valid:
-            # false-safe：一级+shadow 通过但主 FMU 后验失败
             self.stats["givesafe_false_safe_count"] += 1
             self.stats["post_step_hard_constraint_violation_count"] += 1
             self.stats["main_fmu_unsafe_execution_count"] += 1
             self.stats["rejected_transition_count"] += 1
-            # 自环约束样本（状态用执行前）
-            hybrid = hybrid_from_dict(action)
-            physical = self.decoder.decode(hybrid)
+            physical = physical_from_dict(action)
             terms = self.controller.reward_calc.calculate(
                 SafetyCheckResult(
                     safe=False,
@@ -238,15 +203,15 @@ class GiveSafeTransitionCollector:
                 )
             )
             mask = np.ones(3, dtype=bool)
-            bounds = {"u_tp_low": 1 / 3, "u_tp_high": 1.0, "u_battery_low": -1.0, "u_battery_high": 1.0}
+            bounds = {
+                "u_tp_low": 1 / 3,
+                "u_tp_high": 1.0,
+                "u_battery_low": -1.0,
+                "u_battery_high": 1.0,
+            }
             tr = Transition(
                 observation=np.asarray(obs_before, dtype=np.float32),
-                hybrid_action={
-                    "u_tp": float(hybrid.u_tp),
-                    "u_battery": float(hybrid.u_battery),
-                    "caes_mode": int(hybrid.caes_mode),
-                    "caes_magnitude": float(hybrid.caes_magnitude),
-                },
+                hybrid_action=physical.as_dict(),
                 decoded_fmu_action=physical.as_dict(),
                 reward=float(terms["constraint_reward"]),
                 next_observation=np.asarray(obs_before, dtype=np.float32),
@@ -255,7 +220,10 @@ class GiveSafeTransitionCollector:
                 valid_mode_mask=mask,
                 dynamic_action_bounds=bounds,
                 reward_terms=dict(terms),
-                constraint_metadata={"failure": info.get("failure_type"), "fine": info.get("fine_failure_type")},
+                constraint_metadata={
+                    "failure": info.get("failure_type"),
+                    "fine": info.get("fine_failure_type"),
+                },
                 physically_valid=False,
                 transition_type="givesafe_rejection",
             )
@@ -265,30 +233,26 @@ class GiveSafeTransitionCollector:
                     {
                         **(info.get("failure_record") or {}),
                         "previous_observation": dict(env.last_outputs or {}),
-                        "hybrid_action": info.get("hybrid_action"),
+                        "hybrid_action": info.get("physical_action"),
                         "label_safe": False,
                     }
                 )
             info["stored_in_physical_replay"] = False
             info["stored_in_givesafe_replay"] = True
             info["transition_type"] = "givesafe_false_safe"
-            # 不能证明主 FMU 恢复 → episode 已由 env truncated
             assert float(getattr(env.adapter, "time", sim_time_before)) >= sim_time_before
             return obs_before, float(terms["constraint_reward"]), False, True, info
 
-        # 成功物理转移
         assert env.valid_episode_steps == valid_steps_before + 1
-        hybrid = hybrid_from_dict(info.get("hybrid_action") or action)
-        self.stats["caes_mode_counts"][int(hybrid.caes_mode)] = (
-            self.stats["caes_mode_counts"].get(int(hybrid.caes_mode), 0) + 1
-        )
-        self.stats["physical_transition_count"] += 1
-        self.stats["valid_transition_count"] += 1
-        physical = {
+        physical = info.get("physical_action") or {
             "u_tp": float(info["decoded_u_tp"]),
             "u_battery": float(info["decoded_u_battery"]),
             "u_caes": float(info["decoded_u_caes"]),
         }
+        mode = int(mode_from_u(float(physical["u_caes"])))
+        self.stats["caes_mode_counts"][mode] = self.stats["caes_mode_counts"].get(mode, 0) + 1
+        self.stats["physical_transition_count"] += 1
+        self.stats["valid_transition_count"] += 1
         if self.shadow is not None:
             self.shadow.on_physical_success(physical)
         bounds = {
@@ -312,13 +276,8 @@ class GiveSafeTransitionCollector:
         terms.setdefault("total_training_reward", float(reward))
         tr = Transition(
             observation=np.asarray(obs_before, dtype=np.float32),
-            hybrid_action={
-                "u_tp": float(hybrid.u_tp),
-                "u_battery": float(hybrid.u_battery),
-                "caes_mode": int(hybrid.caes_mode),
-                "caes_magnitude": float(0.0 if hybrid.caes_mode == CaesMode.IDLE else hybrid.caes_magnitude),
-            },
-            decoded_fmu_action=physical,
+            hybrid_action=dict(physical),
+            decoded_fmu_action=dict(physical),
             reward=float(reward),
             next_observation=np.asarray(obs, dtype=np.float32),
             terminated=bool(terminated or truncated),
@@ -327,8 +286,10 @@ class GiveSafeTransitionCollector:
             dynamic_action_bounds=bounds,
             next_valid_mode_mask=next_feasible.mode_mask.as_bool_array(),
             next_dynamic_action_bounds={
-                "u_tp_low": next_feasible.u_tp_low, "u_tp_high": next_feasible.u_tp_high,
-                "u_battery_low": next_feasible.u_battery_low, "u_battery_high": next_feasible.u_battery_high,
+                "u_tp_low": next_feasible.u_tp_low,
+                "u_tp_high": next_feasible.u_tp_high,
+                "u_battery_low": next_feasible.u_battery_low,
+                "u_battery_high": next_feasible.u_battery_high,
             },
             reward_terms=terms,
             constraint_metadata={},

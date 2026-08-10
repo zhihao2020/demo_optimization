@@ -22,6 +22,7 @@ from training.hybrid_common.eval_and_save import (
 from training.hybrid_common.policy_wrapper import RandomFeasiblePolicy
 from training.hybrid_td3.buffer import SafetyDataset
 from training.hybrid_td3.givesafe_collector import GiveSafeTransitionCollector
+from training.episode_starts import training_start_seconds
 from training.hybrid_td3.train import (
     annual_episode_start_seconds,
     check_formal_gates,
@@ -136,15 +137,12 @@ def run_hybrid_sac_training(
     episode_start_times: list[float] = []
 
     def reset_training_episode(index: int):
-        """按年度周窗口重置环境并记录起点。
-
-        Args:
-            index: episode 序号。
-
-        Returns:
-            (obs, reset_info) 元组。
-        """
-        start_time = annual_episode_start_seconds(env.config["fmu"], env.episode_steps, index)
+        start_time = training_start_seconds(
+            env.config["fmu"],
+            env.episode_steps,
+            index,
+            annual_episode_start_seconds=annual_episode_start_seconds,
+        )
         next_obs, reset_info = env.reset(seed=seed + index, options={"start_time": start_time})
         actual_start = float(reset_info.get("time", start_time) or start_time)
         episode_start_times.append(actual_start)

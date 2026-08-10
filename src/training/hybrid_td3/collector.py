@@ -6,26 +6,29 @@ from typing import Any
 
 import numpy as np
 
-from actions import CaesMode, HybridAction
-from actions.validator import hybrid_from_dict
+from actions.caes_u import mode_from_u, np_as_scalar
+from actions.validator import physical_from_dict
 
 from .buffer import EconomicReplayBuffer, FilteredReplayBuffer, SafetyDataset, Transition
 
 
+def _action_dict(action: dict | Any) -> dict[str, float]:
+    if hasattr(action, "as_dict"):
+        return action.as_dict()
+    if isinstance(action, dict) and "u_caes" in action:
+        p = physical_from_dict(action)
+        return p.as_dict()
+    raise TypeError(f"期望物理动作 dict/PhysicalFmuAction，得到 {type(action)}")
+
+
 class ValidTransitionCollector:
-    """有效转移收集器(ValidTransitionCollector)：仅经济 replay 存物理有效步，失败进安全数据集。"""
+    """有效转移收集器：仅经济 replay 存物理有效步，失败进安全数据集。"""
 
     def __init__(
         self,
         buffer: FilteredReplayBuffer | EconomicReplayBuffer,
         safety_dataset: SafetyDataset | None = None,
     ):
-        """绑定经济 replay 与可选安全数据集。
-
-        Args:
-            buffer: 过滤经济 replay 缓冲区。
-            safety_dataset: 安全样本集；None 时自动创建空集。
-        """
         self.buffer = buffer
         self.safety_dataset = safety_dataset if safety_dataset is not None else SafetyDataset()
         self.stats = {
@@ -41,24 +44,14 @@ class ValidTransitionCollector:
             "fine_failure_counts": {},
         }
 
-    def step_and_store(self, env, policy_action: dict | HybridAction) -> tuple[Any, ...]:
-        """执行 env.step 并按有效性分流到 replay / SafetyDataset。
-
-        Args:
-            env: 电力系统环境。
-            policy_action: 策略输出的混合动作。
-
-        Returns:
-            与 ``env.step`` 相同格式的 (obs, reward, terminated, truncated, info) 元组；
-            可行集为空时返回自环占位 info。
-        """
+    def step_and_store(self, env, policy_action: dict) -> tuple[Any, ...]:
         obs_before = env.build_observation()
         prev_outputs = dict(env.last_outputs) if env.last_outputs else {}
         try:
             feasible = env.get_feasible_action_spec()
         except Exception as exc:
-            # FeasibleSetEmpty 等
             from envs.failures import FeasibleSetEmpty
+
             if isinstance(exc, FeasibleSetEmpty):
                 self.stats["feasible_set_empty"] += 1
                 self.stats["rejected_transition_count"] += 1
@@ -79,8 +72,14 @@ class ValidTransitionCollector:
         ft = info.get("failure_type")
         fine = info.get("fine_failure_type")
         if fine:
-            self.stats["fine_failure_counts"][fine] = self.stats["fine_failure_counts"].get(fine, 0) + 1
-        if ft in ("StaticActionViolation", "ForbiddenModeViolation", "DynamicStateConstraintViolation"):
+            self.stats["fine_failure_counts"][fine] = (
+                self.stats["fine_failure_counts"].get(fine, 0) + 1
+            )
+        if ft in (
+            "StaticActionViolation",
+            "ForbiddenModeViolation",
+            "DynamicStateConstraintViolation",
+        ):
             self.stats["forbidden_action_attempts"] += 1
             self.stats["precheck_rejections"] += 1
         elif ft == "PostStepHardConstraintViolation":
@@ -93,13 +92,12 @@ class ValidTransitionCollector:
             self.stats["feasible_set_empty"] += 1
         if not valid:
             self.stats["rejected_transition_count"] += 1
-            # 写入 SafetyDataset，明确不写经济 buffer
             if ft == "PostStepHardConstraintViolation" or info.get("actual_fmu_outputs") is not None:
                 self.safety_dataset.add_from_failure_record(
                     {
                         **(info.get("failure_record") or {}),
                         "previous_observation": prev_outputs,
-                        "hybrid_action": info.get("hybrid_action"),
+                        "hybrid_action": info.get("physical_action"),
                         "decoded_fmu_action": {
                             "u_tp": info.get("decoded_u_tp"),
                             "u_battery": info.get("decoded_u_battery"),
@@ -109,11 +107,14 @@ class ValidTransitionCollector:
                         "actual_fmu_outputs": info.get("actual_fmu_outputs"),
                         "residuals": info.get("residuals"),
                         "dangerous_residual": info.get("dangerous_residual"),
-                        "distance_to_physical_boundary": info.get("distance_to_physical_boundary"),
+                        "distance_to_physical_boundary": info.get(
+                            "distance_to_physical_boundary"
+                        ),
                         "distance_to_safe_boundary": info.get("distance_to_safe_boundary"),
                         "fine_failure_type": fine,
                         "triggering_constraint": info.get("triggering_constraint"),
-                        "modelica_assert_message": info.get("modelica_assert_message") or info.get("failure_reason"),
+                        "modelica_assert_message": info.get("modelica_assert_message")
+                        or info.get("failure_reason"),
                         "oracle_version": info.get("oracle_version"),
                         "episode": info.get("episode"),
                         "step": info.get("step"),
@@ -140,25 +141,22 @@ class ValidTransitionCollector:
             )
             self.buffer.add(dummy)
             return obs, reward, terminated, truncated, info
-        hybrid = hybrid_from_dict(info["hybrid_action"]) if "hybrid_action" in info else hybrid_from_dict(policy_action)
-        self.stats["caes_mode_counts"][int(hybrid.caes_mode)] = (
-            self.stats["caes_mode_counts"].get(int(hybrid.caes_mode), 0) + 1
+
+        physical = info.get("physical_action") or _action_dict(policy_action)
+        mode = int(mode_from_u(float(physical["u_caes"])))
+        self.stats["caes_mode_counts"][mode] = self.stats["caes_mode_counts"].get(mode, 0) + 1
+        next_feasible = (
+            env.get_feasible_action_spec() if env.last_outputs is not None else feasible
         )
-        next_feasible = env.get_feasible_action_spec() if env.last_outputs is not None else feasible
-        # safe 样本也进入 SafetyDataset（供校准）
+        act_store = {
+            "u_tp": float(physical["u_tp"]),
+            "u_battery": float(physical["u_battery"]),
+            "u_caes": float(physical["u_caes"]),
+        }
         self.safety_dataset.add_safe_transition(
             previous_observation=prev_outputs,
-            hybrid_action={
-                "u_tp": float(hybrid.u_tp),
-                "u_battery": float(hybrid.u_battery),
-                "caes_mode": int(hybrid.caes_mode),
-                "caes_magnitude": float(0.0 if hybrid.caes_mode == CaesMode.IDLE else hybrid.caes_magnitude),
-            },
-            decoded_fmu_action={
-                "u_tp": float(info["decoded_u_tp"]),
-                "u_battery": float(info["decoded_u_battery"]),
-                "u_caes": float(info["decoded_u_caes"]),
-            },
+            hybrid_action=act_store,
+            decoded_fmu_action=dict(act_store),
             predicted=info.get("oracle_predicted_next_state"),
             actual=info.get("observations"),
             residuals=info.get("residuals"),
@@ -168,17 +166,8 @@ class ValidTransitionCollector:
         )
         transition = Transition(
             observation=np.asarray(obs_before, dtype=np.float32),
-            hybrid_action={
-                "u_tp": float(hybrid.u_tp),
-                "u_battery": float(hybrid.u_battery),
-                "caes_mode": int(hybrid.caes_mode),
-                "caes_magnitude": float(0.0 if hybrid.caes_mode == CaesMode.IDLE else hybrid.caes_magnitude),
-            },
-            decoded_fmu_action={
-                "u_tp": float(info["decoded_u_tp"]),
-                "u_battery": float(info["decoded_u_battery"]),
-                "u_caes": float(info["decoded_u_caes"]),
-            },
+            hybrid_action=act_store,
+            decoded_fmu_action=dict(act_store),
             reward=float(reward),
             next_observation=np.asarray(obs, dtype=np.float32),
             terminated=bool(terminated or truncated),

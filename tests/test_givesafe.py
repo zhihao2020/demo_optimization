@@ -50,8 +50,7 @@ def _idle():
     return {
         "u_tp": np.asarray([1.0], dtype=np.float32),
         "u_battery": np.asarray([0.0], dtype=np.float32),
-        "caes_mode": int(CaesMode.IDLE),
-        "caes_magnitude": np.asarray([0.0], dtype=np.float32),
+        "u_caes": np.asarray([0.0], dtype=np.float32),
     }
 
 
@@ -64,8 +63,7 @@ def _charge_near_full():
     return {
         "u_tp": np.asarray([1.0], dtype=np.float32),
         "u_battery": np.asarray([0.0], dtype=np.float32),
-        "caes_mode": int(CaesMode.CHARGE),
-        "caes_magnitude": np.asarray([1.0], dtype=np.float32),
+        "u_caes": np.asarray([1.0], dtype=np.float32),
     }
 
 
@@ -93,7 +91,7 @@ def test_givesafe_self_loop_sample():
     obs = np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32)
     tr = Transition(
         observation=obs,
-        hybrid_action={"u_tp": 1.0, "u_battery": 0.0, "caes_mode": 2, "caes_magnitude": 1.0},
+        hybrid_action={"u_tp": 1.0, "u_battery": 0.0, "u_caes": 1.0},
         decoded_fmu_action={"u_tp": 1.0, "u_battery": 0.0, "u_caes": 1.0},
         reward=-1.5,
         next_observation=obs.copy(),
@@ -259,7 +257,7 @@ def test_mixed_replay_sampling_fractions():
         buf.add_physical(
             Transition(
                 observation=obs,
-                hybrid_action={"u_tp": 1.0, "u_battery": 0.0, "caes_mode": 1, "caes_magnitude": 0.0},
+                hybrid_action={"u_tp": 1.0, "u_battery": 0.0, "u_caes": 0.0},
                 decoded_fmu_action={"u_tp": 1.0, "u_battery": 0.0, "u_caes": 0.0},
                 reward=-0.1,
                 next_observation=obs + 0.01,
@@ -275,7 +273,7 @@ def test_mixed_replay_sampling_fractions():
         buf.add_givesafe_rejection(
             Transition(
                 observation=obs,
-                hybrid_action={"u_tp": 1.0, "u_battery": 0.0, "caes_mode": 2, "caes_magnitude": 1.0},
+                hybrid_action={"u_tp": 1.0, "u_battery": 0.0, "u_caes": 1.0},
                 decoded_fmu_action={"u_tp": 1.0, "u_battery": 0.0, "u_caes": 1.0},
                 reward=-1.0,
                 next_observation=obs,

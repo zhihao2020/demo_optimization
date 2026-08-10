@@ -47,8 +47,7 @@ def collect_rule_demos(
     obs_list: list[np.ndarray] = []
     u_tp_list: list[float] = []
     u_bat_list: list[float] = []
-    mode_list: list[int] = []
-    mag_list: list[float] = []
+    u_caes_list: list[float] = []
     tp_lo: list[float] = []
     tp_hi: list[float] = []
     bat_lo: list[float] = []
@@ -67,8 +66,7 @@ def collect_rule_demos(
             obs_list.append(np.asarray(obs, dtype=np.float32).ravel())
             u_tp_list.append(float(np.asarray(action["u_tp"]).ravel()[0]))
             u_bat_list.append(float(np.asarray(action["u_battery"]).ravel()[0]))
-            mode_list.append(int(action["caes_mode"]))
-            mag_list.append(float(np.asarray(action["caes_magnitude"]).ravel()[0]))
+            u_caes_list.append(float(np.asarray(action["u_caes"]).ravel()[0]))
             tp_lo.append(float(feasible.u_tp_low))
             tp_hi.append(float(feasible.u_tp_high))
             bat_lo.append(float(feasible.u_battery_low))
@@ -86,8 +84,7 @@ def collect_rule_demos(
         "obs": np.stack(obs_list).astype(np.float32),
         "u_tp": np.asarray(u_tp_list, dtype=np.float32),
         "u_battery": np.asarray(u_bat_list, dtype=np.float32),
-        "caes_mode": np.asarray(mode_list, dtype=np.int64),
-        "caes_magnitude": np.asarray(mag_list, dtype=np.float32),
+        "u_caes": np.asarray(u_caes_list, dtype=np.float32),
         "u_tp_low": np.asarray(tp_lo, dtype=np.float32),
         "u_tp_high": np.asarray(tp_hi, dtype=np.float32),
         "u_bat_low": np.asarray(bat_lo, dtype=np.float32),
@@ -116,7 +113,8 @@ def behavior_clone_actor(
     tp_weight: float = 2.0,
     bat_weight: float = 8.0,
 ) -> dict[str, float]:
-    """监督学习：logit MSE（火电/电池）+ 模式 CE + 幅值 MSE。"""
+    """监督学习：logit MSE（火电/电池/u_caes）。"""
+    _ = (mode_weight, mag_weight)
     device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     actor = actor.to(device)
     actor.train()
@@ -129,8 +127,7 @@ def behavior_clone_actor(
     obs_t = torch.as_tensor(demos["obs"], device=device)
     u_tp_t = torch.as_tensor(demos["u_tp"], device=device)
     u_bat_t = torch.as_tensor(demos["u_battery"], device=device)
-    mode_t = torch.as_tensor(demos["caes_mode"], device=device, dtype=torch.int64)
-    mag_t = torch.as_tensor(demos["caes_magnitude"], device=device)
+    u_caes_t = torch.as_tensor(demos["u_caes"], device=device)
     tp_lo = torch.as_tensor(demos["u_tp_low"], device=device)
     tp_hi = torch.as_tensor(demos["u_tp_high"], device=device)
     bat_lo = torch.as_tensor(demos["u_bat_low"], device=device)
@@ -139,6 +136,7 @@ def behavior_clone_actor(
 
     z_tp_tgt = _inv_sigmoid_target(u_tp_t, tp_lo, tp_hi)
     z_bat_tgt = _inv_sigmoid_target(u_bat_t, bat_lo, bat_hi)
+    z_caes_tgt = torch.atanh(u_caes_t.clamp(-0.999, 0.999))
 
     for _ in range(epochs):
         np.random.shuffle(idx)
@@ -147,27 +145,10 @@ def behavior_clone_actor(
         for start in range(0, n, batch_size):
             b = idx[start : start + batch_size]
             logits_out = actor.forward_logits(obs_t[b])
-            # 连续动作：在 logit 空间回归，避免 sigmoid 饱和梯度消失
             loss_tp = F.mse_loss(logits_out["z_tp"], z_tp_tgt[b])
             loss_bat = F.mse_loss(logits_out["z_bat"], z_bat_tgt[b])
-            logits = logits_out["logits_mode"].masked_fill(~mask[b].bool(), -1e9)
-            loss_mode = F.cross_entropy(logits, mode_t[b])
-            # 幅值：仅非 IDLE；IDLE 目标 0
-            mag_pred_d = torch.sigmoid(logits_out["z_discharge"])
-            mag_pred_c = torch.sigmoid(logits_out["z_charge"])
-            mag_pred = torch.where(
-                mode_t[b] == 0,
-                mag_pred_d,
-                torch.where(mode_t[b] == 2, mag_pred_c, torch.zeros_like(mag_pred_d)),
-            )
-            mag_target = mag_t[b] * (mode_t[b] != 1).float()
-            loss_mag = F.mse_loss(mag_pred, mag_target)
-            loss = (
-                tp_weight * loss_tp
-                + bat_weight * loss_bat
-                + mode_weight * loss_mode
-                + mag_weight * loss_mag
-            )
+            loss_caes = F.mse_loss(logits_out["z_caes"], z_caes_tgt[b])
+            loss = tp_weight * loss_tp + bat_weight * loss_bat + 2.0 * loss_caes
             opt.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(actor.parameters(), 5.0)
@@ -176,13 +157,12 @@ def behavior_clone_actor(
             steps += 1
         history.append(epoch_loss / max(steps, 1))
 
-    # 重建误差（动作空间）
     actor.eval()
     with torch.no_grad():
         pred = actor.act(obs_t, tp_lo, tp_hi, bat_lo, bat_hi, mask, deterministic=True, explore_noise_std=0.0)
         mae_tp = float((pred["u_tp"] - u_tp_t).abs().mean().item())
         mae_bat = float((pred["u_battery"] - u_bat_t).abs().mean().item())
-        mode_acc = float((pred["caes_mode"] == mode_t).float().mean().item())
+        mae_caes = float((pred["u_caes"] - u_caes_t).abs().mean().item())
 
     return {
         "n_demos": float(n),
@@ -192,7 +172,7 @@ def behavior_clone_actor(
         "loss_curve_tail": float(np.mean(history[-5:])) if history else float("nan"),
         "mae_u_tp": mae_tp,
         "mae_u_battery": mae_bat,
-        "mode_accuracy": mode_acc,
+        "mae_u_caes": mae_caes,
     }
 
 
@@ -244,8 +224,8 @@ def run_rule_bc_pretrain(
             "bc_u_tp": float(np.asarray(pred["u_tp"]).ravel()[0]),
             "rule_u_battery": float(np.asarray(rule["u_battery"]).ravel()[0]),
             "bc_u_battery": float(np.asarray(pred["u_battery"]).ravel()[0]),
-            "rule_mode": int(rule["caes_mode"]),
-            "bc_mode": int(pred["caes_mode"]),
+            "rule_u_caes": float(np.asarray(rule["u_caes"]).ravel()[0]),
+            "bc_u_caes": float(np.asarray(pred["u_caes"]).ravel()[0]),
         }
     finally:
         env.close()
@@ -266,6 +246,6 @@ def run_rule_bc_pretrain(
         run_dir / "train" / "rule_demos_meta.npz",
         n=np.asarray([metrics["n_demos"]]),
         u_tp_mean=np.asarray([float(demos["u_tp"].mean())]),
-        mode_hist=np.bincount(demos["caes_mode"], minlength=3).astype(np.float32),
+        u_caes_mean=float(np.mean(demos["u_caes"])),
     )
     return result

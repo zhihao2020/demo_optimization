@@ -8,8 +8,8 @@ from typing import Any, Callable, Mapping
 import numpy as np
 import yaml
 
-from actions import DynamicFeasibleActionSet, FeasibilityOracle, HybridActionValidator
-from actions.validator import hybrid_from_dict
+from actions import DynamicFeasibleActionSet, FeasibilityOracle, PhysicalActionValidator
+from actions.validator import physical_from_dict
 
 from .constraint_checker import GiveSafeConstraintChecker
 from .constraint_reward import ConstraintRewardCalculator
@@ -109,7 +109,7 @@ class GiveSafeController:
             result.attempt_count = attempt + 1
             if feasible_override is not None:
                 try:
-                    HybridActionValidator().validate(hybrid_from_dict(proposed), feasible_override)
+                    PhysicalActionValidator().validate(physical_from_dict(proposed), feasible_override)
                 except Exception as exc:
                     level1 = SafetyCheckResult(
                         safe=False,

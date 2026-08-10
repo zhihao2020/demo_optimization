@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+from actions.caes_u import physical_dict, u_from_mode_mag
 
 from actions import CaesMode
 
@@ -47,8 +48,7 @@ class RollingLPController:
             return {
                 "u_tp": np.asarray([1.0], dtype=np.float32),
                 "u_battery": np.asarray([0.0], dtype=np.float32),
-                "caes_mode": int(CaesMode.IDLE),
-                "caes_magnitude": np.asarray([0.0], dtype=np.float32),
+                "u_caes": np.asarray([0.0], dtype=np.float32),
             }
         outs = env.last_outputs or {}
         buy = None
@@ -113,6 +113,5 @@ class RollingLPController:
         return {
             "u_tp": np.asarray([float(np.clip(u_tp, lo_tp, hi_tp))], dtype=np.float32),
             "u_battery": np.asarray([float(np.clip(u_bat, lo_b, hi_b))], dtype=np.float32),
-            "caes_mode": int(mode),
-            "caes_magnitude": np.asarray([float(mag)], dtype=np.float32),
+            "u_caes": np.asarray([float(u_from_mode_mag(mode, mag))], dtype=np.float32),
         }

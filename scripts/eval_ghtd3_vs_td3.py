@@ -24,7 +24,6 @@ from envs.power_system_env import PowerSystemEnv  # noqa: E402
 from safety import GiveSafeController, load_givesafe_config  # noqa: E402
 from training.evaluate_td3 import evaluate_policy  # noqa: E402
 from training.ghtd3.agent import GHTD3Agent  # noqa: E402
-from training.ghtd3.hybrid_anchor import HybridAnchor  # noqa: E402
 from training.ghtd3.train import GHTD3PolicyWrapper, load_ghtd3_config  # noqa: E402
 from training.hybrid_td3.algorithm import HybridTD3  # noqa: E402
 from training.hybrid_td3.train import annual_episode_start_seconds  # noqa: E402
@@ -86,30 +85,11 @@ def eval_ghtd3(ckpt: Path, start: float, config_path: Path | None = None) -> dic
         if cand.is_file():
             cfg_file = cand
     cfg = dict(load_ghtd3_config(cfg_file).get("ghtd3") or {})
+    cfg["execution_mode"] = "goal_conditioned"
     agent = GHTD3Agent(dim, cfg)
-    # 仅当配置显式要求且路径存在时挂教师（abs 主线不挂）
-    hybrid_path = cfg.get("hybrid_anchor_path")
-    if bool(cfg.get("hybrid_anchor", False)) and hybrid_path:
-        hp = Path(hybrid_path)
-        if not hp.is_file():
-            hp = ROOT / hybrid_path
-        if hp.is_file():
-            agent.attach_hybrid_anchor(
-                HybridAnchor(dim, hp, device=str(agent.device)),
-                transplant=False,
-            )
     agent.load(ckpt, strict=False)
-    agent.execution_mode = str(cfg.get("execution_mode", "goal_conditioned")).lower()
+    agent.execution_mode = "goal_conditioned"
     agent.low_use_raw_obs = bool(cfg.get("low_use_raw_obs", False))
-    if agent.execution_mode in ("action_residual", "tea"):
-        agent.low_use_raw_obs = False
-        agent.set_progress(1.0)
-        if bool(cfg.get("tea_force_mode_lock", False)):
-            agent.mode_override = False
-        else:
-            agent.mode_override = bool(cfg.get("residual_mode_override", False)) or (
-                agent.tea_enabled and agent._train_progress >= agent.tea_mode_unlock
-            )
     gs = load_givesafe_config(ROOT / "src/config/givesafe_config.yaml")
     ctrl = GiveSafeController(oracle=env.oracle, shadow=None, config=gs)
     pol = GHTD3PolicyWrapper(agent, env, ctrl, cfg)

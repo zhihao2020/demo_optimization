@@ -7,6 +7,7 @@ from typing import Any, Protocol
 import numpy as np
 
 from actions import CaesMode
+from actions.caes_u import physical_dict, u_from_mode_mag
 from envs.failures import FeasibleSetEmpty
 from envs.power_system_env import PowerSystemEnv
 from safety import GiveSafeController
@@ -68,12 +69,7 @@ class RandomFeasiblePolicy:
         u_tp = float(np.random.uniform(feasible.u_tp_low, feasible.u_tp_high))
         u_bat = float(np.random.uniform(feasible.u_battery_low, feasible.u_battery_high))
         mag = 0.0 if mode == CaesMode.IDLE else float(np.random.uniform(0.0, 1.0))
-        return {
-            "u_tp": np.asarray([u_tp], dtype=np.float32),
-            "u_battery": np.asarray([u_bat], dtype=np.float32),
-            "caes_mode": int(mode),
-            "caes_magnitude": np.asarray([mag], dtype=np.float32),
-        }
+        return physical_dict(float(u_tp), float(u_bat), u_from_mode_mag(mode, mag))
 
 
 class HybridGiveSafePolicyWrapper:

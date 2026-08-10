@@ -24,8 +24,7 @@ class IdlePolicy:
         return {
             "u_tp": np.asarray([1.0], dtype=np.float32),
             "u_battery": np.asarray([0.0], dtype=np.float32),
-            "caes_mode": int(CaesMode.IDLE),
-            "caes_magnitude": np.asarray([0.0], dtype=np.float32),
+            "u_caes": np.asarray([0.0], dtype=np.float32),
         }
 
 

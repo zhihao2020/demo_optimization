@@ -29,7 +29,7 @@ def _valid_transition(**kwargs):
     """
     base = Transition(
         observation=np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32),
-        hybrid_action={"u_tp": 1.0, "u_battery": 0.0, "caes_mode": 1, "caes_magnitude": 0.0},
+        hybrid_action={"u_tp": 1.0, "u_battery": 0.0, "u_caes": 0.0},
         decoded_fmu_action={"u_tp": 1.0, "u_battery": 0.0, "u_caes": 0.0},
         reward=-0.1,
         next_observation=np.zeros(DEFAULT_OBSERVATION_DIM, dtype=np.float32),
@@ -108,8 +108,7 @@ def test_collector_rejects_post_step_and_fmu_failures():
         action = {
             "u_tp": np.asarray([1.0], dtype=np.float32),
             "u_battery": np.asarray([0.0], dtype=np.float32),
-            "caes_mode": int(CaesMode.IDLE),
-            "caes_magnitude": np.asarray([0.0], dtype=np.float32),
+            "u_caes": np.asarray([0.0], dtype=np.float32),
         }
         collector.step_and_store(env, action)
         assert len(buf) == 0
