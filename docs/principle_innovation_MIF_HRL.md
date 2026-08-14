@@ -1,5 +1,11 @@
 # 原理层创新：不止“教师残差 / packaging Cui”
 
+文档更新：2026-08-10 21:15 (+08:00)
+
+> **定位**：投稿叙事 / 创新主张底稿，**不是**运行配置说明书。  
+> 代码主线默认见 `src/config/ghtd3_config.yaml` 与 `docs/GHTD3分层实现说明.md`：`goal_dim=2`、`low_reward=ext`、`market_goal_prior=false`、`f_mle_pretrain=false`、**无** Hybrid residual teacher。  
+> 下文 MSGP / F-MLE / λ-SoC 等为 **可辩护可选机制**（消融或论文模块），启用时须与 yaml 一致。
+
 > 目标：把投稿叙事从 *GHTD3 + 工程插件* 抬到 **market–inventory–feasibility (MIF) 约束下的分层决策理论 + 可证伪机制**。  
 > 主方法名：**HMSD**（Hierarchical Market-Safe Dispatch）。  
 > Backbone 工具：goal-conditioned hierarchical TD3（Cui 等，Energy 2025）——**承认借用，不假装新 actor–critic**。

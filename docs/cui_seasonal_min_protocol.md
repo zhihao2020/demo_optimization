@@ -1,5 +1,10 @@
 # Fair seasonal comparison protocol
 
+文档更新：2026-08-10 20:45 (+08:00)
+
+Code truth: `scripts/train_seasonal.py`, `scripts/eval_seasonal_fair.py`,  
+`src/config/ghtd3_config_seasonal_min.yaml` (same stack as `ghtd3_config.yaml`).
+
 ## Principle
 
 Algorithm comparison requires the **same optimization problem**:

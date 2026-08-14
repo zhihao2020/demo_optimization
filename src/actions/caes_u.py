@@ -1,7 +1,7 @@
-"""CAES 物理指令 u_caes：合法三段、投影、模式派生（仅锁/日志）。
+"""CAES 物理指令：决策是 (mode, magnitude)，写入 FMU 仍是一个 ``u_caes``。
 
-策略与 FMU 共用同一个连续标量 ``u_caes``；不引入 mode/magnitude 动作维。
-合法集仍是断开的三段，问题仍非凸——本模块只做表示与数值合法化。
+合法集仍是断开的三段，问题仍非凸。``hybrid_caes`` 路径由模式头+幅值头解码；
+旧路径把一个 tanh 标量投影到三段（空隙→0）。
 """
 
 from __future__ import annotations
@@ -105,7 +105,7 @@ def apply_mode_mask_to_u_torch(u: torch.Tensor, mode_mask: torch.Tensor) -> torc
 
 
 def u_from_mode_mag(mode: CaesMode | int, mag: float) -> float:
-    """内部/测试辅助：mode+mag → u_caes（非策略主路径）。"""
+    """mode + mag∈[0,1] → 合法带内 u_caes。idle 忽略幅值。"""
     mode_i = int(mode)
     mag = 0.0 if mode_i == int(CaesMode.IDLE) else float(np.clip(mag, 0.0, 1.0))
     if mode_i == int(CaesMode.DISCHARGE):
@@ -113,6 +113,31 @@ def u_from_mode_mag(mode: CaesMode | int, mag: float) -> float:
     if mode_i == int(CaesMode.CHARGE):
         return float(CHARGE_LO + mag * (CHARGE_HI - CHARGE_LO))
     return IDLE_U
+
+
+def u_from_mode_onehot_torch(onehot: torch.Tensor, mag: torch.Tensor) -> torch.Tensor:
+    """(B,3) one-hot [dis, idle, chg] and mag∈[0,1] → u_caes (B,)."""
+    mag = mag.clamp(0.0, 1.0)
+    u_dis = DISCHARGE_LO + mag * (DISCHARGE_HI - DISCHARGE_LO)
+    u_chg = CHARGE_LO + mag * (CHARGE_HI - CHARGE_LO)
+    return onehot[:, 0] * u_dis + onehot[:, 2] * u_chg
+
+
+def compressor_expander_bits(mode: CaesMode | int) -> tuple[int, int]:
+    """Cui-style (u_com, u_tur): charge→(1,0), discharge→(0,1), idle→(0,0)."""
+    m = int(mode)
+    if m == int(CaesMode.CHARGE):
+        return 1, 0
+    if m == int(CaesMode.DISCHARGE):
+        return 0, 1
+    return 0, 0
+
+
+def startup_events(prev_mode: CaesMode | int, next_mode: CaesMode | int) -> int:
+    """Number of compressor/expander start–stop events (0, 1, or 2)."""
+    c0, t0 = compressor_expander_bits(prev_mode)
+    c1, t1 = compressor_expander_bits(next_mode)
+    return int(abs(c1 - c0) + abs(t1 - t0))
 
 
 def mag_from_u(u: float) -> float:

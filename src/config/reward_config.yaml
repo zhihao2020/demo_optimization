@@ -14,18 +14,18 @@ terminal_soc:
   period_hours: 168
   mode: binary_bonus
   bonus: 15.0
-  # 未达标终端罚：按能量主状态 L1
-  fail_penalty_l1: 30.0
+  # 对齐崔文式 (29)：过门给固定加分，不过门为 0，不再按 L1 重罚
+  fail_penalty_l1: 0.0
   tolerance: 0.06
   quadratic_weight: 1.0
-  # 运营期末硬达标：仅 battery + gas（能量库存）；热/冷罐见 full L1 诊断
+  # 能量库存：电池 + 气库；热/冷罐见 full L1 诊断
   primary_keys:
     - battery_soc
     - caes_gas_soc
   use_full_l1_for_pass: false
   weights:
-    # 能量主状态；热/冷为耦合副状态（仍进 shaping full L1）
-    battery_soc: 1.5
+    # 对齐崔文：电池与气库等权绝对值之和
+    battery_soc: 1.0
     caes_gas_soc: 1.0
     caes_hot_soc: 0.35
     caes_cold_soc: 0.35
@@ -91,4 +91,10 @@ battery_degradation:
   # Sign: discharge contributes when p_battery < 0 (Python academic / export convention)
   discharge_negative_power: true
   note: "Cui D_BESS ψ(δ)=a0 δ^2.03; a0 from Capex/life; Modelica has no cycle cash"
-parameter_status: 'comprehensive J_gen cash+carbon+CUT+convex-deg 2026-08-07'
+caes_startup:
+  enabled: true
+  c_su_cny: 8000.0
+  p_cap_w: 1.5e8
+  caes_power_key: p_caes
+  note: "Cui-style compressor/expander start-stop; idle→on or on→idle = 1 event, charge↔discharge = 2"
+parameter_status: 'comprehensive J_gen cash+carbon+CUT+convex-deg+caes-su 2026-08-14'

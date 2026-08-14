@@ -49,6 +49,7 @@ class RewardCalculator:
         self.step_in_episode = 0
         # Cumulative battery discharge energy this episode [MWh] (Cui-style δ)
         self._batt_discharge_cum_mwh: float = 0.0
+        self._prev_caes_mode: int | None = None
         self.episode_steps = int(config.get("episode_steps", 168))
         self.require_complete = require_complete
         self._validate_config()
@@ -134,6 +135,11 @@ class RewardCalculator:
         self.previous_soc_l1 = 0.0  # 起点相对自身 L1=0
         self.step_in_episode = 0
         self._batt_discharge_cum_mwh = 0.0
+        from actions.caes_u import mode_from_u
+
+        p_cap = float((self.config.get("caes_startup") or {}).get("p_cap_w", 1.5e8))
+        p0 = float(outputs.get("p_caes", 0.0) or 0.0)
+        self._prev_caes_mode = int(mode_from_u(p0 / p_cap if p_cap > 0 else 0.0))
 
     def terminal_soc_diagnostics(self, outputs: dict[str, float]) -> dict[str, float]:
         """计算终端 SOC 相对初始值的 L1/L2 误差与是否满足容差。
@@ -157,7 +163,7 @@ class RewardCalculator:
             weight = float(weights.get(key, 1.0))
             l1 += weight * abs(delta)
             l2 += weight * delta * delta
-        # 能量主状态 L1：battery + CAES gas（运营期末回收硬指标）
+        # 能量主状态 L1：battery + CAES gas（期末软门，对齐崔文指示函数）
         # 热/冷罐为 CAES 热力学耦合副状态，单独报告，不否决 energy pass
         primary = term.get("primary_keys") or ["battery_soc", "caes_gas_soc"]
         l1_energy = l2_energy = 0.0
@@ -418,6 +424,46 @@ class RewardCalculator:
             "battery_deg_e_cap_mwh": float(par["e_cap_mwh"]),
         }
 
+    def _caes_startup_cost(self, outputs: Mapping[str, float]) -> tuple[float, dict[str, float]]:
+        """Cui-style compressor/expander start–stop charge [CNY]."""
+        cfg = self.config.get("caes_startup") or {}
+        if not bool(cfg.get("enabled", False)):
+            return 0.0, {
+                "caes_startup_enabled": 0.0,
+                "caes_startup_cost_cny": 0.0,
+                "caes_startup_events": 0.0,
+            }
+        from actions.caes_u import mode_from_u, startup_events
+        from actions.types import CaesMode
+
+        p_cap = float(cfg.get("p_cap_w", 1.5e8))
+        p = float(outputs.get(str(cfg.get("caes_power_key", "p_caes")), 0.0) or 0.0)
+        u = p / p_cap if p_cap > 0 else 0.0
+        mode = int(mode_from_u(u))
+        prev = self._prev_caes_mode
+        if prev is None:
+            self._prev_caes_mode = mode
+            return 0.0, {
+                "caes_startup_enabled": 1.0,
+                "caes_startup_cost_cny": 0.0,
+                "caes_startup_events": 0.0,
+                "caes_mode": float(mode),
+                "caes_mode_prev": float(mode),
+            }
+        n_evt = startup_events(prev, mode)
+        c_su = float(cfg.get("c_su_cny", 8000.0))
+        cost = c_su * float(n_evt)
+        self._prev_caes_mode = mode
+        return float(cost), {
+            "caes_startup_enabled": 1.0,
+            "caes_startup_cost_cny": float(cost),
+            "caes_startup_events": float(n_evt),
+            "caes_startup_c_su_cny": c_su,
+            "caes_mode": float(mode),
+            "caes_mode_prev": float(prev),
+            "caes_mode_idle": float(int(CaesMode.IDLE)),
+        }
+
     def calculate(
         self,
         outputs: dict[str, float],
@@ -432,7 +478,7 @@ class RewardCalculator:
     ) -> tuple[float, dict[str, float]]:
         """奖励 = 综合货币增量 ΔJ_gen/C_ref + SOC shaping + 终端 bonus。
 
-        ΔJ_gen = ΔJ_cash − π·Δm − C^CUT − C^deg（Python 权威经济层）。
+        ΔJ_gen = ΔJ_cash − π·Δm − C^CUT − C^deg − C^su（Python 权威经济层）。
         market_prices 若提供 buy/sell，则用分时电价替换 FMU 电网增量。
         """
         if self.previous_cashflow is None:
@@ -474,8 +520,13 @@ class RewardCalculator:
         carbon_cost, carbon_terms = self._carbon_cost(outputs, dt_h=dt_h)
         cut_cost, cut_terms = self._curtailment_cost(outputs, dt_h=dt_h)
         deg_cost, deg_terms = self._battery_deg_cost(outputs, dt_h=dt_h)
+        su_cost, su_terms = self._caes_startup_cost(outputs)
         generalized_delta = (
-            float(cash_delta) - float(carbon_cost) - float(cut_cost) - float(deg_cost)
+            float(cash_delta)
+            - float(carbon_cost)
+            - float(cut_cost)
+            - float(deg_cost)
+            - float(su_cost)
         )
         economic_reward = generalized_delta / reference
         raw_total_cost = -cash_delta
@@ -497,6 +548,7 @@ class RewardCalculator:
             if l1_err <= tol:
                 terminal_bonus = float(term.get("bonus", 0.0))
             else:
+                # 默认 0：对齐崔文，不过门不加分也不按偏差加罚
                 fail_pen = float(term.get("fail_penalty_l1", 0.0) or 0.0)
                 terminal_bonus = -fail_pen * l1_err
         elif gates and term.get("mode") == "quadratic_penalty":
@@ -515,13 +567,17 @@ class RewardCalculator:
             "cost_reference_missing": float(reference_missing),
             "terminal_soc_bonus": terminal_bonus,
             "reward": reward,
-            "external_cost_cny": float(carbon_cost) + float(cut_cost) + float(deg_cost),
+            "external_cost_cny": float(carbon_cost)
+            + float(cut_cost)
+            + float(deg_cost)
+            + float(su_cost),
             **diag,
             **shaping_terms,
             **market_terms,
             **carbon_terms,
             **cut_terms,
             **deg_terms,
+            **su_terms,
         }
         for name in ECONOMIC_COMPONENTS:
             suffix = name.removeprefix("economic_cashflow_")

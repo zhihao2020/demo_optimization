@@ -1,0 +1,70 @@
+# Ablation P2: GiveSafe still filters actions, but rejected proposals are NOT stored
+# for low-level learning (projection-only safety).
+
+ghtd3:
+  enabled: true
+  subgoal_interval: 8
+  goal_dim: 2
+  goal_low:  [-0.30, -0.12]
+  goal_high: [ 0.30,  0.12]
+  low_reward: ext
+  intrinsic_weights: [1.5, 1.2]
+  intrinsic_alpha: 0.50
+  intrinsic_alpha_end: 0.22
+
+  execution_mode: goal_conditioned
+  residual_init: false
+  continuous_caes: true
+  goal_input_scale: 4.0
+  low_use_raw_obs: false
+  obs_norm: true
+  obs_scale: 1.0e6
+
+  f_mle_pretrain: false
+  bc_pretrain: false
+
+  high_explore_noise: 0.05
+  low_explore_noise: 0.06
+  epsilon_start: 0.25
+  epsilon_end: 0.05
+
+  gamma: 0.99
+  tau: 0.005
+  policy_delay: 2
+  actor_lr: 3.0e-4
+  critic_lr: 3.0e-4
+  target_noise: 0.2
+  noise_clip: 0.5
+  q_clip: 200.0
+  q_clip_high: 50.0
+  high_reward_normalize: true
+
+  high_buffer_size: 10000
+  low_buffer_size: 100000
+  high_batch_size: 32
+  low_batch_size: 32
+  learning_starts_low: 512
+  learning_starts_high: 64
+  gradient_steps_low: 1
+  gradient_steps_high: 1
+
+  goal_relabel: true
+  goal_relabel_mode: her_mix
+  relabel_p_orig: 0.4
+  relabel_p_ach: 0.4
+  relabel_candidates: 8
+
+  market_goal_prior: false
+  phase_a_steps: 0
+  goal_dropout: 0.0
+  actor_bc_weight: 0.0
+  log_every: 500
+  price_aware_bootstrap: false
+  high_lambda_soc: false
+  use_shadow: false
+  learn_from_reject: false
+  reject_reward_scale: 1.0
+
+soc_keys:
+  - battery_soc
+  - caes_gas_soc

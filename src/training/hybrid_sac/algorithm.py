@@ -15,7 +15,11 @@ from training.hybrid_td3.critic import HybridCritic
 
 
 class HybridSAC:
-    """SAC：最大熵 RL，三维连续物理动作。"""
+    """SAC：最大熵 RL，三维连续物理动作。
+
+    Applied Energy 迭代加固：自动温度 ``alpha`` 裁剪，避免过渡季/夏季
+    出现 alpha→1e17、critic_loss→inf 的 fail-fast 崩溃。
+    """
 
     def __init__(
         self,
@@ -28,11 +32,21 @@ class HybridSAC:
         alpha_lr: float = 3e-4,
         target_entropy: float | None = None,
         device: str | None = None,
+        alpha_min: float = 1e-4,
+        alpha_max: float = 10.0,
+        q_clip: float = 200.0,
+        skip_nonfinite_update: bool = True,
     ):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.gamma = gamma
         self.tau = tau
         self.target_entropy = float(target_entropy if target_entropy is not None else -3.0)
+        self.alpha_min = float(alpha_min)
+        self.alpha_max = float(alpha_max)
+        self.log_alpha_min = float(np.log(self.alpha_min))
+        self.log_alpha_max = float(np.log(self.alpha_max))
+        self.q_clip = float(q_clip)
+        self.skip_nonfinite_update = bool(skip_nonfinite_update)
         self.actor = HybridStochasticActor(obs_dim).to(self.device)
         self.critic = HybridCritic(obs_dim).to(self.device)
         self.critic_target = deepcopy(self.critic).to(self.device)
@@ -41,11 +55,16 @@ class HybridSAC:
         self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
         self.alpha_opt = torch.optim.Adam([self.log_alpha], lr=alpha_lr)
         self.total_it = 0
+        self.nonfinite_skips = 0
         self.last_metrics: dict[str, float] = {}
 
     @property
     def alpha(self) -> torch.Tensor:
-        return self.log_alpha.exp()
+        return self.log_alpha.clamp(self.log_alpha_min, self.log_alpha_max).exp()
+
+    def _clamp_log_alpha_(self) -> None:
+        with torch.no_grad():
+            self.log_alpha.clamp_(self.log_alpha_min, self.log_alpha_max)
 
     def select_action(self, obs, feasible, deterministic: bool = False) -> dict:
         return self.actor.act_numpy(
@@ -82,12 +101,32 @@ class HybridSAC:
                 next_act["u_caes"],
             )
             min_q = torch.min(q1_t, q2_t) - self.alpha.detach() * next_act["log_prob"]
+            if self.q_clip > 0:
+                min_q = min_q.clamp(-self.q_clip, self.q_clip)
             target_q = reward + (1.0 - done) * self.gamma * min_q
+            if self.q_clip > 0:
+                target_q = target_q.clamp(-self.q_clip, self.q_clip)
 
         q1, q2 = self.critic(obs, u_tp, u_bat, u_caes)
         critic_loss = F.mse_loss(q1, target_q) + F.mse_loss(q2, target_q)
+        if not torch.isfinite(critic_loss):
+            self.nonfinite_skips += 1
+            if self.skip_nonfinite_update:
+                self._clamp_log_alpha_()
+                return {
+                    "critic_loss": float("nan"),
+                    "actor_loss": float("nan"),
+                    "alpha_loss": float("nan"),
+                    "alpha": float(self.alpha.item()),
+                    "q1_mean": float("nan"),
+                    "entropy": float("nan"),
+                    "nonfinite_skips": float(self.nonfinite_skips),
+                    "skipped": 1.0,
+                }
+            raise RuntimeError(f"SAC critic_loss non-finite: {float(critic_loss)}")
         self.critic_opt.zero_grad()
         critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 10.0)
         self.critic_opt.step()
 
         new_act = self.actor.act(
@@ -106,15 +145,34 @@ class HybridSAC:
             new_act["u_caes"],
         )
         min_q_pi = torch.min(q1_pi, q2_pi)
+        if self.q_clip > 0:
+            min_q_pi = min_q_pi.clamp(-self.q_clip, self.q_clip)
         actor_loss = (self.alpha.detach() * new_act["log_prob"] - min_q_pi).mean()
+        if not torch.isfinite(actor_loss):
+            self.nonfinite_skips += 1
+            self._clamp_log_alpha_()
+            if self.skip_nonfinite_update:
+                return {
+                    "critic_loss": float(critic_loss.item()),
+                    "actor_loss": float("nan"),
+                    "alpha_loss": float("nan"),
+                    "alpha": float(self.alpha.item()),
+                    "q1_mean": float(q1.mean().item()),
+                    "entropy": float(new_act["entropy"].mean().item()),
+                    "nonfinite_skips": float(self.nonfinite_skips),
+                    "skipped": 1.0,
+                }
+            raise RuntimeError("SAC actor_loss non-finite")
         self.actor_opt.zero_grad()
         actor_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 10.0)
         self.actor_opt.step()
 
         alpha_loss = -(self.log_alpha * (new_act["log_prob"] + self.target_entropy).detach()).mean()
         self.alpha_opt.zero_grad()
         alpha_loss.backward()
         self.alpha_opt.step()
+        self._clamp_log_alpha_()
 
         self._soft_update(self.critic, self.critic_target)
 
@@ -125,8 +183,15 @@ class HybridSAC:
             "alpha": float(self.alpha.item()),
             "q1_mean": float(q1.mean().item()),
             "entropy": float(new_act["entropy"].mean().item()),
+            "nonfinite_skips": float(self.nonfinite_skips),
+            "skipped": 0.0,
         }
-        if not all(np.isfinite(v) for v in metrics.values()):
+        if not all(np.isfinite(v) for k, v in metrics.items() if k not in ("nonfinite_skips", "skipped")):
+            self.nonfinite_skips += 1
+            if self.skip_nonfinite_update:
+                metrics["skipped"] = 1.0
+                self.last_metrics = metrics
+                return metrics
             raise RuntimeError(f"SAC 出现非有限指标: {metrics}")
         self.last_metrics = metrics
         return metrics

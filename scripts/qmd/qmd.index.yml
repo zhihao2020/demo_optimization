@@ -1,0 +1,70 @@
+# optimal_demo qmd collection manifest.
+# setup_collections.ps1 substitutes __REPO_ROOT__ and writes repo-root .qmd/index.yml.
+
+global_context: >-
+  FMU + RL power-system demo (wind/PV/thermal/battery/CAES).
+  Mainline: HMSD/GHTD3 (goal-conditioned hierarchical TD3, continuous u_caes, 2D SoC goals,
+  low_reward=ext for fair compare, HER-mix, GiveSafe).
+  Baselines: Hybrid-TD3 and Hybrid-SAC only (no Hybrid-PPO; no residual_mle / hybrid_anchor teacher).
+  Physical action triple: u_tp, u_battery, u_caes (CAES mode derived for locks/logs only).
+  Config mainline: src/config/ghtd3_config.yaml and ghtd3_config_seasonal_min.yaml;
+  archived variants under src/config/legacy/.
+  Seasonal fair protocol: docs/cui_seasonal_min_protocol.md + scripts/train_seasonal.py.
+  Living docs live under docs/; code truth is src/ — never invent APIs from memory.
+
+collections:
+  readme:
+    path: __REPO_ROOT__
+    pattern: "README.md"
+    context:
+      "/": "Repo entrypoint: install, CLI, architecture, config pointers"
+      "/README.md": "HMSD/GHTD3 + Hybrid TD3/SAC; continuous CAES; GiveSafe; seasonal train entry"
+
+  docs-algo:
+    path: __REPO_ROOT__/docs
+    pattern: "{GHTD3*.md,principle*.md,cui_*.md,优化问题*.md}"
+    context:
+      "/": "Algorithm living docs: HMSD/GHTD3 hierarchy, fair protocol, problem formalization"
+      "/GHTD3分层实现说明.md": "Paper mapping + HMSD innovations (2D goals, continuous u_caes, GiveSafe)"
+      "/principle_innovation_MIF_HRL.md": "HMSD naming and contribution framing (narrative; defaults in code may disable optional modules)"
+      "/cui_seasonal_min_protocol.md": "Fair seasonal multi-week train / held-out eval protocol"
+      "/优化问题形式化说明.md": "Operation problem formalization: physical action triple + cash objective"
+
+  docs-env:
+    path: __REPO_ROOT__/docs
+    pattern: "{data_dictionary.md,economic*.md,FMU*.md,RL*.md,comprehensive*.md,carbon*.md,modelica*.md}"
+    context:
+      "/": "Environment / FMU / data / reward living docs"
+      "/FMU输入上下限.md": "u_tp / u_battery / u_caes bounds"
+      "/FMU优化调用与对比协议.md": "FMU optimize/compare protocol"
+      "/economic_fmu_interface.md": "Economic FMU interface"
+      "/RL奖励于成本配置.md": "Reward and cost configuration"
+      "/data_dictionary.md": "Data dictionary"
+      "/comprehensive_cost_terms.md": "Comprehensive cost terms"
+      "/modelica_equation_extract.md": "Modelica equation extract"
+      "/carbon_price_china_ets.md": "Carbon price notes"
+
+  docs-protocol:
+    path: __REPO_ROOT__/docs
+    pattern: "{cui_*.md,SCI*.md,AI4E*.md}"
+    context:
+      "/": "Experiment protocols and readiness notes"
+      "/cui_seasonal_min_protocol.md": "Seasonal fair comparison protocol (train/eval weeks, KPI)"
+      "/SCI实验就绪度与三场景.md": "SCI readiness and three seasons"
+
+  docs-results:
+    path: __REPO_ROOT__/docs
+    pattern: "{paper_*.md,P0_*.md,historical*.md,GHTD3消融*.md}"
+    context:
+      "/": "Snapshot results and paper drafts (update when new runs land; must not contradict APIs)"
+      "/paper_results_manifest.md": "Paper results file manifest"
+      "/paper_table_draft_seasonal_pso.md": "Seasonal PSO table draft"
+      "/GHTD3消融实验结果.md": "Ablation result snapshot"
+      "/P0_无GiveSafe与多seed结果.md": "No-GiveSafe / multi-seed snapshot"
+      "/historical_cash_objective_notes.md": "Historical cash objective notes"
+
+  docs-all:
+    path: __REPO_ROOT__/docs
+    pattern: "**/*.md"
+    context:
+      "/": "Full docs tree (Chinese+English filenames); use when specialized collections miss a page"

@@ -1,5 +1,7 @@
 # Safe Market-GHTD3 实验结果与消融
 
+> **Snapshot**（历史实验数字）。当前可运行主线与入口以 `docs/GHTD3分层实现说明.md`、`docs/cui_seasonal_min_protocol.md` 为准；勿将本页命令当作唯一入口。
+
 ## 1. 主实验（50k 续训 + 全年）
 
 | 指标 | Safe Market-GHTD3 | Hybrid BC+RL (对照) | 规则 |

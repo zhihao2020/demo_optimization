@@ -1,20 +1,25 @@
 # 风光火储综合能源系统 · FMU + RL 优化 Demo
 
+文档更新：2026-08-10 20:45 (+08:00)
+
 基于 **Modelica/FMU 物理仿真** 与 **HMSD/GHTD3 + Hybrid 基线** 的电力系统调度强化学习示例仓库。  
 FMU 负责火电、电池、CAES（压缩空气储能）与风光荷的一小时步物理演化；Python 侧负责动作空间、动态可行域、GiveSafe 安全过滤与经济奖励。
 
-> CAES 物理合法指令仍是非凸三段（放电 / 待机 / 充电）。主线 GHTD3 用 **连续 \(z\in[-1,1]\)** 表示 CAES，再映射到 mode/magnitude 后进入 env 的 Dict 混合动作；基线 Hybrid-TD3/SAC 直接输出 hybrid Dict。入口见 `src/training/ghtd3/`、`hybrid_td3/`、`hybrid_sac/`。
+> 物理动作三元组：`u_tp`, `u_battery`, `u_caes`。CAES 合法集仍是非凸三段（放电 / 待机 / 充电）；策略直接输出连续 `u_caes`，由 `src/actions/caes_u.py` 做合法投影，**mode 仅派生**（锁/最短运行/日志），**不再有独立 mode/magnitude 动作维**。  
+> 主线：HMSD/GHTD3（`execution_mode: goal_conditioned`，2D SoC goal，`low_reward: ext`）。基线：Hybrid-TD3 / Hybrid-SAC。**无 Hybrid-PPO、无 hybrid residual teacher**。入口见 `src/training/ghtd3/`、`hybrid_td3/`、`hybrid_sac/`。
+
+文档索引与 qmd 对齐流程：[docs/README.md](docs/README.md)。
 
 ---
 
 ## 功能概览
 
 - **物理层**：FMI 3.0 Co-Simulation（`fmpy`），固定步长默认 3600 s
-- **环境**：Gymnasium，`PowerSystemEnv`，Dict 混合动作 + 可选 24 h 日前 forecast 观测
+- **环境**：Gymnasium，`PowerSystemEnv`，Dict 物理动作 + 可选 24 h 日前 forecast 观测
 - **安全**：GiveSafe（一级 FeasibilityOracle + 可选 Shadow FMU），禁止规则 fallback
-- **训练主线**：GHTD3/HMSD（连续 CAES + 2D 目标条件层次 TD3）；**基线**：Hybrid-TD3 / Hybrid-SAC
+- **训练主线**：HMSD/GHTD3（连续 `u_caes` + 2D 目标条件层次 TD3）；**基线**：Hybrid-TD3 / Hybrid-SAC
 - **报告**：训练后自动生成 `report/report.md`（收益元、动作摘要、对比图）
-- **基线**：规则控制器（高火电 + 储能 IDLE）与随机可行采样
+- **规则基线**：高火电 + 储能 IDLE 与随机可行采样
 
 ---
 
@@ -23,23 +28,23 @@ FMU 负责火电、电池、CAES（压缩空气储能）与风光荷的一小时
 ```text
 demo_optimization/
 ├── data/                      # FMU、风光负荷/环境 CSV
-├── docs/                      # 输入边界、奖励、数据等说明
-├── scripts/                   # CLI：训练、评估、标定、探查
+├── docs/                      # 活文档 + 实验快照（见 docs/README.md）
+├── scripts/                   # CLI：训练、评估、标定、探查；scripts/qmd 文档索引
 ├── src/
-│   ├── actions/               # 混合动作、解码、可行域 Oracle
-│   ├── config/                # YAML：环境 / 奖励 / GiveSafe / 设备参数
+│   ├── actions/               # 物理动作、caes_u、可行域 Oracle、validator
+│   ├── config/                # YAML 主配置；legacy/ 为归档变体
 │   ├── controllers/           # 规则基线
 │   ├── envs/                  # PowerSystemEnv、reward、forecast
 │   ├── fmu/                   # FMI 会话、校验、变量注册
 │   ├── replay/                # Physical + GiveSafe 分区 buffer
 │   ├── safety/                # GiveSafe 控制器与 Shadow FMU
-│   └── training/              # Hybrid-TD3/PPO/SAC、评估报告（legacy Box TD3 已禁用）
+│   └── training/              # ghtd3 (HMSD)、hybrid_td3、hybrid_sac、评估报告
 ├── tests/                     # pytest
 ├── requirements.txt
 └── README.md
 ```
 
-本地运行产物默认落在 `runs/`（已在 `.gitignore`）。
+本地运行产物默认落在 `runs/`（部分实验产物已入库；拉数目录见 `.gitignore`）。
 
 ---
 
@@ -115,16 +120,17 @@ python scripts/rollout_compare.py --scheme both --hours 8760
 
 轨迹与摘要写入 `runs/compare/`。
 
-### 6. Hybrid-GiveSafe 训练（TD3 / PPO / SAC）
+### 6. GiveSafe 训练（HMSD / Hybrid-TD3 / Hybrid-SAC）
 
-主线与基线均走混合动作 + GiveSafe。CLI 常用参数：`--mode smoke|short|formal`、`--steps`、`--seed`、`--run-dir`、`--no-shadow`、`--annual-eval`。
+主线与基线均走物理动作三元组 + GiveSafe。CLI 常用参数：`--mode smoke|short|formal`、`--steps`、`--seed`、`--run-dir`、`--no-shadow`、`--annual-eval`。
 
 ```bash
-# 主线 HMSD / GHTD3（连续 CAES，季节协议见 docs/cui_seasonal_min_protocol.md）
+# 主线 HMSD / GHTD3（连续 u_caes；公平季节协议见 docs/cui_seasonal_min_protocol.md）
 python scripts/train_ghtd3.py --mode smoke
 python scripts/train_seasonal.py --method hmsd --season winter --episodes 200 --seed 0
+python scripts/train_seasonal.py --method td3  --season winter --episodes 200 --seed 0
 
-# 基线 Hybrid-TD3 / Hybrid-SAC
+# 基线 Hybrid-TD3 / Hybrid-SAC（无 PPO）
 python scripts/train_hybrid_td3.py --mode smoke
 python scripts/train_hybrid_sac.py --mode smoke
 python scripts/train_hybrid_td3.py --mode short --seed 0
@@ -157,6 +163,9 @@ pytest tests/ -q
 
 | 文件 | 作用 |
 |------|------|
+| [`src/config/ghtd3_config.yaml`](src/config/ghtd3_config.yaml) | HMSD 主线：`goal_conditioned`、2D goal、`low_reward: ext`、HER-mix |
+| [`src/config/ghtd3_config_seasonal_min.yaml`](src/config/ghtd3_config_seasonal_min.yaml) | 季节公平训练用（与主线同栈） |
+| [`src/config/legacy/`](src/config/legacy/) | 历史 TEA / residual / 消融配置归档（非主线） |
 | [`src/config/env_config.yaml`](src/config/env_config.yaml) | FMU 路径、步长、episode 长度、动作/观测清单、forecast CSV |
 | [`src/config/reward_config.yaml`](src/config/reward_config.yaml) | 电价、火电成本、`C_ref`、终端 SOC bonus |
 | [`src/config/givesafe_config.yaml`](src/config/givesafe_config.yaml) | GiveSafe 重采样次数、约束奖励、replay 混合比例（约 70/30） |
@@ -165,6 +174,8 @@ pytest tests/ -q
 
 更细的文档：
 
+- [docs/README.md](docs/README.md) — 文档索引 + qmd 对齐协议
+- [docs/cui_seasonal_min_protocol.md](docs/cui_seasonal_min_protocol.md) — 公平季节对比
 - [docs/FMU输入上下限.md](docs/FMU输入上下限.md) — `u_tp` / `u_battery` / `u_caes` 边界
 - [docs/RL奖励于成本配置.md](docs/RL奖励于成本配置.md) — 经济奖励与 GiveSafe 约束奖励路径
 - [docs/风光负荷数据说明.md](docs/风光负荷数据说明.md) — `data/*.csv` 字段与单位
@@ -175,10 +186,10 @@ pytest tests/ -q
 ## 架构与数据流
 
 ```text
-策略 HybridAction (u_tp, u_battery, caes_mode, magnitude)
-        │
+策略输出 PhysicalAction {u_tp, u_battery, u_caes}
+        │  caes_u.project / mode_from_u（mode 仅锁/日志）
         ▼
-   Decoder ──► PhysicalFmuAction {u_tp, u_battery, u_caes}
+ validator / physical_from_dict ──► PhysicalFmuAction
         │
         ▼
  GiveSafeController ──► Oracle 预检 (+ 可选 Shadow FMU)
@@ -193,18 +204,20 @@ pytest tests/ -q
 要点：
 
 1. **FMU 是真值**：风光荷边界由模型内嵌时序驱动；`data/*.csv` 只扩展策略观测（完美日前），不是替代物理源。
-2. **动作不静默投影**：越界或禁模态直接失败；Decoder 只做模式→区间的显式映射。
+2. **动作合法化**：`caes_u.project_u_caes` 把连续标量落到合法三段；越界/Oracle 拒绝由 GiveSafe 重采样或失败，**无规则 fallback**。
 3. **奖励三条路径**：物理经济步 / GiveSafe 拒绝自环 / 环境硬失败（详见奖励文档）。
+4. **HMSD 分层**：高层每 `subgoal_interval`（默认 8）发 2D SoC goal；底层 goal-conditioned 出物理三元组；公平对比时底层用 `r_ext`（与 flat TD3 同目标）。
 
 ```mermaid
 flowchart LR
-  Agent[Hybrid Actor] --> GS[GiveSafe]
+  High[High-level Actor goal] --> Low[Low-level Actor]
+  Low --> GS[GiveSafe / Oracle]
   GS -->|safe| FMU[FMU Session]
   GS -->|reject| GSBuf[GiveSafe Replay]
   FMU --> Env[PowerSystemEnv]
-  Env -->|economic r| PhysBuf[Physical Replay]
-  PhysBuf --> TD3[Hybrid TD3 Update]
-  GSBuf --> TD3
+  Env -->|economic r_ext| PhysBuf[Physical Replay]
+  PhysBuf --> Upd[HMSD / Hybrid TD3 Update]
+  GSBuf --> Upd
 ```
 
 ---

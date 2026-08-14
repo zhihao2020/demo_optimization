@@ -26,8 +26,13 @@ from .buffers import HighTransition, LowTransition
 from .goals import (
     DEFAULT_SOC_KEYS,
     blend_goal_with_prior,
+    battery_soc_discharge,
+    caes_on_frac,
+    thermal_extra_frac,
     extract_soc,
     extract_soc_from_obs,
+    enforce_budget_on_action,
+    goal_budget_layout,
     goal_transition_intent,
     plant_intent_vector,
     structured_intrinsic_reward,
@@ -131,6 +136,18 @@ class GHTD3PolicyWrapper:
                 "u_battery": np.asarray([0.0], dtype=np.float32),
                 "u_caes": np.asarray([0.0], dtype=np.float32),
             }
+        action = enforce_budget_on_action(
+            action,
+            self.goal,
+            wear_budget=bool(self.agent.cfg.get("wear_budget", False)),
+            thermal_budget=bool(self.agent.cfg.get("thermal_budget", False)),
+            caes_budget=bool(self.agent.cfg.get("caes_budget", False)),
+            wear_enforce=bool(self.agent.cfg.get("wear_enforce", True)),
+            thermal_enforce=bool(self.agent.cfg.get("thermal_enforce", True)),
+            caes_enforce=bool(self.agent.cfg.get("caes_enforce", True)),
+            c=self.c,
+            layout=getattr(self.agent, "goal_layout", None),
+        )
         self.step_in_cycle += 1
         outs0 = self.env.last_outputs or {}
         self._pending_intent = plant_intent_vector(outs0) if outs0 else None
@@ -143,8 +160,43 @@ class GHTD3PolicyWrapper:
         if not outs or self._pending_intent is None:
             return
         intent1 = plant_intent_vector(outs)
+        used = 0.0
+        th_used = 0.0
+        wear_on = bool(self.agent.cfg.get("wear_budget", False))
+        th_on = bool(self.agent.cfg.get("thermal_budget", False))
+        caes_on = bool(self.agent.cfg.get("caes_budget", False))
+        if wear_on:
+            used = battery_soc_discharge(self._pending_intent, intent1)
+        if th_on:
+            ha = info.get("physical_action") or info.get("hybrid_action") or {}
+            try:
+                u_tp = float(np.asarray(ha.get("u_tp", 1.0 / 3.0)).reshape(-1)[0])
+            except Exception:
+                u_tp = 1.0 / 3.0
+            c = max(int(self.agent.cfg.get("subgoal_interval", 8)), 1)
+            th_used = thermal_extra_frac(u_tp, c=c)
+        caes_used = 0.0
+        if caes_on:
+            ha = info.get("physical_action") or info.get("hybrid_action") or {}
+            try:
+                u_c = float(np.asarray(ha.get("u_caes", 0.0)).reshape(-1)[0])
+            except Exception:
+                u_c = 0.0
+            c = max(int(self.agent.cfg.get("subgoal_interval", 8)), 1)
+            caes_used = caes_on_frac(u_c, c=c)
         self.goal = goal_transition_intent(
-            self._pending_intent, self.goal, intent1, self.agent.goal_low, self.agent.goal_high
+            self._pending_intent,
+            self.goal,
+            intent1,
+            self.agent.goal_low,
+            self.agent.goal_high,
+            wear_used=used,
+            wear_budget=wear_on,
+            thermal_used=th_used,
+            thermal_budget=th_on,
+            caes_used=caes_used,
+            caes_budget=caes_on,
+            layout=getattr(self.agent, "goal_layout", None),
         )
         self._pending_intent = intent1
 
@@ -243,7 +295,10 @@ def run_ghtd3_training(
     controller = GiveSafeController(oracle=env.oracle, shadow=None, config=gs_cfg)
 
     print(
-        f"[HMSD] goal_dim={agent.goal_dim} her={cfg.get('goal_relabel_mode', 'her_mix')} "
+        f"[HMSD] goal_dim={agent.goal_dim} wear_budget={bool(cfg.get('wear_budget', False))} "
+        f"caes_budget={bool(cfg.get('caes_budget', False))} hybrid_caes={bool(cfg.get('hybrid_caes', False))} "
+        f"thermal_budget={bool(cfg.get('thermal_budget', False))} "
+        f"her={cfg.get('goal_relabel_mode', 'her_mix')} "
         f"prior={bool(cfg.get('market_goal_prior', False))} "
         f"f_mle={bool(cfg.get('f_mle_pretrain', False))} continuous_caes={bool(cfg.get('continuous_caes', True))}"
     )
@@ -370,8 +425,20 @@ def run_ghtd3_training(
     cycle_act_seq: list[dict] = []
     cycle_u_tp: list[float] = []
     cycle_u_tp_h: list[float] = []
+    cycle_wear = 0.0
+    cycle_th = 0.0
+    cycle_caes = 0.0
     steps_in_cycle = 0
     cycle_goal = goal.copy()
+    wear_on = bool(cfg.get("wear_budget", False))
+    th_on = bool(cfg.get("thermal_budget", False))
+    caes_on = bool(cfg.get("caes_budget", False))
+    layout = goal_budget_layout(
+        wear_budget=wear_on, caes_budget=caes_on, thermal_budget=th_on
+    )
+    wear_lo_coef = float(cfg.get("wear_overshoot_coef", 0.5))
+    wear_hi_coef = float(cfg.get("wear_high_overshoot_coef", 0.25))
+    c_block = max(int(cfg.get("subgoal_interval", 8)), 1)
     _algo = "HMSD"
     result: dict[str, Any] = {
         "status": "running",
@@ -450,6 +517,9 @@ def run_ghtd3_training(
                 cycle_act_seq = []
                 cycle_u_tp = []
                 cycle_u_tp_h = []
+                cycle_wear = 0.0
+                cycle_th = 0.0
+                cycle_caes = 0.0
                 stats["high_goal_count"] += 1
 
             obs_before = obs.copy()
@@ -551,6 +621,18 @@ def run_ghtd3_training(
                 obs, _ = reset_ep(episode)
                 steps_in_cycle = 0
                 continue
+            action = enforce_budget_on_action(
+                action,
+                g_exec,
+                wear_budget=wear_on,
+                thermal_budget=th_on,
+                caes_budget=caes_on,
+                wear_enforce=bool(cfg.get("wear_enforce", True)),
+                thermal_enforce=bool(cfg.get("thermal_enforce", True)),
+                caes_enforce=bool(cfg.get("caes_enforce", True)),
+                c=c_block,
+                layout=layout,
+            )
 
             next_obs, r_ext, terminated, truncated, info = env.step(action)
             stats["low_step_count"] += 1
@@ -638,8 +720,44 @@ def run_ghtd3_training(
             else:
                 lo_reward = float(r_ext)
                 shape_terms = {}
+            wear_used = battery_soc_discharge(intent_before, intent_after) if wear_on else 0.0
+            th_used = thermal_extra_frac(u_tp_act, c=c_block) if th_on else 0.0
+            try:
+                u_caes_act = float(np.asarray(action.get("u_caes", 0.0)).reshape(-1)[0])
+            except Exception:
+                u_caes_act = 0.0
+            caes_used = caes_on_frac(u_caes_act, c=c_block) if caes_on else 0.0
+            if wear_on:
+                iw = int(layout.get("wear", 2))
+                remain = float(g_before[iw]) if g_before.size > iw else 0.0
+                overshoot = float(max(0.0, wear_used - max(remain, 0.0)))
+                if overshoot > 0.0 and wear_lo_coef != 0.0:
+                    lo_reward = float(lo_reward) - wear_lo_coef * overshoot
+                    shape_terms = {**shape_terms, "wear_overshoot": overshoot}
+                cycle_wear += float(wear_used)
+            if th_on:
+                ith = int(layout.get("thermal", 3))
+                remain_th = float(g_before[ith]) if g_before.size > ith else 0.0
+                over_th = float(max(0.0, th_used - max(remain_th, 0.0)))
+                if over_th > 0.0 and wear_lo_coef != 0.0:
+                    lo_reward = float(lo_reward) - wear_lo_coef * over_th
+                    shape_terms = {**shape_terms, "thermal_overshoot": over_th}
+                cycle_th += float(th_used)
+            if caes_on:
+                cycle_caes += float(caes_used)
             goal_next = goal_transition_intent(
-                intent_before, g_before, intent_after, agent.goal_low, agent.goal_high
+                intent_before,
+                g_before,
+                intent_after,
+                agent.goal_low,
+                agent.goal_high,
+                wear_used=wear_used,
+                wear_budget=wear_on,
+                thermal_used=th_used,
+                thermal_budget=th_on,
+                caes_used=caes_used,
+                caes_budget=caes_on,
+                layout=layout,
             )
             bounds = {
                 "u_tp_low": float(info.get("u_tp_dynamic_low", feasible.u_tp_low)),
@@ -707,6 +825,18 @@ def run_ghtd3_training(
                     hi_r = float(cycle_ext) / float(steps_in_cycle)
                 else:
                     hi_r = float(cycle_ext)
+                if wear_on:
+                    iw = int(layout.get("wear", 2))
+                    issued = float(cycle_goal[iw]) if cycle_goal.size > iw else 0.0
+                    hi_over = float(max(0.0, cycle_wear - max(issued, 0.0)))
+                    if hi_over > 0.0 and wear_hi_coef != 0.0:
+                        hi_r = float(hi_r) - wear_hi_coef * hi_over
+                if th_on:
+                    ith = int(layout.get("thermal", 3))
+                    issued_th = float(cycle_goal[ith]) if cycle_goal.size > ith else 0.0
+                    hi_over_th = float(max(0.0, cycle_th - max(issued_th, 0.0)))
+                    if hi_over_th > 0.0 and wear_hi_coef != 0.0:
+                        hi_r = float(hi_r) - wear_hi_coef * hi_over_th
                 # λ-SoC 高层：仅在外在回报上扣库存对偶项（不改底层残差）
                 if bool(getattr(agent, "high_lambda_soc", False)) or bool(
                     cfg.get("high_lambda_soc", False)
@@ -738,6 +868,10 @@ def run_ghtd3_training(
                         thr,
                         goal_low=agent.goal_low,
                         goal_high=agent.goal_high,
+                        wear_used=cycle_wear if wear_on else None,
+                        thermal_used=cycle_th if th_on else None,
+                        caes_used=cycle_caes if caes_on else None,
+                        layout=layout,
                     )
                 agent.hi_buffer.add(
                     HighTransition(
@@ -757,6 +891,9 @@ def run_ghtd3_training(
                 steps_in_cycle = 0
                 cycle_u_tp = []
                 cycle_u_tp_h = []
+                cycle_wear = 0.0
+                cycle_th = 0.0
+                cycle_caes = 0.0
 
             # 更新：底层始终可训；Phase-A 仅冻结高层
             metrics: dict[str, float] = {}
@@ -888,13 +1025,34 @@ def run_ghtd3_training(
         result["rule"] = rule_res
         result["price_rule"] = price_rule_res
         result["eval_start_time_seconds"] = eval_opts["start_time"]
+        # Safety–learning coupling metrics (Applied Energy depth: D2)
+        phys = float(stats.get("physical_ok", 0) or 0)
+        rej = float(stats.get("givesafe_reject", 0) or 0)
+        attempts = phys + rej
+        reject_rate = float(rej / attempts) if attempts > 0 else 0.0
+        result["safety_learning"] = {
+            "physical_ok": int(phys),
+            "givesafe_reject": int(rej),
+            "givesafe_reject_stored": int(stats.get("givesafe_reject_stored", 0) or 0),
+            "reject_rate": reject_rate,
+            "learn_from_reject": bool(cfg.get("learn_from_reject", True)),
+            "goal_relabel": bool(cfg.get("goal_relabel", True)),
+            "goal_relabel_mode": str(cfg.get("goal_relabel_mode", "her_mix")),
+        }
         result["innovations"] = {
             "stack": "HMSD-min",
             "goal_dim": int(agent.goal_dim),
             "low_reward": str(cfg.get("low_reward", "ext")),
             "goal_relabel_mode": str(cfg.get("goal_relabel_mode", "her_mix")),
             "GiveSafe": True,
+            "learn_from_reject": bool(cfg.get("learn_from_reject", True)),
+            "continuous_caes": bool(cfg.get("continuous_caes", True)),
             "execution_mode": "goal_conditioned",
+            "wear_budget": bool(cfg.get("wear_budget", False)),
+            "thermal_budget": bool(cfg.get("thermal_budget", False)),
+            "caes_budget": bool(cfg.get("caes_budget", False)),
+            "hybrid_caes": bool(cfg.get("hybrid_caes", False)),
+            "scientific_focus": "nonconvex_CAES_hard_safety_hierarchical_ext_reward",
         }
         if annual_evaluation:
             from training.evaluate_td3 import evaluate_annual_policy

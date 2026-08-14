@@ -24,3 +24,7 @@ _env_*.py
 runs/remote_pull*/
 runs/_remote_pull/
 *.log
+.qmd/
+node_modules/
+picture/_slides_preview/
+picture/_unpacked_report/

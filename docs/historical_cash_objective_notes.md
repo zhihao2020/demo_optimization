@@ -1,5 +1,7 @@
 # 历史说明：现金目标（非综合成本）下的 SAC / HMSD
 
+文档更新：2026-08-10 21:15 (+08:00)
+
 > **失效声明**：下列数字与 checkpoint 对应的是 **TOU 现金 / 旧 reward** 优化问题，  
 > **不是** 当前默认的综合货币目标  
 > \(J^{\mathrm{gen}} =\) cash − ETS 碳 − \(C^{CUT}\) − \(C^{\mathrm{deg}}\)。  
@@ -15,11 +17,12 @@
 
 | 文件 | 内容（旧问题） |
 |------|----------------|
-| `runs/paper_hmsd80k_scratch_summary.md` | HMSD from-scratch 80k vs SAC-80k |
-| `runs/paper_hsac_status.md` | Hierarchical-SAC 35k/80k |
-| `docs/论文对照_弱单层SAC.md` | 弱单层 SAC 角色与旧主表数字 |
-| `docs/扩展基准_linprog_SAC.md` | 旧 linprog/SAC 扩展表 |
-| `docs/论文表格草稿_三季PSO对比.md` | 旧三季 PSO 草稿 |
+| `runs/paper_hmsd80k_scratch_summary.md` | HMSD from-scratch 80k vs SAC-80k（若仍存在） |
+| `runs/paper_hsac_status.md` | Hierarchical-SAC 35k/80k（若仍存在） |
+| `docs/扩展基准_linprog_SAC.md` | 旧 linprog/SAC 扩展表（snapshot） |
+| `docs/论文表格草稿_三季PSO对比.md` | 旧三季 PSO 草稿（snapshot） |
+
+> 已删除：`docs/论文对照_弱单层SAC.md`、ares/TEA 对照稿（与当前主线/代码不一致）。
 
 ## 旧预算习惯（已废弃）
 

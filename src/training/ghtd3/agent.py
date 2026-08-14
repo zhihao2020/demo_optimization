@@ -13,8 +13,11 @@ import torch.nn.functional as F
 from .buffers import HighReplayBuffer, HighTransition, LowReplayBuffer
 from .goals import (
     actual_delta_soc,
+    battery_soc_discharge,
     clip_goal,
     default_goal_boxes,
+    enforce_budget_on_action,
+    goal_budget_layout,
 )
 from .networks import (
     HighLevelActor,
@@ -29,7 +32,21 @@ class GHTD3Agent:
         self.cfg = dict(cfg)
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.goal_dim = int(cfg.get("goal_dim", 2))
-        dlow, dhigh = default_goal_boxes(self.goal_dim)
+        self.wear_budget = bool(cfg.get("wear_budget", False))
+        self.thermal_budget = bool(cfg.get("thermal_budget", False))
+        self.caes_budget = bool(cfg.get("caes_budget", False))
+        self.hybrid_caes = bool(cfg.get("hybrid_caes", False))
+        self.goal_layout = goal_budget_layout(
+            wear_budget=self.wear_budget,
+            caes_budget=self.caes_budget,
+            thermal_budget=self.thermal_budget,
+        )
+        dlow, dhigh = default_goal_boxes(
+            self.goal_dim,
+            wear_budget=self.wear_budget,
+            thermal_budget=self.thermal_budget,
+            caes_budget=self.caes_budget,
+        )
         gl_cfg = cfg.get("goal_low")
         gh_cfg = cfg.get("goal_high")
         if gl_cfg is None or len(np.asarray(gl_cfg).ravel()) != self.goal_dim:
@@ -89,7 +106,11 @@ class GHTD3Agent:
         self.hi_critic = HighLevelCritic(obs_dim, self.goal_dim).to(self.device)
         self.hi_critic_t = deepcopy(self.hi_critic).to(self.device)
         self.lo_actor = LowLevelActor(
-            obs_dim, self.goal_dim, residual_init=residual_init, goal_input_scale=goal_scale
+            obs_dim,
+            self.goal_dim,
+            residual_init=residual_init,
+            goal_input_scale=goal_scale,
+            hybrid_caes=self.hybrid_caes,
         ).to(self.device)
         self.lo_actor_t = deepcopy(self.lo_actor).to(self.device)
         self.lo_critic = LowLevelCritic(obs_dim, self.goal_dim).to(self.device)
@@ -212,7 +233,19 @@ class GHTD3Agent:
     ) -> dict:
         """Absolute goal-conditioned action (HMSD mainline). residual_scale ignored."""
         _ = residual_scale
-        return self.select_low_action(obs, goal, feasible, deterministic=deterministic)
+        action = self.select_low_action(obs, goal, feasible, deterministic=deterministic)
+        return enforce_budget_on_action(
+            action,
+            goal,
+            wear_budget=self.wear_budget,
+            thermal_budget=self.thermal_budget,
+            caes_budget=self.caes_budget,
+            wear_enforce=bool(self.cfg.get("wear_enforce", True)),
+            thermal_enforce=bool(self.cfg.get("thermal_enforce", True)),
+            caes_enforce=bool(self.cfg.get("caes_enforce", True)),
+            c=self.subgoal_interval,
+            layout=self.goal_layout,
+        )
 
 
     def update_low(self, batch_size: int) -> dict[str, float]:
@@ -361,20 +394,44 @@ class GHTD3Agent:
         return metrics
 
 
+    def _wear_from_soc_seq(self, soc_seq: list) -> float:
+        wear = 0.0
+        for a, b in zip(soc_seq[:-1], soc_seq[1:]):
+            wear += battery_soc_discharge(a, b)
+        return float(wear)
+
+    def _copy_budget_dim(self, out: np.ndarray, d: np.ndarray, name: str, *, clip01: bool = False) -> None:
+        i = self.goal_layout.get(name)
+        if i is None or out.size <= i or d.size <= i:
+            return
+        val = max(0.0, float(d[i]))
+        out[i] = min(1.0, val) if clip01 else val
+
     def _achieved_delta(self, tr: HighTransition) -> np.ndarray | None:
+        """Inventory Δ on dims 0–1; budget dims stay quotas, never process-inventory residual."""
+        out = np.zeros(self.goal_dim, dtype=np.float32)
+        have = False
         if tr.achieved_delta is not None:
             d = np.asarray(tr.achieved_delta, dtype=np.float32).ravel()
-            if d.size == self.goal_dim:
-                return d
-            out = np.zeros(self.goal_dim, dtype=np.float32)
-            out[: min(self.goal_dim, d.size)] = d[: self.goal_dim]
-            return out
-        if tr.soc_seq and len(tr.soc_seq) >= 2:
+            n_inv = min(2, self.goal_dim, d.size)
+            if n_inv > 0:
+                out[:n_inv] = d[:n_inv]
+            self._copy_budget_dim(out, d, "wear")
+            self._copy_budget_dim(out, d, "caes", clip01=True)
+            self._copy_budget_dim(out, d, "thermal", clip01=True)
+            have = True
+        elif tr.soc_seq and len(tr.soc_seq) >= 2:
             d = actual_delta_soc(tr.soc_seq[0], tr.soc_seq[-1]).ravel()
-            out = np.zeros(self.goal_dim, dtype=np.float32)
-            out[: min(self.goal_dim, d.size)] = d[: self.goal_dim]
-            return out
-        return None
+            n_inv = min(2, self.goal_dim, d.size)
+            if n_inv > 0:
+                out[:n_inv] = d[:n_inv]
+            have = True
+        if not have:
+            return None
+        iw = self.goal_layout.get("wear")
+        if iw is not None and self.goal_dim > iw and float(out[iw]) == 0.0 and tr.soc_seq:
+            out[iw] = self._wear_from_soc_seq(tr.soc_seq)
+        return out
 
     def _sample_future_achieved(self, tr: HighTransition) -> np.ndarray | None:
         """从同 episode 后续 high 转移（若可得）或 buffer 中其它 achieved Δ 采样。"""

@@ -38,6 +38,22 @@ from market.price_profile import PriceProfile
 from .observation_builder import ObservationBuilder
 from .forecast_provider import ForecastProvider
 from .reward_calculator import RewardCalculator
+
+
+def recovery_horizons(market: dict[str, Any] | None) -> tuple[int, int]:
+    """解析气库 / 电池末段回收窗。
+
+    ``soc_recovery_battery_horizon: 0`` 必须关掉电池扭矩，不能回落到 ``horizon+16``。
+    键缺省时才用气库窗加 16 小时（旧默认）。
+    """
+    cfg = market or {}
+    horizon = int(cfg.get("soc_recovery_horizon", 0) or 0)
+    if "soc_recovery_battery_horizon" in cfg:
+        raw = cfg.get("soc_recovery_battery_horizon")
+        bat_horizon = 0 if raw is None else int(raw)
+    else:
+        bat_horizon = horizon + 16 if horizon > 0 else 0
+    return horizon, max(bat_horizon, 0)
 from .termination_checker import TerminationChecker
 
 
@@ -223,11 +239,7 @@ class PowerSystemEnv(gym.Env):
     ) -> tuple[PhysicalFmuAction, bool]:
         """末段多罐联合回收：battery + CAES gas/hot/cold 扭向初始 SOC。"""
         market = self.config.get("market") or {}
-        horizon = int(market.get("soc_recovery_horizon", 0) or 0)
-        bat_horizon = int(
-            market.get("soc_recovery_battery_horizon", 0)
-            or (horizon + 16 if horizon > 0 else 0)
-        )
+        horizon, bat_horizon = recovery_horizons(market)
         if horizon <= 0 or self.initial_soc is None or self.last_outputs is None:
             return action, False
         remaining = int(self.episode_steps - self.step_index)

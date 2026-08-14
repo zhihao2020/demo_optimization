@@ -1,6 +1,9 @@
-# Safe Market-GHTD3：论文对齐 + 本仓库创新
+# Safe Market-GHTD3 / HMSD：论文对齐 + 本仓库创新
 
-对应主锚论文：*Collaborative scheduling optimization of hydrogen-enhanced integrated energy system via goal-conditioned hierarchical reinforcement learning*（Energy, **GHTD3 / Cui et al.**）。
+文档更新：2026-08-14 23:40 (+08:00)
+
+对应主锚论文：*Collaborative scheduling optimization of hydrogen-enhanced integrated energy system via goal-conditioned hierarchical reinforcement learning*（Energy, **GHTD3 / Cui et al.**）。  
+本仓库方法名：**HMSD**（Hierarchical Market-aware Safe Dispatch）= Safe Market-GHTD3 实现栈。
 
 并吸收：
 
@@ -8,10 +11,14 @@
 |----------|------------|
 | Cui GHTD3：高层 SoC 增量 goal + 底层设备动作 + goal 转移 / 内在奖励 | `src/training/ghtd3/` |
 | Ochoa 等：多时间尺度 DA 计划 + RT 执行 | 高层每 \(c\) 步能量目标，底层 GiveSafe 执行 |
-| Pei 等：price-taker 电价驱动储能 | 外生分时电价 + 市场条件 goal 先验 |
+| Pei 等：price-taker 电价驱动储能 | 外生分时电价 +（可选）市场条件 goal 先验 |
 | Sun / 约束 RL + 本仓库 GiveSafe | 底层禁止 unsafe fallback |
 
 市场深度：**price-taker 分时电价**（山东 2026 代理购电代理表），**不做 ISO 出清**。
+
+**当前主线（代码真源）**：`execution_mode: goal_conditioned`，`goal_dim: 2`，连续 `u_caes`，`low_reward: ext`（公平对比与 flat TD3 同目标），`goal_relabel_mode: her_mix`；**无** Hybrid residual teacher / `residual_mle` / Hybrid-PPO。配置：`src/config/ghtd3_config.yaml`；季节公平：`docs/cui_seasonal_min_protocol.md`。
+
+**对齐主方法（2026-08-14）**：`src/config/ablation/ghtd3_aligned.yaml`。低层压空是模式+幅值（`hybrid_caes`）；高层 \(g=(\Delta\mathrm{bat},\Delta\mathrm{gas},b^{\mathrm{wear}},b^{\mathrm{caes}})\)；\(J\) 含压空启停（`reward_config.yaml` / `caes_startup`）。二维连续三元组与轻罚-only W 作消融。禁止把高层写成 RR/LEB/SA。
 
 ---
 
@@ -19,14 +26,14 @@
 
 | 论文 | 本仓库实现 |
 |------|------------|
-| 高层 SMDP 动作 = 储能 SoC 增量 goal | `goal = [Δbattery_soc, Δcaes_gas_soc]` |
-| 底层 GAMDP 动作 = 设备功率 | Hybrid：`u_tp, u_battery, caes_mode, caes_magnitude` |
+| 高层 SMDP 动作 = 储能 SoC 增量 goal | `goal = [Δbattery_soc, Δcaes_gas_soc]`（`goal_dim: 2`） |
+| 底层 GAMDP 动作 = 设备功率 | 物理三元组：`u_tp, u_battery, u_caes`（`caes_u`；mode 仅派生） |
 | 子目标间隔 \(c=8\) | `ghtd3_config.yaml` → `subgoal_interval: 8` |
 | goal 转移 \(g'=s+g-s'\) | `goals.goal_transition` |
-| \(r^{int}=-\|soc+g-soc'\|+\alpha r^{ext}\) | `intrinsic_reward`，`intrinsic_alpha≈0.35` |
+| \(r^{int}=-\|soc+g-soc'\|+\alpha r^{ext}\) | `intrinsic_reward`（**消融**可用 `low_reward: intrinsic`；主线 fair 用 `ext`） |
 | 内外层 TD3 | `GHTD3Agent` 双 Actor-Critic |
 | 高层 SMDP 折扣 \(\gamma^c\) | `agent.gamma_high = gamma ** c`（已严格使用） |
-| Historical goal relabel | 实际 \(\Delta SoC\) 候选近似（`_relabel_goals`） |
+| Historical goal relabel | HER-mix（`goal_relabel_mode: her_mix`） |
 | 安全执行 | 底层 **GiveSafe**（Oracle，默认无 Shadow） |
 
 ---
@@ -38,12 +45,14 @@
 - 低买价 → 正 \(\Delta SoC\)（充）；高买价 → 负 \(\Delta SoC\)（放）。
 - 与高层 actor 输出 **凸组合**（`market_prior_weight`），训练与评估一致使用。
 - 实现：`goals.market_conditioned_goal_prior` + `blend_goal_with_prior`。
+- **主线默认关闭**（`market_goal_prior: false`），作为可选模块；公平季节协议不依赖 prior 才能对齐 flat TD3。
 
-### I2. 回收段目标（Terminal SOC recovery goals）
+### I2. 回收段（对齐崔文：电池软门）
 
-- 与 env 侧 `market.soc_recovery_horizon` 对齐。
-- 剩余步数 ≤ `recovery_goal_horizon_steps` 时，上层强制 prior 指向 **初始 SoC**，权重抬升到 ≥0.75。
-- 环境层仍可对动作做 `_apply_terminal_soc_recovery`，形成 **上层计划 + 底层扭矩** 双保险。
+- 电池运行盒子仍是 \([0.1, 0.9]\)（崔文式 (20)）。
+- 周末回到初值：**只给固定加分，不过门为 0**（崔文式 (29)），`fail_penalty_l1=0`，电池与气库等权。
+- **不劫持电池充放**。`soc_recovery_battery_horizon: 0`；气库仍可用 `soc_recovery_horizon`。
+- 市场先验主线关闭时，上层也不会在末段把目标扭回初值。
 
 ### I3. 严格 SMDP 折扣 \(\gamma^c\) + 高层 reward 均值归一
 
@@ -60,9 +69,10 @@
 - 底层 `LowLevelActor` 监督拟合规则动作；高层 `HighLevelActor` 拟合演示 goal。
 - 对齐 Hybrid「BC→RL」成功路径，并适配分层结构（见 `bc_pretrain.py`）。
 
-### I5. GiveSafe + 非凸 CAES 混合动作空间
+### I5. GiveSafe + 非凸 CAES 连续动作
 
-- 底层在 Modelica/FMU 可行域 + Oracle 安全门上执行；相对氢能论文场景，本仓库对象是 **光热-电池-CAES 多能** 与 **分时购电**。
+- 底层在 Modelica/FMU 可行域 + Oracle 安全门上执行；CAES 用连续 `u_caes` + 合法三段投影（`caes_u`），问题仍非凸。
+- 相对氢能论文场景，本仓库对象是 **风光-火电-电池-CAES 多能** 与 **分时购电**。
 
 ### I6. 预测价观测 / 实现价结算（可选）
 
@@ -73,29 +83,34 @@
 ## 3. 代码入口
 
 ```bash
-# smoke ~3k
+# smoke
 python scripts/train_ghtd3.py --mode smoke --seed 0
 
-# short 15k（与 Hybrid market_soc_ok_15k 对齐步数）
-python scripts/train_ghtd3.py --mode short --steps 15000 --run-dir runs/ghtd3_market_15k_20260803
+# 公平季节对比（推荐论文表）
+python scripts/train_seasonal.py --method hmsd --season winter --episodes 5000 --seed 0
+python scripts/train_seasonal.py --method td3  --season winter --episodes 5000 --seed 0
 
-# 全年评估
-python scripts/train_ghtd3.py --mode short --steps 15000 --run-dir runs/ghtd3_market_15k_ann --annual-eval
+# short / 全年评估（单配置实验）
+python scripts/train_ghtd3.py --mode short --steps 15000 --run-dir runs/ghtd3_short
+python scripts/train_ghtd3.py --mode short --steps 15000 --run-dir runs/ghtd3_short_ann --annual-eval
 ```
 
-配置：`src/config/ghtd3_config.yaml`  
-核心包：`src/training/ghtd3/`  
-环境市场与 SOC 回收：`src/config/env_config.yaml` → `market.*`
+配置：`src/config/ghtd3_config.yaml`、`ghtd3_config_seasonal_min.yaml`  
+历史变体：`src/config/legacy/`  
+核心包：`src/training/ghtd3/`（**无** hybrid residual teacher）  
+环境市场与 SOC 回收：`src/config/env_config.yaml` → `market.*`  
+协议：`docs/cui_seasonal_min_protocol.md`
 
 ---
 
 ## 4. 与单层 Hybrid-TD3 的差异
 
 1. **高层每 8 步**提出储能目标，减轻底层短视 SOC 调度。  
-2. **底层观测条件于 goal**，内在奖励强迫跟踪。  
-3. **市场先验 + 回收 goal** 把电价与期末约束显式注入 SMDP。  
-4. 外在奖励仍用 `RewardCalculator`（现金流 + SOC shaping/bonus）。  
-5. 评估同时对比：通用规则 / 峰谷规则 / GHTD3。
+2. **底层观测条件于 goal**（`goal_conditioned`）。  
+3. 公平对比时底层更新用 **`r_ext`**（与 flat TD3 同目标）；`intrinsic` 仅作消融。  
+4. **HER-mix** 重放历史 goal；市场 prior / 回收 goal 为可选模块（主线 prior 默认关）。  
+5. 外在奖励仍用 `RewardCalculator`（现金流 + SOC shaping/bonus）。  
+6. 评估对比：规则 / 峰谷规则 / Hybrid-TD3 / HMSD（季节 held-out 周）。
 
 ---
 

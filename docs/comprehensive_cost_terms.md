@@ -1,5 +1,7 @@
 # Comprehensive monetary terms (Scheme B)
 
+文档更新：2026-08-14 23:40 (+08:00)
+
 **Authoritative layer: Python** (`RewardCalculator`).  
 FMU supplies physics and device *energy-bookkeeping* cash; TOU grid settlement, carbon, curtailment, and battery cycle costs are applied here.
 
@@ -10,6 +12,7 @@ FMU supplies physics and device *energy-bookkeeping* cash; TOU grid settlement, 
 - \pi_{\mathrm{CO_2}}\Delta m
 - C^{CUT}
 - C^{\mathrm{deg}}
+- C^{\mathrm{su,caes}}
 \]
 
 | Term | Source physics | Price / formula | Default |
@@ -18,6 +21,7 @@ FMU supplies physics and device *energy-bookkeeping* cash; TOU grid settlement, 
 | Carbon \(\pi\Delta m\) | `p_thermal`, `p_grid` | \(\eta_{\mathrm{th}}E_{\mathrm{th}}+\eta_g E_{\mathrm{buy}}\), \(\pi=80\) CNY/t | on |
 | \(C^{CUT}\) | `p_curtailment`, `p_unserved` | \(\nu_c E_{\mathrm{curt}}+\nu_u E_{\mathrm{uns}}\) | 300 / 1000 CNY/MWh |
 | \(C^{\mathrm{deg}}\) | discharge from `p_battery` | Cui-style \(\psi(\delta)=a_0\delta^{2.03}\), \(a_0=\mathrm{Capex}/E_{\mathrm{life}}^{2.03}\), mid-life offset \(\rho=0.25\) | convex cumulative |
+| \(C^{\mathrm{su,caes}}\) | mode from `p_caes` | \(c_{\mathrm{su}}N_{\mathrm{evt}}\); idle↔on = 1, charge↔discharge = 2 | 8000 CNY / event |
 
 ## Battery degradation calibration (convex)
 

@@ -1,5 +1,7 @@
 # RL 奖励与成本配置
 
+文档更新：2026-08-14 12:30 (+08:00)
+
 > 硬约束（电网容量、火电爬坡、SOC/禁区等）不进入经济 reward；
 > GiveSafe 拒绝使用独立约束奖励；FMU 硬失败不进经济 replay。
 
@@ -138,20 +140,21 @@ $$
 
 这是经济奖励 $r_e$ 的加项，**不是** GiveSafe 的 $r_c$。
 
-对 `battery_soc`、`caes_gas_soc`、`caes_hot_soc`、`caes_cold_soc`：
+能量主状态（电池 + 气库）等权：
 
 $$
-e_{L1}=\sum_k w_k\,|\mathrm{SOC}_{k,T}-\mathrm{SOC}_{k,0}|
+e_{L1}=|\mathrm{SOC}_{\mathrm{bat},T}-\mathrm{SOC}_{\mathrm{bat},0}|
++|\mathrm{SOC}_{\mathrm{gas},T}-\mathrm{SOC}_{\mathrm{gas},0}|
 $$
 
-当前权重均为 $1.0$。仅在闸门全部通过（满 168 **物理**步、无失败等）且 $e_{L1}\le\tau$ 时：
+对齐崔文式 (29)：满 168 物理步、无失败、且 $e_{L1}\le\tau$ 时给固定加分；**不过门为 0，不再按 L1 乘 30 重罚**。电池充放不被环境改写。
 
 $$
 b_{\mathrm{SOC}}=b
 \quad\text{（否则 }0\text{）}
 $$
 
-当前：`mode=binary_bonus`，$b\approx 11.830$，$\tau=0.05$（`terminal_soc.tolerance`）。GiveSafe 拒绝次数**不**计入 168。
+当前：`mode=binary_bonus`，$b=15$，$\tau=0.06$；`fail_penalty_l1=0`；`battery_soc` 权重 \(1.0\)。GiveSafe 拒绝次数**不**计入 168。
 
 ##（3）GiveSafe 约束成本 $C^{\mathrm{c}}$
 > 标准 GiveSafe 要求在动作真正执行前就识别它不安全。论文也明确指出，其安全性依赖真实约束函数能够被准确表达；约束函数不准确会影响安全性和性能

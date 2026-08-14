@@ -162,3 +162,50 @@ def test_soc_recovery_horizon_boosts_coef_near_end():
             valid_episode_steps=s,
         )
     assert t["soc_recovery_scale"] > 1.5
+
+
+def test_cui_style_terminal_is_bonus_or_zero():
+    """对齐崔文：过门给加分，不过门为 0，不按 L1 重罚。"""
+    calc = RewardCalculator({
+        "episode_steps": 2,
+        "cost_reference": {"value": 1000.0},
+        "terminal_soc": {
+            "enabled": True,
+            "mode": "binary_bonus",
+            "bonus": 15.0,
+            "fail_penalty_l1": 0.0,
+            "tolerance": 0.06,
+            "weights": {
+                "battery_soc": 1.0, "caes_gas_soc": 1.0,
+                "caes_hot_soc": 0.35, "caes_cold_soc": 0.35,
+            },
+            "shaping": {"enabled": False},
+        },
+    })
+    calc.reset(_outputs())
+    calc.calculate(
+        _outputs(battery_soc=0.6, economic_cashflow_total=100.0),
+        is_final_step=False, episode_completed=False, no_failure=True,
+        valid_episode_steps=1,
+    )
+    _, t = calc.calculate(
+        _outputs(battery_soc=0.7, economic_cashflow_total=100.0),
+        is_final_step=True, episode_completed=True, no_failure=True,
+        valid_episode_steps=2,
+    )
+    assert t["terminal_soc_satisfied"] == 0.0
+    assert abs(t["terminal_soc_bonus"]) < 1e-9
+
+
+def test_recovery_horizons_zero_disables_battery():
+    from envs.power_system_env import recovery_horizons
+
+    h, b = recovery_horizons({
+        "soc_recovery_horizon": 40,
+        "soc_recovery_battery_horizon": 0,
+    })
+    assert h == 40
+    assert b == 0
+    h2, b2 = recovery_horizons({"soc_recovery_horizon": 40})
+    assert h2 == 40
+    assert b2 == 56
