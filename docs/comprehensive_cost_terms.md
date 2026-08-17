@@ -1,9 +1,9 @@
 # Comprehensive monetary terms (Scheme B)
 
-文档更新：2026-08-14 23:40 (+08:00)
+文档更新：2026-08-17 12:30 (+08:00)
 
 **Authoritative layer: Python** (`RewardCalculator`).  
-FMU supplies physics and device *energy-bookkeeping* cash; TOU grid settlement, carbon, curtailment, and battery cycle costs are applied here.
+FMU supplies physics and device *energy-bookkeeping* cash; TOU grid settlement, carbon, curtailment, battery cycle, CAES startup, and the Story A interchange contract are applied here.
 
 \[
 \Delta J^{\mathrm{gen}}
@@ -13,6 +13,7 @@ FMU supplies physics and device *energy-bookkeeping* cash; TOU grid settlement, 
 - C^{CUT}
 - C^{\mathrm{deg}}
 - C^{\mathrm{su,caes}}
+- C^{\mathrm{grid}}
 \]
 
 | Term | Source physics | Price / formula | Default |
@@ -21,7 +22,10 @@ FMU supplies physics and device *energy-bookkeeping* cash; TOU grid settlement, 
 | Carbon \(\pi\Delta m\) | `p_thermal`, `p_grid` | \(\eta_{\mathrm{th}}E_{\mathrm{th}}+\eta_g E_{\mathrm{buy}}\), \(\pi=80\) CNY/t | on |
 | \(C^{CUT}\) | `p_curtailment`, `p_unserved` | \(\nu_c E_{\mathrm{curt}}+\nu_u E_{\mathrm{uns}}\) | 300 / 1000 CNY/MWh |
 | \(C^{\mathrm{deg}}\) | discharge from `p_battery` | Cui-style \(\psi(\delta)=a_0\delta^{2.03}\), \(a_0=\mathrm{Capex}/E_{\mathrm{life}}^{2.03}\), mid-life offset \(\rho=0.25\) | convex cumulative |
-| \(C^{\mathrm{su,caes}}\) | mode from `p_caes` | \(c_{\mathrm{su}}N_{\mathrm{evt}}\); idle↔on = 1, charge↔discharge = 2 | 8000 CNY / event |
+| \(C^{\mathrm{su,caes}}\) | mode from `p_caes` | Cui 2024 Table 2: \(3.42\) USD/switch at 800 kW, \(\times P/P_{\mathrm{ref}}\times\) 7.2 CNY/USD | \(\approx 4617\) CNY / event |
+| \(C^{\mathrm{grid}}\) | `|p_grid|` | \(\nu\max(0,\|P\|-P_{\lim})\Delta t\), \(P_{\lim}=200\) MW | 600 CNY/MWh |
+
+FMU hard interchange remains ±500 MW (compiled, not settable). \(C^{\mathrm{grid}}\) is the Story A lever: 150 MW CAES blocks sit inside the 200–500 MW band that used to be free.
 
 ## Battery degradation calibration (convex)
 

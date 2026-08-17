@@ -284,6 +284,38 @@ class RewardCalculator:
             "carbon_e_grid_buy_mwh": float(e_buy),
         }
 
+    def _grid_contract_cost(
+        self, outputs: Mapping[str, float], *, dt_h: float
+    ) -> tuple[float, dict[str, float]]:
+        """Soft interchange contract: ν · max(0, |P_grid| − P_lim) · Δt [CNY].
+
+        FMU hard cap remains ±500 MW. This term is the Story A lever that
+        makes 150 MW CAES blocks first-order when net interchange would
+        otherwise sit in the 200–500 MW band.
+        """
+        cfg = self.config.get("grid_contract") or {}
+        if not bool(cfg.get("enabled", False)):
+            return 0.0, {
+                "grid_contract_enabled": 0.0,
+                "grid_contract_cost_cny": 0.0,
+                "grid_contract_excess_mwh": 0.0,
+            }
+        p_lim = float(cfg.get("p_lim_w", 2.0e8))
+        nu = float(cfg.get("nu_cny_per_mwh", 600.0))
+        key = str(cfg.get("grid_power_key", "p_grid"))
+        p = float(outputs.get(key, 0.0) or 0.0)
+        excess_w = max(0.0, abs(p) - max(p_lim, 0.0))
+        excess_mwh = self._power_mwh(excess_w, dt_h)
+        cost = nu * excess_mwh
+        return float(cost), {
+            "grid_contract_enabled": 1.0,
+            "grid_contract_cost_cny": float(cost),
+            "grid_contract_excess_mwh": float(excess_mwh),
+            "grid_contract_p_lim_w": float(p_lim),
+            "grid_contract_nu_cny_per_mwh": float(nu),
+            "grid_contract_p_abs_w": float(abs(p)),
+        }
+
     def _curtailment_cost(self, outputs: Mapping[str, float], *, dt_h: float) -> tuple[float, dict[str, float]]:
         """C^CUT: curtailment + unserved penalties [CNY] from FMU powers."""
         cfg = self.config.get("curtailment") or {}
@@ -424,8 +456,25 @@ class RewardCalculator:
             "battery_deg_e_cap_mwh": float(par["e_cap_mwh"]),
         }
 
+    @staticmethod
+    def caes_startup_unit_cny(cfg: Mapping[str, Any]) -> float:
+        """CNY per compressor/expander switch from Cui 2024 Table 2, capacity-scaled.
+
+        Default: 3.42 USD at 800 kW, times (P_cap / 800 kW) times USD/CNY.
+        Explicit ``c_su_cny`` overrides the scaled value (tests only).
+        """
+        if cfg.get("c_su_cny") is not None and str(cfg.get("c_su_cny")).strip() != "":
+            return float(cfg["c_su_cny"])
+        c_usd = float(cfg.get("c_su_usd_ref", 3.42))
+        p_ref = float(cfg.get("p_ref_w", 8.0e5))
+        p_cap = float(cfg.get("p_cap_w", 1.5e8))
+        fx = float(cfg.get("usd_cny", 7.2))
+        if p_ref <= 0.0:
+            return 0.0
+        return float(c_usd * (p_cap / p_ref) * fx)
+
     def _caes_startup_cost(self, outputs: Mapping[str, float]) -> tuple[float, dict[str, float]]:
-        """Cui-style compressor/expander start–stop charge [CNY]."""
+        """Cui 2024 start–stop charge [CNY], scaled from Table 2 (3.42 USD @ 800 kW)."""
         cfg = self.config.get("caes_startup") or {}
         if not bool(cfg.get("enabled", False)):
             return 0.0, {
@@ -441,17 +490,18 @@ class RewardCalculator:
         u = p / p_cap if p_cap > 0 else 0.0
         mode = int(mode_from_u(u))
         prev = self._prev_caes_mode
+        c_su = self.caes_startup_unit_cny(cfg)
         if prev is None:
             self._prev_caes_mode = mode
             return 0.0, {
                 "caes_startup_enabled": 1.0,
                 "caes_startup_cost_cny": 0.0,
                 "caes_startup_events": 0.0,
+                "caes_startup_c_su_cny": c_su,
                 "caes_mode": float(mode),
                 "caes_mode_prev": float(mode),
             }
         n_evt = startup_events(prev, mode)
-        c_su = float(cfg.get("c_su_cny", 8000.0))
         cost = c_su * float(n_evt)
         self._prev_caes_mode = mode
         return float(cost), {
@@ -459,6 +509,9 @@ class RewardCalculator:
             "caes_startup_cost_cny": float(cost),
             "caes_startup_events": float(n_evt),
             "caes_startup_c_su_cny": c_su,
+            "caes_startup_c_su_usd_ref": float(cfg.get("c_su_usd_ref", 3.42)),
+            "caes_startup_p_ref_w": float(cfg.get("p_ref_w", 8.0e5)),
+            "caes_startup_usd_cny": float(cfg.get("usd_cny", 7.2)),
             "caes_mode": float(mode),
             "caes_mode_prev": float(prev),
             "caes_mode_idle": float(int(CaesMode.IDLE)),
@@ -478,7 +531,7 @@ class RewardCalculator:
     ) -> tuple[float, dict[str, float]]:
         """奖励 = 综合货币增量 ΔJ_gen/C_ref + SOC shaping + 终端 bonus。
 
-        ΔJ_gen = ΔJ_cash − π·Δm − C^CUT − C^deg − C^su（Python 权威经济层）。
+        ΔJ_gen = ΔJ_cash − π·Δm − C^CUT − C^deg − C^su − C^grid（Python 权威经济层）。
         market_prices 若提供 buy/sell，则用分时电价替换 FMU 电网增量。
         """
         if self.previous_cashflow is None:
@@ -521,12 +574,14 @@ class RewardCalculator:
         cut_cost, cut_terms = self._curtailment_cost(outputs, dt_h=dt_h)
         deg_cost, deg_terms = self._battery_deg_cost(outputs, dt_h=dt_h)
         su_cost, su_terms = self._caes_startup_cost(outputs)
+        grid_cost, grid_terms = self._grid_contract_cost(outputs, dt_h=dt_h)
         generalized_delta = (
             float(cash_delta)
             - float(carbon_cost)
             - float(cut_cost)
             - float(deg_cost)
             - float(su_cost)
+            - float(grid_cost)
         )
         economic_reward = generalized_delta / reference
         raw_total_cost = -cash_delta
@@ -570,7 +625,8 @@ class RewardCalculator:
             "external_cost_cny": float(carbon_cost)
             + float(cut_cost)
             + float(deg_cost)
-            + float(su_cost),
+            + float(su_cost)
+            + float(grid_cost),
             **diag,
             **shaping_terms,
             **market_terms,
@@ -578,6 +634,7 @@ class RewardCalculator:
             **cut_terms,
             **deg_terms,
             **su_terms,
+            **grid_terms,
         }
         for name in ECONOMIC_COMPONENTS:
             suffix = name.removeprefix("economic_cashflow_")

@@ -1,6 +1,6 @@
 # Safe Market-GHTD3 / HMSD：论文对齐 + 本仓库创新
 
-文档更新：2026-08-14 23:40 (+08:00)
+文档更新：2026-08-17 12:30 (+08:00)
 
 对应主锚论文：*Collaborative scheduling optimization of hydrogen-enhanced integrated energy system via goal-conditioned hierarchical reinforcement learning*（Energy, **GHTD3 / Cui et al.**）。  
 本仓库方法名：**HMSD**（Hierarchical Market-aware Safe Dispatch）= Safe Market-GHTD3 实现栈。
@@ -18,7 +18,12 @@
 
 **当前主线（代码真源）**：`execution_mode: goal_conditioned`，`goal_dim: 2`，连续 `u_caes`，`low_reward: ext`（公平对比与 flat TD3 同目标），`goal_relabel_mode: her_mix`；**无** Hybrid residual teacher / `residual_mle` / Hybrid-PPO。配置：`src/config/ghtd3_config.yaml`；季节公平：`docs/cui_seasonal_min_protocol.md`。
 
-**对齐主方法（2026-08-14）**：`src/config/ablation/ghtd3_aligned.yaml`。低层压空是模式+幅值（`hybrid_caes`）；高层 \(g=(\Delta\mathrm{bat},\Delta\mathrm{gas},b^{\mathrm{wear}},b^{\mathrm{caes}})\)；\(J\) 含压空启停（`reward_config.yaml` / `caes_startup`）。二维连续三元组与轻罚-only W 作消融。禁止把高层写成 RR/LEB/SA。
+**Story A（2026-08-17）**：主线仍是二维 HMSD。\(J\) 增加联络线合同 \(C^{\mathrm{grid}}\)（±200 MW / 600 元/MWh）。`ghtd3_aligned.yaml` 夏天已证伪，不当主方法。禁止把高层写成 RR/LEB/SA。
+
+```bash
+python scripts/train_seasonal.py --method hmsd --season winter --episodes 200 --seed 0 --single-week
+python scripts/train_seasonal.py --method hmsd --season winter --episodes 200 --seed 0 --single-week --lock-caes
+```
 
 ---
 

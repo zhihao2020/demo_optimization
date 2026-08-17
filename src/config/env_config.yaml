@@ -37,6 +37,11 @@ forecast:
     - {name: ambient_temperature, path: data/resource_predicted/environment.csv, offset: 273.15, scale: 40.0}
     - {name: planned_load, path: data/resource_predicted/load.csv, offset: 0.0, scale: 3.0e8}
 
+# Story A lock-CAES counterfactual: force idle (u_caes=0), charge/discharge mask off.
+# Override with env OPTIMAL_DEMO_LOCK_CAES=1 without editing this file.
+caes:
+  locked: false
+
 # FMU modelDescription 没有为 input 给出 min/max；以下边界来自同一实例的 Modelica 参数和设备启机约束。
 # 三个值均为 FMU 原生无量纲调度指令，绝非 Python 侧的归一化或 W 到标幺的转换。
 actions:

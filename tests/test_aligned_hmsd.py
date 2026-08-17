@@ -89,6 +89,19 @@ def test_aligned_goal_box_is_4d():
     assert lay == {"wear": 2, "caes": 3}
 
 
+def test_cui2024_startup_scales_from_table2():
+    from envs.reward_calculator import RewardCalculator
+
+    unit = RewardCalculator.caes_startup_unit_cny({
+        "c_su_usd_ref": 3.42,
+        "p_ref_w": 8.0e5,
+        "p_cap_w": 1.5e8,
+        "usd_cny": 7.2,
+    })
+    assert abs(unit - 3.42 * (1.5e8 / 8.0e5) * 7.2) < 1e-6
+    assert abs(unit - 4617.0) < 1e-6
+
+
 def test_startup_enters_j_gen():
     cfg = {
         "episode_steps": 168,

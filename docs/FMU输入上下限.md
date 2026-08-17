@@ -1,5 +1,7 @@
 # FMU 调度输入上下限
 
+文档更新：2026-08-17 12:30 (+08:00)
+
 > Modelica 不对 `u_tp` / `u_battery` / `u_caes` 输入做限制；
 > 超出设备允许范围时由 Python 侧校验并报错。
 
@@ -80,4 +82,6 @@ PBS.P_act  = PBS.P_plan;
 待机：         u_caes = 0
 充电（压缩）：u_caes ∈ [0.86, 1]
 ```
+
+联络线 FMU 硬容量仍是 ±500 MW（`grid.P1/P2`，编译进 FMU，不可运行时改）。Story A 在 \(J\) 里另计 ±200 MW 合同罚（`reward_config.yaml` `grid_contract`），不改变物理潮流。
 

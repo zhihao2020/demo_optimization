@@ -16,6 +16,7 @@ from actions import (
     CaesMinimumRunController,
     DynamicFeasibleActionSet,
     FeasibilityOracle,
+    ModeMask,
     PhysicalFmuAction,
 )
 from actions.caes_u import mode_from_u, u_from_mode_mag
@@ -55,6 +56,19 @@ def recovery_horizons(market: dict[str, Any] | None) -> tuple[int, int]:
         bat_horizon = horizon + 16 if horizon > 0 else 0
     return horizon, max(bat_horizon, 0)
 from .termination_checker import TerminationChecker
+
+
+def caes_locked_from_config(config: dict[str, Any] | None) -> bool:
+    """Lock CAES idle if env ``OPTIMAL_DEMO_LOCK_CAES`` or ``caes.locked``."""
+    import os
+
+    raw = os.environ.get("OPTIMAL_DEMO_LOCK_CAES", "").strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    cfg = (config or {}).get("caes") or {}
+    return bool(cfg.get("locked", False))
 
 
 class PhysicalDictSpace(Dict):
@@ -205,6 +219,7 @@ class PowerSystemEnv(gym.Env):
         self.previous_thermal = 0.0  # 上一时刻火电功率
         self.initial_soc: dict[str, float] | None = None
         self.episode_failed = False
+        self.caes_locked = caes_locked_from_config(self.config)
         self._current_feasible: DynamicFeasibleActionSet | None = None
         self.failure_counts: dict[str, int] = {}
         self.failure_records: list[FailureRecord] = []
@@ -277,6 +292,10 @@ class PowerSystemEnv(gym.Env):
 
         mode = mode_from_u(action.u_caes)
         caes_mag = 0.0
+        if self.caes_locked:
+            mode = CaesMode.IDLE
+            caes_mag = 0.0
+            in_gas_window = False
         if in_gas_window:
             if e_gas > band and feasible.mode_mask.discharge:
                 mode = CaesMode.DISCHARGE
@@ -366,6 +385,9 @@ class PowerSystemEnv(gym.Env):
             step=self.step_index,
         )
         metadata = {**(feasible.metadata or {}), **state}
+        if getattr(self, "caes_locked", False):
+            mask = ModeMask(discharge=False, idle=True, charge=False)
+            metadata["caes_locked"] = True
         metadata["feasible_set_empty"] = (
             feasible.u_tp_low > feasible.u_tp_high + 1e-12
             or feasible.u_battery_low > feasible.u_battery_high + 1e-12
@@ -451,6 +473,12 @@ class PowerSystemEnv(gym.Env):
                 if isinstance(action, PhysicalFmuAction)
                 else physical_from_dict(action)
             )
+            if self.caes_locked:
+                physical = PhysicalFmuAction(
+                    u_tp=physical.u_tp,
+                    u_battery=physical.u_battery,
+                    u_caes=0.0,
+                )
             physical, recovery_applied = self._apply_terminal_soc_recovery(
                 physical, feasible
             )

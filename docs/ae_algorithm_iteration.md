@@ -1,13 +1,14 @@
 # 算法迭代协议（不能保证接收）
 
-文档更新：2026-08-14 22:40 (+08:00)
+文档更新：2026-08-17 12:30 (+08:00)
 
 Applied Energy **无法保证接收**。禁止为了「看起来更新」而堆模块。
 
 ## 一句话算法
 
-**HMSD-aligned（主方法）**：小时 \((m,\mu)\) + 高层库存/放电/压空开机定额 + \(J\) 含启停。配置 `ghtd3_aligned.yaml`。  
-**HMSD**：二维库存 + 连续 \(u_{\mathrm{caes}}\)（消融）。  
+**Story A 主方法**：二维 HMSD（`ghtd3_config.yaml`）+ \(J\) 含 ±200 MW 联络线合同罚。  
+**锁死压空对照**：`python scripts/train_seasonal.py ... --lock-caes`。  
+**HMSD-aligned**：4 维定额，夏天已证伪，不当主方法。  
 **HMSD-W / quota**：仅电池定额（消融）。
 
 轻罚-only 的 `runs/wear/*_s0`：冬 \(R=115.9\) 过关，夏 \(J\) 略升但电池吞吐 5581>4328，定额没卡住。保留作对照，不写进主方法。执行裁剪后重跑 `runs/quota/*_s0`。
@@ -29,4 +30,5 @@ Applied Energy **无法保证接收**。禁止为了「看起来更新」而堆�
 - Cui 式：`runs/cui_style/{winter,transition,summer}_s0`  
 - 轻罚 W（对照）：`runs/wear/{winter,summer}_s0`  
 - 执行裁剪 W（连续 \(u_{\mathrm{caes}}\) 消融）：`runs/quota/{winter,summer}_s0`  
-- **对齐主方法**：`runs/aligned/{winter,summer}_s0`（`ghtd3_aligned.yaml`）  
+- 对齐（对照）：`runs/aligned/{winter,summer}_s0`（`ghtd3_aligned.yaml`，不当主方法）  
+- Story A 锁死压空：`runs/seasonal/{season}/{method}_lockcaes_s0`  

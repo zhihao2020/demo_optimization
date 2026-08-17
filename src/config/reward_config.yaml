@@ -45,7 +45,7 @@ terminal_soc:
 gamma: 0.99
 episode_steps: 168
 # Scheme B (Python = authoritative economic layer):
-# ΔJ_gen = ΔJ_cash − π·Δm_CO2 − C^CUT − C^deg
+# ΔJ_gen = ΔJ_cash − π·Δm_CO2 − C^CUT − C^deg − C^su − C^grid
 # FMU: physics + device energy-bookkeeping cash. TOU grid / carbon / CUT / deg settled here.
 carbon:
   enabled: true
@@ -67,6 +67,15 @@ curtailment:
   curtail_power_key: p_curtailment
   unserved_power_key: p_unserved
   note: "FMU Bus powers; Cui-style C^CUT priced in Python"
+# Story A: contracted interchange in J (FMU hard cap stays ±500 MW; those
+# parameters are compiled into the FMU and are not settable). Excess |P_grid|
+# beyond ±200 MW is priced so 150 MW CAES blocks become first-order vs battery.
+grid_contract:
+  enabled: true
+  p_lim_w: 2.0e8
+  nu_cny_per_mwh: 600.0
+  grid_power_key: p_grid
+  note: "soft ±200 MW contract; 600 CNY/MWh on |P|-P_lim; FMU P1/P2 unchanged"
 battery_degradation:
   enabled: true
   # Cui-style convex cumulative discharge: ψ(δ)=a0·δ^p, C_t=ψ(δ_t)-ψ(δ_{t-1})
@@ -93,8 +102,13 @@ battery_degradation:
   note: "Cui D_BESS ψ(δ)=a0 δ^2.03; a0 from Capex/life; Modelica has no cycle cash"
 caes_startup:
   enabled: true
-  c_su_cny: 8000.0
+  # Cui et al., Appl. Energy 374 (2024) 123950, Table 2: c_su=3.42 USD / switch
+  # at P_com=P_tur=800 kW. Scale linearly to this plant's P_cap, then USD→CNY.
+  # Do not use an uncited lump-sum (the old 8000 CNY is retired).
+  c_su_usd_ref: 3.42
+  p_ref_w: 8.0e5
+  usd_cny: 7.2
   p_cap_w: 1.5e8
   caes_power_key: p_caes
-  note: "Cui-style compressor/expander start-stop; idle→on or on→idle = 1 event, charge↔discharge = 2"
-parameter_status: 'comprehensive J_gen cash+carbon+CUT+convex-deg+caes-su 2026-08-14'
+  note: "Cui 2024 Table 2 c_su=3.42 USD at 800 kW; c_su_cny=3.42*(P_cap/P_ref)*usd_cny"
+parameter_status: 'story-A J_gen +grid-contract-200MW 2026-08-17'

@@ -132,6 +132,11 @@ def main() -> None:
     p.add_argument("--train-weeks", type=str, default=None)
     p.add_argument("--eval-week", type=int, default=None)
     p.add_argument("--single-week", action="store_true")
+    p.add_argument(
+        "--lock-caes",
+        action="store_true",
+        help="Story A counterfactual: force u_caes=0 (idle) for train+eval",
+    )
     p.add_argument("--pso-iters", type=int, default=25)
     p.add_argument("--pso-particles", type=int, default=12)
     args = p.parse_args()
@@ -148,7 +153,8 @@ def main() -> None:
     eval_start = week_start_seconds(eval_week)
 
     steps = int(args.episodes) * EPISODE_HOURS if args.method in RL_METHODS else 0
-    run_dir = args.run_dir or f"runs/seasonal/{args.season}/{args.method}_s{args.seed}"
+    method_tag = f"{args.method}_lockcaes" if args.lock_caes else args.method
+    run_dir = args.run_dir or f"runs/seasonal/{args.season}/{method_tag}_s{args.seed}"
     run_dir = str(resolve_run_dir(run_dir))
     Path(run_dir).mkdir(parents=True, exist_ok=True)
     (Path(run_dir) / "trajectories").mkdir(parents=True, exist_ok=True)
@@ -165,6 +171,8 @@ def main() -> None:
         "episodes": args.episodes if args.method in RL_METHODS else None,
         "steps": steps or None,
         "seed": args.seed,
+        "lock_caes": bool(args.lock_caes),
+        "story": "A_grid_contract",
     }
     (Path(run_dir) / "protocol.json").write_text(json.dumps(protocol, indent=2), encoding="utf-8")
     print(json.dumps(protocol, indent=2), flush=True)
@@ -172,8 +180,14 @@ def main() -> None:
     os.environ["OPTIMAL_DEMO_SEASON"] = args.season
     os.environ["OPTIMAL_DEMO_TRAIN_WEEK_STARTS"] = ",".join(str(s) for s in train_starts)
     os.environ["OPTIMAL_DEMO_EVAL_EPISODE_START"] = str(eval_start)
-    os.environ["OPTIMAL_DEMO_JOB_ID"] = f"seasonal_{args.season}_{args.method}_s{args.seed}"
+    os.environ["OPTIMAL_DEMO_JOB_ID"] = (
+        f"seasonal_{args.season}_{method_tag}_s{args.seed}"
+    )
     os.environ["OPTIMAL_DEMO_FMU_ISOLATE"] = "1"
+    if args.lock_caes:
+        os.environ["OPTIMAL_DEMO_LOCK_CAES"] = "1"
+    else:
+        os.environ.pop("OPTIMAL_DEMO_LOCK_CAES", None)
     if args.single_week:
         os.environ["OPTIMAL_DEMO_FORCE_EPISODE_START"] = str(train_starts[0])
     else:
