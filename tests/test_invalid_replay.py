@@ -70,11 +70,12 @@ class FailingAdapter(FakeAdapter):
         super().__init__()
         self.mode = mode
 
-    def step(self, action):
+    def step(self, action, boundaries=None):
         """模拟一步并按 mode 注入失败或返回默认输出。
 
         Args:
             action: FMU 调度输入（部分模式未使用）。
+            boundaries: 可选边界字典（忽略）。
 
         Returns:
             正常时为 FakeAdapter 默认输出；nan/soc 模式修改 SOC。
@@ -82,6 +83,7 @@ class FailingAdapter(FakeAdapter):
         Raises:
             FmuSolverError: mode 为 "solver" 时。
         """
+        _ = boundaries
         self.step_calls += 1
         if self.mode == "solver":
             raise FmuSolverError("nonlinear solver failure")

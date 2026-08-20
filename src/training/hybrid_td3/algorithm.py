@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from .actor import HybridActor
 from .buffer import FilteredReplayBuffer
 from .critic import HybridCritic
+from training.hybrid_common.param_caes import infer_parameterized_caes
 
 
 class HybridTD3:
@@ -31,6 +32,7 @@ class HybridTD3:
         noise_clip: float = 0.5,
         q_clip: float = 200.0,
         device: str | None = None,
+        parameterized_caes: bool = True,
     ):
         """初始化 Actor/Critic、目标网络与优化器。
 
@@ -54,7 +56,12 @@ class HybridTD3:
         self.target_noise = target_noise
         self.noise_clip = noise_clip
         self.q_clip = float(q_clip)
-        self.actor = HybridActor(obs_dim).to(self.device)
+        self.parameterized_caes = bool(parameterized_caes)
+        self.obs_dim = int(obs_dim)
+        self._actor_lr = float(actor_lr)
+        self.actor = HybridActor(obs_dim, parameterized_caes=self.parameterized_caes).to(
+            self.device
+        )
         self.actor_target = deepcopy(self.actor).to(self.device)
         self.critic = HybridCritic(obs_dim).to(self.device)
         self.critic_target = deepcopy(self.critic).to(self.device)
@@ -133,8 +140,19 @@ class HybridTD3:
                 torch.as_tensor(batch["next_u_bat_low"], device=self.device),
                 torch.as_tensor(batch["next_u_bat_high"], device=self.device),
             )
-            from actions.caes_u import project_u_caes_torch
-            n_caes = project_u_caes_torch(torch.clamp(next_act["u_caes"] + noise_caes, -1.0, 1.0))
+            from actions.caes_u import (
+                apply_mode_mask_to_u_torch,
+                perturb_u_caes_keep_mode,
+                project_u_caes_torch,
+            )
+
+            if self.parameterized_caes:
+                n_caes = perturb_u_caes_keep_mode(next_act["u_caes"], noise_caes)
+            else:
+                n_caes = project_u_caes_torch(
+                    torch.clamp(next_act["u_caes"] + noise_caes, -1.0, 1.0)
+                )
+            n_caes = apply_mode_mask_to_u_torch(n_caes, next_mask)
             q1_t, q2_t = self.critic_target(next_obs, n_tp, n_bat, n_caes)
             # 防止目标 Q 爆炸（此前训练曾出现 |Q|~1e10）
             q_t = torch.min(q1_t, q2_t).clamp(-self.q_clip, self.q_clip)
@@ -210,17 +228,28 @@ class HybridTD3:
                 "actor_target": self.actor_target.state_dict(),
                 "critic_target": self.critic_target.state_dict(),
                 "total_it": self.total_it,
+                "parameterized_caes": self.parameterized_caes,
             },
             path,
         )
 
     def load(self, path: str | Path, *, reset_critic: bool = False) -> None:
-        data = torch.load(path, map_location=self.device)
-        self.actor.load_state_dict(data["actor"])
+        data = torch.load(path, map_location=self.device, weights_only=False)
+        actor_state = data["actor"]
+        flag = infer_parameterized_caes(
+            actor_state,
+            explicit=data.get("parameterized_caes"),
+        )
+        if flag != self.parameterized_caes:
+            self.parameterized_caes = flag
+            self.actor = HybridActor(self.obs_dim, parameterized_caes=flag).to(self.device)
+            self.actor_target = deepcopy(self.actor).to(self.device)
+            self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=self._actor_lr)
+        self.actor.load_state_dict(actor_state)
         self.actor_target.load_state_dict(data.get("actor_target", data["actor"]))
         if reset_critic:
             # Critic 发散时只保留 actor，重估 Q，避免被坏 value 锁死
-            self.critic = HybridCritic(self.actor.encoder[0].in_features).to(self.device)
+            self.critic = HybridCritic(self.obs_dim).to(self.device)
             self.critic_target = deepcopy(self.critic).to(self.device)
             self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=self.critic_opt.param_groups[0]["lr"])
             self.total_it = 0

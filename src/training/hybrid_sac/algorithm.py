@@ -10,12 +10,13 @@ import torch
 import torch.nn.functional as F
 
 from replay import HybridGiveSafeReplayBuffer
+from training.hybrid_common.param_caes import infer_parameterized_caes
 from training.hybrid_common.stochastic_actor import HybridStochasticActor
 from training.hybrid_td3.critic import HybridCritic
 
 
 class HybridSAC:
-    """SAC：最大熵 RL，三维连续物理动作。
+    """SAC：最大熵 RL。压空默认是 (mode, mag) 参数化动作，不是 tanh 投影。
 
     Applied Energy 迭代加固：自动温度 ``alpha`` 裁剪，避免过渡季/夏季
     出现 alpha→1e17、critic_loss→inf 的 fail-fast 崩溃。
@@ -36,18 +37,26 @@ class HybridSAC:
         alpha_max: float = 10.0,
         q_clip: float = 200.0,
         skip_nonfinite_update: bool = True,
+        parameterized_caes: bool = True,
     ):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.gamma = gamma
         self.tau = tau
-        self.target_entropy = float(target_entropy if target_entropy is not None else -3.0)
+        if target_entropy is None:
+            target_entropy = -4.0 if parameterized_caes else -3.0
+        self.target_entropy = float(target_entropy)
         self.alpha_min = float(alpha_min)
         self.alpha_max = float(alpha_max)
         self.log_alpha_min = float(np.log(self.alpha_min))
         self.log_alpha_max = float(np.log(self.alpha_max))
         self.q_clip = float(q_clip)
         self.skip_nonfinite_update = bool(skip_nonfinite_update)
-        self.actor = HybridStochasticActor(obs_dim).to(self.device)
+        self.parameterized_caes = bool(parameterized_caes)
+        self.obs_dim = int(obs_dim)
+        self._actor_lr = float(actor_lr)
+        self.actor = HybridStochasticActor(
+            obs_dim, parameterized_caes=self.parameterized_caes
+        ).to(self.device)
         self.critic = HybridCritic(obs_dim).to(self.device)
         self.critic_target = deepcopy(self.critic).to(self.device)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=actor_lr)
@@ -210,13 +219,26 @@ class HybridSAC:
                 "critic_target": self.critic_target.state_dict(),
                 "log_alpha": self.log_alpha.detach().cpu(),
                 "total_it": self.total_it,
+                "parameterized_caes": self.parameterized_caes,
             },
             path,
         )
 
     def load(self, path: str | Path) -> None:
-        data = torch.load(path, map_location=self.device)
-        self.actor.load_state_dict(data["actor"])
+        data = torch.load(path, map_location=self.device, weights_only=False)
+        actor_state = data["actor"]
+        flag = infer_parameterized_caes(
+            actor_state,
+            explicit=data.get("parameterized_caes"),
+        )
+        if flag != self.parameterized_caes:
+            self.parameterized_caes = flag
+            self.target_entropy = -4.0 if flag else -3.0
+            self.actor = HybridStochasticActor(
+                self.obs_dim, parameterized_caes=flag
+            ).to(self.device)
+            self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=self._actor_lr)
+        self.actor.load_state_dict(actor_state)
         self.critic.load_state_dict(data["critic"])
         self.critic_target.load_state_dict(data["critic_target"])
         self.log_alpha = data["log_alpha"].to(self.device).clone().detach().requires_grad_(True)

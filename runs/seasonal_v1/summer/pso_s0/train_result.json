@@ -1,0 +1,134 @@
+{
+  "episode_reward": 55.88990980085086,
+  "sum_delta_j_gen": 9386056.890878895,
+  "net_cashflow_j": 9437618.272573864,
+  "raw_total_cost": -9437618.272573864,
+  "economic_reward": 59.95954233891269,
+  "market_buy_cost": 523814.4571146435,
+  "market_sell_revenue": 2150058.9616356967,
+  "market_energy_buy_mwh": 796.8357747933542,
+  "market_energy_sell_mwh": 11466.981128723713,
+  "curtailment_mwh": 0.0,
+  "unserved_mwh": 0.0,
+  "thermal_mwh": 7926.877288520336,
+  "battery_throughput_mwh": 1704.0345788002014,
+  "caes_throughput_mwh": 0.0,
+  "terminal_soc_satisfied": false,
+  "terminal_soc_l1": 0.417254426553326,
+  "terminal_soc_l1_full": 24.792005066189994,
+  "terminal_soc": {
+    "battery_soc": 0.14895985021311153,
+    "caes_gas_soc": 0.9162142767664375,
+    "caes_hot_soc": 0.5,
+    "caes_cold_soc": 0.5
+  },
+  "fmu_failure_count": 0,
+  "invalid_transition_count": 1,
+  "wall_s": 191.40314809978008,
+  "fmu_steps": 117,
+  "steps": 118,
+  "valid_steps": 117,
+  "fitness": 9268194.16955123,
+  "theta": [
+    0.3941885848632541,
+    0.8637061821025083,
+    0.32939920706970566,
+    0.0,
+    0.3,
+    0.9739794291094896
+  ],
+  "method": "pso",
+  "wall_s_search": 190.2465099003166,
+  "fmu_steps_search": 14444,
+  "history": [
+    {
+      "iter": 0,
+      "gbest_f": 3066320.432230526
+    },
+    {
+      "iter": 1,
+      "gbest_f": 3066320.432230526
+    },
+    {
+      "iter": 2,
+      "gbest_f": 3066320.432230526
+    },
+    {
+      "iter": 3,
+      "gbest_f": 3066320.432230526
+    },
+    {
+      "iter": 4,
+      "gbest_f": 3066320.432230526
+    },
+    {
+      "iter": 5,
+      "gbest_f": 3066320.432230526
+    },
+    {
+      "iter": 6,
+      "gbest_f": 3066320.432230526
+    },
+    {
+      "iter": 7,
+      "gbest_f": 3074926.7320076306
+    },
+    {
+      "iter": 8,
+      "gbest_f": 3074926.7320076306
+    },
+    {
+      "iter": 9,
+      "gbest_f": 3089524.674408984
+    },
+    {
+      "iter": 10,
+      "gbest_f": 3089524.674408984
+    },
+    {
+      "iter": 11,
+      "gbest_f": 3089524.674408984
+    },
+    {
+      "iter": 12,
+      "gbest_f": 3089524.674408984
+    },
+    {
+      "iter": 13,
+      "gbest_f": 3099572.312158269
+    },
+    {
+      "iter": 14,
+      "gbest_f": 3117064.1919245357
+    },
+    {
+      "iter": 15,
+      "gbest_f": 4201559.702201617
+    },
+    {
+      "iter": 16,
+      "gbest_f": 8810729.773217393
+    },
+    {
+      "iter": 17,
+      "gbest_f": 8810729.773217393
+    },
+    {
+      "iter": 18,
+      "gbest_f": 9268043.890455497
+    },
+    {
+      "iter": 19,
+      "gbest_f": 9268194.16955123
+    }
+  ],
+  "theta_best": [
+    0.3941885848632541,
+    0.8637061821025083,
+    0.32939920706970566,
+    0.0,
+    0.3,
+    0.9739794291094896
+  ],
+  "status": "completed"
+}

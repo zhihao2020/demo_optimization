@@ -1,0 +1,129 @@
+# 默认：FMU economic_cashflow_* 差分。market.available=true 时电网项改由分时电价 Python 结算替换。
+economic_source: Modelica_FMU_plus_optional_market_grid
+cost_reference:
+  value: 156539.83544146415
+  unit: CNY_per_step
+  source: rule_controller_seasonal_p95
+  computed_at: '2026-07-14'
+  trajectory: scripts/calibrate_reward_seasonal.py
+  n_samples: 1008
+  mean_week_raw_cost: 12345799.377755053
+  previous_value: 96199.12664345714
+terminal_soc:
+  enabled: true
+  period_hours: 168
+  mode: binary_bonus
+  bonus: 15.0
+  # 对齐崔文式 (29)：过门给固定加分，不过门为 0，不再按 L1 重罚
+  fail_penalty_l1: 0.0
+  tolerance: 0.06
+  quadratic_weight: 1.0
+  # 能量库存：电池 + 气库；热/冷罐见 full L1 诊断
+  primary_keys:
+    - battery_soc
+    - caes_gas_soc
+  use_full_l1_for_pass: false
+  weights:
+    # 对齐崔文：电池与气库等权绝对值之和
+    battery_soc: 1.0
+    caes_gas_soc: 1.0
+    caes_hot_soc: 0.35
+    caes_cold_soc: 0.35
+  require_complete_episode: true
+  require_no_failure: true
+  tolerance_strict: 0.041607738312361975
+  tolerance_loose: 0.1
+  shaping:
+    enabled: true
+    mode: potential
+    coef: 5.0
+    absolute_coef: 0.08
+    # 年末硬门回收窗（相对 episode 末）；周 episode 时即周末尾
+    recovery_horizon_steps: 40
+    recovery_coef_scale: 5.0
+    recovery_absolute_scale: 4.0
+    # 连续年：每个日历周末软锚（不触发 terminal bonus，只抬高 shaping）
+    weekend_soft_anchor: true
+    weekend_horizon_steps: 24
+    weekend_coef_scale: 2.0
+    weekend_absolute_scale: 2.0
+gamma: 0.99
+episode_steps: 168
+# Scheme B (Python = authoritative economic layer):
+# ΔJ_gen = ΔJ_cash − C^carbon − C^CUT − C^deg − C^su − C^grid
+# FMU: physics + device energy-bookkeeping cash. TOU grid / carbon / CUT / deg settled here.
+carbon:
+  enabled: true
+  # flat_tax: 逐步 π·Δm（旧行为；单元测试默认）
+  # intensity_benchmark: 火电按强度基准累积配额，年末买卖结算；外购电仍逐步计税
+  mode: intensity_benchmark
+  price_cny_per_t: 80.0
+  price_source: "China National ETS CEA secondary market; operating point 80 CNY/tCO2e"
+  price_note: "ICAP 2025 avg ~70.78; 2024 YE close ~97–98; range ~69–106 in 2024"
+  eta_thermal_t_per_mwh: 0.85
+  eta_grid_t_per_mwh: 0.5703
+  # 基准强度 β < η_th → 典型煤机略缺配额，激励降碳；盈余可卖
+  beta_t_per_mwh: 0.82
+  beta_source: "sector intensity benchmark proxy; set ~4% below plant η_th"
+  settle_at_episode_end: true
+  # 头寸归一化尺度 [t]：观测用 tanh(Q / q_scale)
+  q_norm_scale_t: 1.0e5
+  eta_thermal_source: "coal-power CO2 intensity proxy ~0.85 t/MWh"
+  eta_grid_source: "China grid average EF proxy 0.5703 t/MWh"
+  thermal_power_key: p_thermal
+  grid_power_key: p_grid
+  count_grid_import_only: true
+  # 外购电间接排放：不进配额，仍按 flat 逐步计税
+  grid_in_quota: false
+  double_count_note: "external_ETS_cost_not_fuel_rescaling"
+curtailment:
+  enabled: true
+  nu_curt_cny_per_mwh: 300.0
+  nu_uns_cny_per_mwh: 1000.0
+  curtail_power_key: p_curtailment
+  unserved_power_key: p_unserved
+  note: "FMU Bus powers; Cui-style C^CUT priced in Python"
+# Story A: contracted interchange in J (FMU hard cap stays ±500 MW; those
+# parameters are compiled into the FMU and are not settable). Excess |P_grid|
+# beyond ±200 MW is priced so 150 MW CAES blocks become first-order vs battery.
+grid_contract:
+  enabled: true
+  p_lim_w: 2.0e8
+  nu_cny_per_mwh: 600.0
+  grid_power_key: p_grid
+  note: "soft ±200 MW contract; 600 CNY/MWh on |P|-P_lim; FMU P1/P2 unchanged"
+battery_degradation:
+  enabled: true
+  # Cui-style convex cumulative discharge: ψ(δ)=a0·δ^p, C_t=ψ(δ_t)-ψ(δ_{t-1})
+  # δ = cumulative discharge energy [MWh]. Discharge only (not charge).
+  mode: convex_cumulative  # or linear_throughput (legacy)
+  power_exp: 2.03
+  # Plant battery energy capacity [MWh] (twin default ~400 MWh)
+  e_cap_mwh: 400.0
+  # Lifetime economics for a0 calibration: ψ(E_life)=Capex_total
+  # Capex_total = capex_cny_per_kwh * e_cap_mwh * 1000
+  # E_life = n_cycles * dod_eq * e_cap_mwh
+  # a0 = Capex_total / E_life^power_exp
+  capex_cny_per_kwh: 1000.0
+  n_cycles: 5000.0
+  dod_eq: 0.8
+  # 连续年 / 长 episode：从 δ=0 累积。短周若需非零边际成本可改回 0.25。
+  offset_frac_of_life: 0.0
+  # Optional hard override of a0 [CNY / (MWh)^p]:
+  # a0: null
+  battery_power_key: p_battery
+  # Sign: discharge contributes when p_battery < 0 (Python academic / export convention)
+  discharge_negative_power: true
+  note: "Cui D_BESS ψ(δ)=a0 δ^2.03; annual cumulative δ; offset=0 for year episodes"
+caes_startup:
+  enabled: true
+  # Cui et al., Appl. Energy 374 (2024) 123950, Table 2: c_su=3.42 USD / switch
+  # at P_com=P_tur=800 kW. Scale linearly to this plant's P_cap, then USD→CNY.
+  # Do not use an uncited lump-sum (the old 8000 CNY is retired).
+  c_su_usd_ref: 3.42
+  p_ref_w: 8.0e5
+  usd_cny: 7.2
+  p_cap_w: 1.5e8
+  caes_power_key: p_caes
+  note: "Cui 2024 Table 2 c_su=3.42 USD at 800 kW; c_su_cny=3.42*(P_cap/P_ref)*usd_cny"
+parameter_status: 'annual-episode intensity-benchmark + weekend-soft-anchor 2026-08-17'

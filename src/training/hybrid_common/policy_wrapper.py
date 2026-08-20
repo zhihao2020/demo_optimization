@@ -6,11 +6,12 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from actions.caes_u import clamp_u_caes_to_spec, physical_dict, u_from_mode_mag
 from actions import CaesMode
-from actions.caes_u import physical_dict, u_from_mode_mag
 from envs.failures import FeasibleSetEmpty
 from envs.power_system_env import PowerSystemEnv
-from safety import GiveSafeController
+from safety import GiveSafeController, NoSafeActionFoundError
+from safety.soft_constraint_shell import SoftConstraintShell, conservative_recover_action
 
 
 class SupportsSelectAction(Protocol):
@@ -69,11 +70,12 @@ class RandomFeasiblePolicy:
         u_tp = float(np.random.uniform(feasible.u_tp_low, feasible.u_tp_high))
         u_bat = float(np.random.uniform(feasible.u_battery_low, feasible.u_battery_high))
         mag = 0.0 if mode == CaesMode.IDLE else float(np.random.uniform(0.0, 1.0))
-        return physical_dict(float(u_tp), float(u_bat), u_from_mode_mag(mode, mag))
+        u_caes, _ = clamp_u_caes_to_spec(u_from_mode_mag(mode, mag), feasible)
+        return physical_dict(float(u_tp), float(u_bat), float(u_caes))
 
 
 class HybridGiveSafePolicyWrapper:
-    """GiveSafe 评估策略包装(HybridGiveSafePolicyWrapper)：经 GiveSafeController 采样，绝不调用规则 fallback。"""
+    """GiveSafe 评估策略包装：经 GiveSafeController 采样；默认绝不规则 fallback。"""
 
     def __init__(
         self,
@@ -81,6 +83,9 @@ class HybridGiveSafePolicyWrapper:
         env: PowerSystemEnv,
         controller: GiveSafeController,
         deterministic: bool = True,
+        *,
+        soft_shell: bool = False,
+        shell: SoftConstraintShell | None = None,
     ):
         """组装评估用安全策略环。
 
@@ -89,11 +94,15 @@ class HybridGiveSafePolicyWrapper:
             env: 评估环境。
             controller: GiveSafe 安全控制器。
             deterministic: 默认是否确定性动作。
+            soft_shell: 为 True 时，NoSafeAction / 空可行域返回保守动作（非 GiveSafe fallback）。
+            shell: 可选共享外壳实例（用于计数）。
         """
         self.agent = agent
         self.env = env
         self.controller = controller
         self.deterministic = deterministic
+        self.soft_shell = bool(soft_shell)
+        self.shell = shell if shell is not None else SoftConstraintShell()
 
     def predict(self, obs, deterministic: bool | None = None):
         """通过 GiveSafe 环选择安全动作并返回。
@@ -104,6 +113,9 @@ class HybridGiveSafePolicyWrapper:
 
         Returns:
             经 GiveSafe 验证的安全混合动作字典。
+
+        Raises:
+            NoSafeActionFoundError / FeasibleSetEmpty: ``soft_shell=False`` 时原样抛出。
         """
         det = self.deterministic if deterministic is None else deterministic
 
@@ -112,13 +124,18 @@ class HybridGiveSafePolicyWrapper:
             feasible = self.env.get_feasible_action_spec()
             return self.agent.select_action(obs, feasible, deterministic=det)
 
-        gs = self.controller.select_safe_action(
-            self.env.last_outputs,
-            self.env.previous_thermal,
-            propose,
-            deterministic=det,
-        )
-        return gs.safe_action
+        try:
+            gs = self.controller.select_safe_action(
+                self.env.last_outputs,
+                self.env.previous_thermal,
+                propose,
+                deterministic=det,
+            )
+            return gs.safe_action
+        except (NoSafeActionFoundError, FeasibleSetEmpty):
+            if not self.soft_shell:
+                raise
+            return self.shell.recover(self.env)
 
     def on_episode_reset(self, info: dict[str, Any]) -> None:
         """回合重置时通知影子 FMU 校验器。
@@ -129,6 +146,8 @@ class HybridGiveSafePolicyWrapper:
         Returns:
             无。
         """
+        if self.soft_shell:
+            self.shell.reset_episode()
         if self.controller.shadow is not None:
             self.controller.shadow.on_episode_reset(float(info.get("time", 0.0) or 0.0))
 
@@ -150,3 +169,14 @@ class HybridGiveSafePolicyWrapper:
                 "u_caes": float(info["decoded_u_caes"]),
             }
         )
+
+
+# 别名：计划中的 SoftShellGiveSafePolicy
+SoftShellGiveSafePolicy = HybridGiveSafePolicyWrapper
+
+
+def recover_or_raise(env: PowerSystemEnv, soft_shell: bool) -> dict[str, np.ndarray]:
+    """``soft_shell`` 打开时返回保守动作，否则抛出 ``FeasibleSetEmpty``。"""
+    if soft_shell:
+        return conservative_recover_action(env)
+    raise FeasibleSetEmpty("无可选 CAES 模式且 soft_shell=false")

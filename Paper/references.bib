@@ -197,7 +197,7 @@
   note    = {VPP multi-market participation}
 }
 
-% Policy / tariffs (China)
+% Policy / tariffs / ETS (China) — cite with claim level from docs/parameter_evidence.md
 @misc{ndrc2021tou,
   author = {{National Development and Reform Commission of China}},
   title  = {Notice on further improving the time-of-use electricity price mechanism},
@@ -209,19 +209,22 @@
   author = {{Shandong Provincial Development and Reform Commission}},
   title  = {Notice on further optimizing industrial and commercial time-of-use electricity prices},
   year   = {2023},
-  note   = {Lu Fa Gai Price [2023] No. 914}
+  note   = {Lu Fa Gai Price [2023] No. 914; TOU mechanism and band ratios, not absolute delivered tariffs}
 }
 
 @misc{shandong2026tou,
-  author = {{State Grid Shandong Electric Power Company}},
-  title  = {Announcement of industrial and commercial time-of-use electricity prices for 2026},
-  year   = {2025}
+  author       = {{State Grid Shandong Electric Power Company}},
+  title        = {Announcement of industrial and commercial time-of-use electricity prices for 2026},
+  year         = {2025},
+  howpublished = {\url{https://jndpc.jinan.gov.cn/col2191/art/2025/art_2191_4789557.html}},
+  note         = {Republished via Jinan DRC; supports seasonal TOU windows; accessed 2026-08-20}
 }
 
 @misc{ndrc2023td,
   author = {{National Development and Reform Commission of China}},
   title  = {Provincial grid transmission and distribution tariffs for the fourth regulatory cycle},
-  year   = {2023}
+  year   = {2023},
+  note   = {Shandong 110~kV energy charge example 0.106 CNY/kWh used in constructive TOU build}
 }
 
 @misc{icap2025chinaets,
@@ -229,7 +232,65 @@
   title        = {{China National ETS} factsheet},
   year         = {2025},
   howpublished = {\url{https://icapcarbonaction.com/en/ets/china-national-ets}},
-  note         = {Secondary-market average allowance price (2025) reported as about 70.78 CNY/tCO2e; accessed 2026}
+  note         = {Secondary-market average allowance price (2025) about 70.78 CNY/tCO2e; sensitivity / legacy OP only; accessed 2026}
+}
+
+@misc{mee2025etsnews,
+  author       = {{Ministry of Ecology and Environment of China}},
+  title        = {2024 national carbon emission allowance trading and compliance completed smoothly},
+  year         = {2025},
+  howpublished = {\url{https://www.mee.gov.cn/ywgz/ydqhbh/syqhbh/202501/t20250105_1099975.shtml}},
+  note         = {2024 YE closing price 97.49 CNY/t; accessed 2026-08-20}
+}
+
+@misc{mee2025etsreport,
+  author       = {{Ministry of Ecology and Environment of China}},
+  title        = {National Carbon Market Development Report (2025)},
+  year         = {2025},
+  howpublished = {\url{https://www.mee.gov.cn/ywgz/ydqhbh/wsqtkz/202509/W020250927515316322073.pdf}},
+  note         = {2024 composite close band 69--106 CNY/t; peak 105.65; YE close 97.49; accessed 2026-08-20}
+}
+
+@misc{mee2024quota,
+  author       = {{Ministry of Ecology and Environment of China}},
+  title        = {2023 and 2024 national ETS power-sector allowance total and allocation plan},
+  year         = {2024},
+  howpublished = {\url{https://www.mee.gov.cn/xxgk2018/xxgk/xxgk03/202410/W020241021392230468687.pdf}},
+  note         = {Class II conventional coal generation benchmark 2024: 0.8049 tCO2/MWh; 150~MW unit in this class; accessed 2026-08-20}
+}
+
+@misc{mee2023ef,
+  author       = {{Ministry of Ecology and Environment of China} and {National Bureau of Statistics of China}},
+  title        = {Announcement on 2023 electricity carbon dioxide emission factors},
+  year         = {2025},
+  howpublished = {\url{https://www.mee.gov.cn/xxgk2018/xxgk/xxgk01/202512/t20251231_1139517.html}},
+  note         = {Shandong location-based average factor 0.6191 kgCO2/kWh; accessed 2026-08-20}
+}
+
+@misc{mee2022gridef,
+  author       = {{Ministry of Ecology and Environment of China}},
+  title        = {Notice on GHG reporting management for power-sector enterprises, 2023--2025},
+  year         = {2023},
+  howpublished = {\url{https://www.mee.gov.cn/xxgk2018/xxgk/xxgk06/202302/t20230207_1015569.html}},
+  note         = {Legacy national grid average EF 0.5703 tCO2/MWh for 2022; superseded for Shandong location-based book}
+}
+
+@misc{worldbank2024usdnyc,
+  author = {{World Bank}},
+  title  = {Official exchange rate ({LCU} per {US\$}, period average) --- {China} 2024},
+  year   = {2024},
+  note   = {Indicator PA.NUS.FCRF; ~7.2 CNY/USD used to convert Cui 2024 USD costs}
+}
+
+@article{schroeder2015voll,
+  author  = {Schr{\"o}der, Thomas and Kuckshinrichs, Wilhelm},
+  title   = {Value of Lost Load: An Efficient Economic Indicator for Power Supply Security? A Literature Review},
+  journal = {Frontiers in Energy Research},
+  volume  = {3},
+  pages   = {55},
+  year    = {2015},
+  doi     = {10.3389/fenrg.2015.00055},
+  note    = {VOLL literature range; our 1000 CNY/MWh is a conservative scenario lower bound, not a national regulated VOLL}
 }
 
 % Cross-domain data

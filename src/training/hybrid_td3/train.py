@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 import shutil
 from typing import Any
@@ -19,6 +20,7 @@ from envs.reward_calculator import IncompleteRewardConfigError
 from fmu import FmuAdapter
 from replay import HybridGiveSafeReplayBuffer
 from safety import GiveSafeController, NoSafeActionFoundError, ShadowFmuValidator, load_givesafe_config
+from safety.soft_constraint_shell import SoftConstraintShell
 from training.episode_starts import eval_start_seconds, training_start_seconds
 from training.evaluate_td3 import evaluate_annual_policy, evaluate_policy
 from controllers.price_aware_rule import PriceAwareRuleController
@@ -27,6 +29,13 @@ from controllers.rule_based_controller import RuleBasedController
 from .algorithm import HybridTD3
 from .buffer import SafetyDataset
 from .givesafe_collector import GiveSafeTransitionCollector
+
+
+def _soft_shell_enabled(explicit: bool | None = None) -> bool:
+    """CLI/显式参数优先；否则读环境变量 ``SOFT_SHELL=1``。"""
+    if explicit is not None:
+        return bool(explicit)
+    return os.environ.get("SOFT_SHELL", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 class RandomFeasiblePolicy:
@@ -85,9 +94,17 @@ class RandomFeasiblePolicy:
 
 
 class HybridPolicyWrapper:
-    """评估用：经 GiveSafeController 采样；绝不调用规则 fallback。"""
+    """评估用：经 GiveSafeController 采样；默认硬协议，可选 soft_shell 保守恢复。"""
 
-    def __init__(self, agent: HybridTD3, env: PowerSystemEnv, controller: GiveSafeController, deterministic: bool = True):
+    def __init__(
+        self,
+        agent: HybridTD3,
+        env: PowerSystemEnv,
+        controller: GiveSafeController,
+        deterministic: bool = True,
+        *,
+        soft_shell: bool = False,
+    ):
         """组装 TD3 评估用 GiveSafe 包装。
 
         Args:
@@ -95,11 +112,14 @@ class HybridPolicyWrapper:
             env: 评估环境。
             controller: GiveSafe 控制器。
             deterministic: 默认确定性动作。
+            soft_shell: True 时 NoSafeAction 退回保守动作（非 use_fallback）。
         """
         self.agent = agent
         self.env = env
         self.controller = controller
         self.deterministic = deterministic
+        self.soft_shell = bool(soft_shell)
+        self.shell = SoftConstraintShell() if self.soft_shell else None
 
     def predict(self, obs, deterministic: bool | None = None):
         """经 GiveSafe 选择安全动作。
@@ -126,20 +146,10 @@ class HybridPolicyWrapper:
                 deterministic=det,
             )
             return gs.safe_action
-        except NoSafeActionFoundError:
-            # 评估不中断：退回当前可行域内的保守动作（满发+电池0+IDLE），绝非训练 fallback
-            feasible = self.env.get_feasible_action_spec()
-            u_bat = 0.0
-            if not (feasible.u_battery_low <= 0.0 <= feasible.u_battery_high):
-                u_bat = 0.5 * (feasible.u_battery_low + feasible.u_battery_high)
-            mode = int(CaesMode.IDLE) if feasible.mode_mask.idle else (
-                int(CaesMode.DISCHARGE) if feasible.mode_mask.discharge else int(CaesMode.CHARGE)
-            )
-            return {
-                "u_tp": np.asarray([float(feasible.u_tp_high)], dtype=np.float32),
-                "u_battery": np.asarray([float(u_bat)], dtype=np.float32),
-                "u_caes": np.asarray([0.0], dtype=np.float32),
-            }
+        except (NoSafeActionFoundError, FeasibleSetEmpty):
+            if not self.soft_shell or self.shell is None:
+                raise
+            return self.shell.recover(self.env)
 
     def on_episode_reset(self, info: dict[str, Any]) -> None:
         """回合重置时重置影子 FMU。
@@ -319,6 +329,7 @@ def run_hybrid_training(
     resume_from: str | Path | None = None,
     reset_critic_on_resume: bool = False,
     rule_demo_fraction: float = 0.25,
+    soft_shell: bool | None = None,
 ) -> dict[str, Any]:
     """Hybrid-GiveSafe-TD3 主训练循环：收集物理有效步、更新 TD3、评估并写 summary。
 
@@ -332,10 +343,12 @@ def run_hybrid_training(
         enable_shadow: 是否启用影子 FMU；None 时读配置。
         forecast_enabled: 环境预测开关。
         annual_evaluation: 训练后是否全年评估。
+        soft_shell: 训练/终评是否启用软约束外壳；None 时读 ``SOFT_SHELL`` 环境变量。
 
     Returns:
         含 status、stats、eval、formal_gate_blockers 等的 summary 字典。
     """
+    use_soft_shell = _soft_shell_enabled(soft_shell)
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     for name in ("config", "train", "checkpoints", "trajectories"):
@@ -395,13 +408,16 @@ def run_hybrid_training(
         givesafe_fraction=float(replay_cfg.get("givesafe_fraction", 0.3)),
     )
     safety_dataset = SafetyDataset()
-    collector = GiveSafeTransitionCollector(buffer, controller, shadow=shadow, safety_dataset=safety_dataset)
+    collector = GiveSafeTransitionCollector(
+        buffer, controller, shadow=shadow, safety_dataset=safety_dataset, soft_shell=use_soft_shell
+    )
     rew_cfg = env.reward_calculator.config
     agent = HybridTD3(
         obs_dim=int(np.prod(env.observation_space.shape)),
         gamma=float(rew_cfg.get("gamma", 0.99)),
         explore_noise=0.08,
         q_clip=200.0,
+        parameterized_caes=True,
     )
     # 目标网络与带先验的 actor 同步
     agent.actor_target.load_state_dict(agent.actor.state_dict())
@@ -468,6 +484,7 @@ def run_hybrid_training(
         "formal": formal,
         "givesafe": True,
         "use_fallback": False,
+        "soft_shell": use_soft_shell,
         "shadow_validation": shadow.capabilities() if shadow else {"enabled": False},
         "oracle_version": env.oracle.oracle_version,
         "annual_horizon_hours": env.config["fmu"].get("annual_horizon_hours"),
@@ -475,6 +492,7 @@ def run_hybrid_training(
         "forecast_enabled": env.forecast_enabled,
         "forecast_horizon_hours": env.forecast_provider.horizon_hours if env.forecast_provider else 0,
         "observation_dim": int(np.prod(env.observation_space.shape)),
+        "parameterized_caes": bool(agent.parameterized_caes),
         "training_recipe": {
             "random_explore_start": random_explore_start,
             "random_explore_end": random_explore_end,
@@ -583,13 +601,16 @@ def run_hybrid_training(
                 mode=str(shadow_cfg.get("mode", "always")),
             )
         eval_ctrl = GiveSafeController(oracle=eval_env.oracle, shadow=eval_shadow, config=gs_cfg)
-        eval_policy = HybridPolicyWrapper(agent, eval_env, eval_ctrl, deterministic=True)
+        eval_policy = HybridPolicyWrapper(
+            agent, eval_env, eval_ctrl, deterministic=True, soft_shell=use_soft_shell
+        )
         try:
             eval_result = evaluate_policy(
                 eval_env,
                 eval_policy,
                 run_dir / "trajectories" / "eval.csv",
                 reset_options=eval_opts,
+                soft_shell=use_soft_shell,
             )
         finally:
             if eval_shadow is not None:
@@ -616,7 +637,9 @@ def run_hybrid_training(
                     mode=str(shadow_cfg.get("mode", "always")),
                 )
             annual_ctrl = GiveSafeController(oracle=annual_env.oracle, shadow=annual_shadow, config=gs_cfg)
-            annual_policy = HybridPolicyWrapper(agent, annual_env, annual_ctrl, deterministic=True)
+            annual_policy = HybridPolicyWrapper(
+                agent, annual_env, annual_ctrl, deterministic=True, soft_shell=use_soft_shell
+            )
             try:
                 annual_eval_result = evaluate_annual_policy(
                     annual_env,

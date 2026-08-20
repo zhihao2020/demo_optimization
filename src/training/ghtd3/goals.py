@@ -26,7 +26,11 @@ U_TP_MIN = 1.0 / 3.0
 
 
 def goal_budget_layout(
-    *, wear_budget: bool = False, caes_budget: bool = False, thermal_budget: bool = False
+    *,
+    wear_budget: bool = False,
+    caes_budget: bool = False,
+    thermal_budget: bool = False,
+    carbon_budget: bool = False,
 ) -> dict[str, int]:
     """Map budget names to goal indices after the two inventory dims."""
     idx: dict[str, int] = {}
@@ -39,6 +43,9 @@ def goal_budget_layout(
         i += 1
     if thermal_budget:
         idx["thermal"] = i
+        i += 1
+    if carbon_budget:
+        idx["carbon"] = i
     return idx
 
 
@@ -48,16 +55,20 @@ def default_goal_boxes(
     wear_budget: bool = False,
     thermal_budget: bool = False,
     caes_budget: bool = False,
+    carbon_budget: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Goal box. 2D inventory; then optional wear / caes-on / thermal budgets."""
+    """Goal box. 2D inventory; then optional wear / caes / thermal / carbon budgets."""
     low5 = np.asarray([-0.30, -0.12, -0.10, -0.20, 0.0], dtype=np.float32)
     high5 = np.asarray([0.30, 0.12, 0.10, 0.20, 1.0], dtype=np.float32)
     d = int(goal_dim)
-    if wear_budget or thermal_budget or caes_budget:
+    if wear_budget or thermal_budget or caes_budget or carbon_budget:
         low = [-0.30, -0.12]
         high = [0.30, 0.12]
         layout = goal_budget_layout(
-            wear_budget=wear_budget, caes_budget=caes_budget, thermal_budget=thermal_budget
+            wear_budget=wear_budget,
+            caes_budget=caes_budget,
+            thermal_budget=thermal_budget,
+            carbon_budget=carbon_budget,
         )
         if "wear" in layout:
             low.append(0.0)
@@ -66,6 +77,10 @@ def default_goal_boxes(
             low.append(0.0)
             high.append(1.0)
         if "thermal" in layout:
+            low.append(0.0)
+            high.append(1.0)
+        if "carbon" in layout:
+            # 块内允许的火电额外负荷占比（配速）；与 thermal 同形
             low.append(0.0)
             high.append(1.0)
         low_a = np.asarray(low, dtype=np.float32)
@@ -158,9 +173,11 @@ def enforce_budget_on_action(
     wear_budget: bool = False,
     thermal_budget: bool = False,
     caes_budget: bool = False,
+    carbon_budget: bool = False,
     wear_enforce: bool = True,
     thermal_enforce: bool = True,
     caes_enforce: bool = True,
+    carbon_enforce: bool = True,
     c: int = 8,
     layout: dict[str, int] | None = None,
     p_cap_w: float = DEFAULT_BAT_P_CAP_W,
@@ -172,11 +189,15 @@ def enforce_budget_on_action(
     out = dict(action)
     g = np.asarray(goal, dtype=np.float32).ravel()
     lay = layout or goal_budget_layout(
-        wear_budget=wear_budget, caes_budget=caes_budget, thermal_budget=thermal_budget
+        wear_budget=wear_budget,
+        caes_budget=caes_budget,
+        thermal_budget=thermal_budget,
+        carbon_budget=carbon_budget,
     )
     iw = lay.get("wear", G_WEAR)
     ic = lay.get("caes", G_CAES)
     ith = lay.get("thermal", G_THB)
+    icarb = lay.get("carbon", G_THB)
     if wear_budget and wear_enforce and g.size > iw:
         try:
             u_b = float(np.asarray(out.get("u_battery", 0.0)).reshape(-1)[0])
@@ -196,12 +217,18 @@ def enforce_budget_on_action(
             out["u_caes"] = np.asarray([0.0], dtype=np.float32)
         else:
             out["u_caes"] = 0.0
+    # thermal / carbon 均钳制 u_tp；同时开启时取更紧上限
+    u_tp_cap = None
     if thermal_budget and thermal_enforce and g.size > ith:
+        u_tp_cap = float(g[ith]) if u_tp_cap is None else min(u_tp_cap, float(g[ith]))
+    if carbon_budget and carbon_enforce and g.size > icarb:
+        u_tp_cap = float(g[icarb]) if u_tp_cap is None else min(u_tp_cap, float(g[icarb]))
+    if u_tp_cap is not None:
         try:
             u_tp = float(np.asarray(out.get("u_tp", U_TP_MIN)).reshape(-1)[0])
         except Exception:
             u_tp = U_TP_MIN
-        u_tp = clip_thermal_to_budget(u_tp, float(g[ith]), c=c)
+        u_tp = clip_thermal_to_budget(u_tp, float(u_tp_cap), c=c)
         cur = out.get("u_tp")
         if isinstance(cur, np.ndarray):
             out["u_tp"] = np.asarray([u_tp], dtype=np.float32)
@@ -264,6 +291,8 @@ def goal_transition_intent(
     thermal_budget: bool = False,
     caes_used: float = 0.0,
     caes_budget: bool = False,
+    carbon_used: float = 0.0,
+    carbon_budget: bool = False,
     layout: dict[str, int] | None = None,
 ) -> np.ndarray:
     """Residual inventory goal s+g-s' on bat/gas.
@@ -278,7 +307,10 @@ def goal_transition_intent(
     if n_inv > 0:
         g[:n_inv] = it[:n_inv] + g[:n_inv] - ip[:n_inv]
     lay = layout or goal_budget_layout(
-        wear_budget=wear_budget, caes_budget=caes_budget, thermal_budget=thermal_budget
+        wear_budget=wear_budget,
+        caes_budget=caes_budget,
+        thermal_budget=thermal_budget,
+        carbon_budget=carbon_budget,
     )
     if wear_budget and "wear" in lay and g.size > lay["wear"]:
         g[lay["wear"]] = max(0.0, float(g[lay["wear"]]) - float(wear_used))
@@ -286,7 +318,15 @@ def goal_transition_intent(
         g[lay["caes"]] = max(0.0, float(g[lay["caes"]]) - float(caes_used))
     if thermal_budget and "thermal" in lay and g.size > lay["thermal"]:
         g[lay["thermal"]] = max(0.0, float(g[lay["thermal"]]) - float(thermal_used))
-    elif (not wear_budget) and (not thermal_budget) and (not caes_budget) and g.size > 2:
+    if carbon_budget and "carbon" in lay and g.size > lay["carbon"]:
+        g[lay["carbon"]] = max(0.0, float(g[lay["carbon"]]) - float(carbon_used))
+    elif (
+        (not wear_budget)
+        and (not thermal_budget)
+        and (not caes_budget)
+        and (not carbon_budget)
+        and g.size > 2
+    ):
         n = min(g.size, it.size, ip.size, 3)
         if n > 2:
             g[2:n] = it[2:n] + g[2:n] - ip[2:n]

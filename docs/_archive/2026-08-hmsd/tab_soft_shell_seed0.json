@@ -1,0 +1,74 @@
+[
+  {
+    "season": "winter",
+    "method": "hmsd",
+    "status": "completed",
+    "valid_steps": 168,
+    "soft_shell_count": 2,
+    "episode_reward": 75.7943661365512
+  },
+  {
+    "season": "winter",
+    "method": "td3",
+    "status": "completed",
+    "valid_steps": 168,
+    "soft_shell_count": 0,
+    "episode_reward": 89.82345141737139
+  },
+  {
+    "season": "winter",
+    "method": "sac",
+    "status": "completed",
+    "valid_steps": 168,
+    "soft_shell_count": 0,
+    "episode_reward": 83.02941486121348
+  },
+  {
+    "season": "transition",
+    "method": "hmsd",
+    "status": "completed",
+    "valid_steps": 168,
+    "soft_shell_count": 0,
+    "episode_reward": 43.43195925610688
+  },
+  {
+    "season": "transition",
+    "method": "td3",
+    "status": "completed",
+    "valid_steps": 15,
+    "soft_shell_count": 0,
+    "episode_reward": 0.9224570381608793
+  },
+  {
+    "season": "transition",
+    "method": "sac",
+    "status": "completed",
+    "valid_steps": 50,
+    "soft_shell_count": 0,
+    "episode_reward": 2.3734995971315698
+  },
+  {
+    "season": "summer",
+    "method": "hmsd",
+    "status": "completed",
+    "valid_steps": 168,
+    "soft_shell_count": 2,
+    "episode_reward": 49.63347881765635
+  },
+  {
+    "season": "summer",
+    "method": "td3",
+    "status": "completed",
+    "valid_steps": 76,
+    "soft_shell_count": 0,
+    "episode_reward": 11.359749696126274
+  },
+  {
+    "season": "summer",
+    "method": "sac",
+    "status": "skipped_missing_checkpoint",
+    "valid_steps": null,
+    "soft_shell_count": null,
+    "episode_reward": null
+  }
+]

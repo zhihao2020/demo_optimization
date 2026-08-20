@@ -405,6 +405,48 @@ package TypicalScenarios "典型场景模型"
     // end when;
     // P_act0 = pre(positivePlug.P_act);
   end ThermalPower;
+  model ELoadExt "电负荷（计划负荷由外部输入给定）"
+    // 与 ELoad 的唯一差别：ELoad.P_plan 取自外部 RealInput，而非内嵌时间表。
+    // table 参数与内部 Table 块保留：顶层实例仍可传入原 8760 h 表，
+    // 其值仅通过 P_load_ref 输出，用于校验 Python 边界注入是否复现原轨迹。
+    parameter TypicalScensrio.Utilities.Types.ExergyCost_kWh c = 0.3 "用电电价";
+    parameter Real table[:,2] = {{0, 2.0e8}, {3600, 2.0e8}};
+    parameter TypicalScensrio.Utilities.Types.Cost Capex = 0 "造价";
+    TypicalScensrio.Interfaces.ElectricPower.Electrical ELoad annotation (Placement(transformation(origin = {102.0, 2.513069627573458},
+      extent = {{10.0, -10.0}, {-10.0, 10.0}},
+      rotation = -90.0)));
+    Modelica.Blocks.Sources.CombiTimeTable Table(table = table,
+      extrapolation = Modelica.Blocks.Types.Extrapolation.LastTwoPoints,
+      smoothness = Modelica.Blocks.Types.Smoothness.ConstantSegments)
+      annotation (Placement(transformation(origin = {-1.0658141036401503e-14, 2.0},
+        extent = {{-10.0, -10.0}, {10.0, 10.0}})));
+    Modelica.Blocks.Interfaces.RealInput P_load_plan(start = 2.0e8) "外部计划电负荷，W，正=用电" annotation (Placement(transformation(origin = {-116.0, 4.0},
+      extent = {{-14.0, -14.0}, {14.0, 14.0}})));
+    Modelica.Blocks.Interfaces.RealOutput P_load_ref "内嵌表参考负荷，W；仅用于边界注入回归校验" annotation (Placement(transformation(origin = {116.0, -44.0},
+      extent = {{-14.0, -14.0}, {14.0, 14.0}})));
+    TypicalScensrio.Utilities.Types.CostFlow C "现金流";
+  equation
+    -ELoad.P_plan + P_load_plan = 0;
+    P_load_ref = Table.y[1];
+    ELoad.C = -ELoad.P_act * ELoad.c1 / 3.6e6;
+    ELoad.C + C = 0;
+    ELoad.Capex = Capex;
+    c = ELoad.c1;
+    ELoad.c2 = 0;
+    annotation (Icon(coordinateSystem(extent = {{-100.0, -100.0}, {100.0, 100.0}},
+      grid = {2.0, 2.0}), graphics = {Text(origin = {0.0, -145.0},
+      lineColor = {0, 85, 255},
+      extent = {{-140.0, 35.0}, {140.0, -35.0}},
+      textString = "电负荷(外部)",
+      textStyle = {TextStyle.None},
+      textColor = {0, 85, 255}), Rectangle(origin = {0.0, 0.0},
+      lineColor = {0, 85, 255},
+      fillColor = {255, 255, 255},
+      fillPattern = FillPattern.Solid,
+      lineThickness = 1.0,
+      extent = {{-100.0, 100.0}, {100.0, -100.0}})}));
+  end ELoadExt;
+
   model ELoad "电负荷"
     parameter TypicalScensrio.Utilities.Types.ExergyCost_kWh c = 0.3 "用电电价";
     parameter Real table[:,2] = {{3600, 1}, {7200, 1}, {10800, 1}, {14400, 1}, {18000, 1}, {21600, 1}, {25200, 1}, {28800, -0.1}, {32400, -0.3}, {36000, -0.4}, {39600, -0.4}, {43200, -0.4}, {46800, -0.25}, {50400, -0.31}, {54000, 1}, {57600, 1}, {61200, -0.4}, {64800, -0.4}, {68400, -0.8}, {72000, -0.5}, {75600, 0.6}, {79200, 0.8}, {82800, 0.5}, {86400, 0.7}};
@@ -579,7 +621,10 @@ package TypicalScenarios "典型场景模型"
     parameter Real SOC_min = 0.1 "储能下限";
     parameter Real Capex = 1e7 "造价，单位：元/千瓦时";
     parameter Real SOC_start = 0.5;
-    parameter Real eta = 0.85 "电池充放效率";
+    parameter Real eta = 0.85 "电池放电效率";
+    // 充电效率：默认 1.0 表示保持历史的无损充电行为，用于与旧结果逐点对齐。
+    // 需要物理上对称的往复效率时设为 0.95 左右，并在论文中明确标注该取值。
+    parameter Real eta_charge = 1.0 "电池充电效率；1.0=无损（历史行为）";
     // 经济惩罚项已删除；SOC 约束/惩罚由 Python 侧后续计算。
     parameter TypicalScensrio.Utilities.Types.Cost Income_start = 0;
     TypicalScensrio.Utilities.Types.Cost Income(start = Income_start);
@@ -603,7 +648,7 @@ package TypicalScenarios "典型场景模型"
     // 原 SOC 指数罚函数已删除；经济惩罚由 Python 侧后续计算。
     if PBS.P_act >= 0 then
       PBS.C = -PBS.P_act * PBS.c1 / 3.6e6;
-      der(SOC) = PBS.P_act / E_cap;
+      der(SOC) = PBS.P_act * eta_charge / E_cap;
     else
       PBS.C = -PBS.P_act * PBS.c2 / 3.6e6;
       der(SOC) = PBS.P_act / E_cap / eta;
@@ -1185,8 +1230,13 @@ package TypicalScenarios "典型场景模型"
           horizontalAlignment = LinePattern.None)}),
         experiment(Algorithm = Euler, IntegratorStep = 72, Interval = 3600, StartTime = 0, StopTime = 3.1536e+07, Tolerance = 0.0001));
     equation
-      // assert(level <= SOC_max * V0 / A, "储罐容量超过上限");
-      // assert(level > SOC_min * V0 / A, "储罐容量超过下限");
+      // 越界后下方 noEvent 分支会把 der(m) 与 der(h) 全部置零，罐体从此永久冻结、
+      // 无法再充放，是一种静默且不可恢复的失效（历史上表现为 SOC 卡在 0.0489 不动）。
+      // 因此这两条 assert 必须保留为显式失败，而不是让仿真带着废掉的罐子继续跑。
+      // 注意：积分器为 Euler、步长 72 s，SOC 触界时会有微小过冲，assert 会立即触发；
+      // 真正的防线是 Python 可行性投影层带裕度地把库存挡在界内。
+      assert(level <= SOC_max * V0 / A, "储罐容量超过上限");
+      assert(level > SOC_min * V0 / A, "储罐容量超过下限");
       V = A * level;
       m = V * 1000;
       U = m * Medium.u_ph(p, h);

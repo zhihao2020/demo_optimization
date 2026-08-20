@@ -14,10 +14,16 @@ class FmuAdapter:
     """FMU 适配器(FmuAdapter)。
 
     在 Python 变量名与 FMU 变量名之间映射，供 Gymnasium 环境逐步调用。
+    动作与边界严格分离：``step(action, boundaries=...)``。
     """
 
     def __init__(
-        self, fmu_path: Path, communication_step_seconds: float, registry: VariableRegistry
+        self,
+        fmu_path: Path,
+        communication_step_seconds: float,
+        registry: VariableRegistry,
+        *,
+        require_boundaries: bool = True,
     ) -> None:
         """构造适配器并创建底层 FmuSession。
 
@@ -25,11 +31,14 @@ class FmuAdapter:
             fmu_path: ``.fmu`` 文件路径。
             communication_step_seconds: FMI 通信步长（秒）。
             registry: 变量注册表(VariableRegistry)。
+            require_boundaries: 新 FMU 须为 True。
         """
         self.registry = registry
         self._session = FmuSession(
-            fmu_path, step_size=communication_step_seconds,
+            fmu_path,
+            step_size=communication_step_seconds,
             outputs=tuple(spec.fmu_name for spec in registry.read_outputs.values()),
+            require_boundaries=require_boundaries,
         )
 
     @property
@@ -41,11 +50,16 @@ class FmuAdapter:
         """
         return self._session.time
 
-    def reset(self, start_time: float) -> dict[str, float]:
+    def reset(
+        self,
+        start_time: float,
+        boundaries: Mapping[str, float] | None = None,
+    ) -> dict[str, float]:
         """重置 FMU 并返回初始输出（Python 变量名）。
 
         Args:
             start_time: 起始仿真时刻（秒）。
+            boundaries: 可选，边界 FMU 名 -> 物理值。
 
         Returns:
             Python 名 -> 标量值的输出字典。
@@ -54,16 +68,24 @@ class FmuAdapter:
             FmuSolverError: FMU reset 或读输出失败。
         """
         try:
-            raw = self._session.reset(start_time)
+            raw = self._session.reset(
+                start_time,
+                boundaries=dict(boundaries) if boundaries is not None else None,
+            )
             return self._map_outputs(raw)
         except Exception as exc:  # FMI Python wrapper gives heterogeneous exception types
             raise FmuSolverError(f"FMU reset 失败: {exc}") from exc
 
-    def step(self, action: Mapping[str, float]) -> dict[str, float]:
-        """写入 Python 动作、推进一步并读输出。
+    def step(
+        self,
+        action: Mapping[str, float],
+        boundaries: Mapping[str, float] | None = None,
+    ) -> dict[str, float]:
+        """写入 Python 动作与边界、推进一步并读输出。
 
         Args:
             action: Python 动作名 -> 值（如 ``u_tp``）。
+            boundaries: 边界 FMU 名 -> 物理值；新 FMU 必填。
 
         Returns:
             映射后的 FMU 输出字典。
@@ -72,7 +94,10 @@ class FmuAdapter:
             FmuSolverError: doStep 或读输出失败。
         """
         try:
-            raw = self._session.step({spec.fmu_name: float(action[spec.name]) for spec in self.registry.actions})
+            raw = self._session.step(
+                {spec.fmu_name: float(action[spec.name]) for spec in self.registry.actions},
+                boundaries=dict(boundaries) if boundaries is not None else None,
+            )
             return self._map_outputs(raw)
         except Exception as exc:
             raise FmuSolverError(f"FMU doStep/read 失败 (t={self.time}): {exc}") from exc
@@ -86,7 +111,10 @@ class FmuAdapter:
         Returns:
             Python 名 -> 标量值。
         """
-        return {name: float(raw[spec.fmu_name]) for name, spec in self.registry.read_outputs.items()}
+        return {
+            name: float(raw[spec.fmu_name])
+            for name, spec in self.registry.read_outputs.items()
+        }
 
     def close(self) -> None:
         """释放底层 FmuSession 资源。"""

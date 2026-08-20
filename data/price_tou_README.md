@@ -1,33 +1,35 @@
 # 分时购售电价 `price_tou.csv`
 
-**当前序列：山东省 2026 年工商业电网代理购电分时到户电价（price-taker 外生价，非现货出清结果）。**
+**当前序列：山东分时机制约束下的构造性工商业到户购电价（proxy-purchase path；非现货出清、非当月代理购电官方真值）。**
 
 | 列 | 含义 | 单位 |
 |----|------|------|
 | `time` | 仿真时间 | s，步长 3600，0…8759h |
-| `buy_yuan_per_kwh` | 购电到户电度价 | 元/kWh |
-| `sell_yuan_per_kwh` | 余电上网结算价 | 元/kWh |
+| `buy_yuan_per_kwh` | 购电到户电度价（构造） | 元/kWh |
+| `sell_yuan_per_kwh` | 余电上网结算价（illustrative） | 元/kWh |
 | `band` | 分时档位 | S 尖峰 / P 高峰 / F 平 / V 低谷 / D 深谷 |
 
 元数据：`price_tou_meta.json`。  
-重建脚本：`scripts/build_price_tou_shandong.py`。
+重建脚本：`scripts/build_price_tou_shandong.py`。  
+参数证据总表：`docs/parameter_evidence.md`。
 
 > 风光荷为 FMU `TypicalScene` **典型场景年**（温带北方算例），**未绑定山东气象站**。  
-> 论文表述建议：典型场景资源边界 + 山东容积分时电价；勿写「山东实测风光荷」。
+> 论文表述：典型场景资源边界 + 山东机制约束下的构造性到户价；**勿写「山东官方 2026 实收电价」或「山东实测风光荷」**。
 
 可选价区脚本（非默认）：`scripts/build_price_tou_mengxi.py`（蒙西）。  
-备份：`price_tou_shandong_backup.csv` 与恢复时使用的同名备份。
+备份：`price_tou_shandong_backup.csv`。
 
 ---
 
-## 数据出处
+## 数据出处分层
 
-| 项 | 内容 |
-|----|------|
-| 时段与浮动比例 | 国网山东省电力公司 **2026 年工商业分时电价公告**；框架依据《关于进一步优化工商业分时电价政策的通知》（鲁发改价格〔2023〕914 号） |
-| 整理入口 | 介子九维 smart-microgrid / 本仓库 `build_price_tou_shandong.py` |
-| 代理购电与加项 | 算例参数：`proxy_price`、`capacity_comp`、`line_loss`、`sys_op`、`td_energy`、`fund` |
-| 输配电度价 | 第四监管周期 · 山东 **110 kV = 0.106 元/kWh**（[介子九维输配电查询](https://www.jiezijiuwei.com/tools/transmission-tariffs) / NDRC 表） |
+| 项 | 等级 | 内容 |
+|----|------|------|
+| 时段与浮动比例 | 机制官方 (M) | 国网山东 **2026 工商业分时电价公告**；框架《关于进一步优化工商业分时电价政策的通知》（鲁发改价格〔2023〕914 号） |
+| 输配电度价 | 官方表 (O/M) | 第四监管周期 · 山东 **110 kV = 0.106 元/kWh** |
+| 浮动基分量 `proxy/capacity_comp/line_loss/sys_op` | 情景 (S) | 算例构造，**不是**当月代理购电公示真值 |
+| 基金附加 | 情景 (S) | 算例 |
+| 售电 0.1875 | 情景 (S) | \(0.5\times0.225+0.5\times0.15\) |
 
 ### 官方 PDF / 网页（核对用）
 
@@ -35,12 +37,13 @@
 |----------|------|
 | 鲁发改价格〔2023〕914 号 | https://www.shandong.gov.cn/module/download/downfile.jsp?classid=0&filename=b373ac6b7f11438abf4c9ff6c1bb4d0e.pdf |
 | 2026 工商业分时公告（济南发改转发） | https://jndpc.jinan.gov.cn/col2191/art/2025/art_2191_4789557.html |
-| 输配电价查询 | https://www.jiezijiuwei.com/tools/transmission-tariffs |
 | NDRC 第四周期省级输配电价 | https://www.ndrc.gov.cn/xxgk/zcfb/tz/202607/P020260710613207914509.pdf |
+
+整理入口曾引用介子九维编译表；**论文与台账以官方文号 + 构造公式为准**，不以第三方工具页为监管证据。
 
 ---
 
-## 购电价公式
+## 购电价公式（构造）
 
 参与浮动基数：
 
@@ -69,6 +72,8 @@ A = 0.106 + 0.02717 = 0.13317
 | 深谷 D | 0.1 | 0.18331 |
 
 全年按 **2026 非闰年** 分月时段表展开为 8760 点。
+
+灵敏度（经济—套利）：缩放浮动基 \(B\) 或平段价；售电价 `{0.10, 0.1875, 0.30}`。
 
 ## 售电价
 

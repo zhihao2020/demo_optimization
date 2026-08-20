@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import time
 
 import numpy as np
 import yaml
@@ -75,6 +76,9 @@ class RollingLinprogController:
         self.params = _load_yaml("src/config/device_params.yaml")
         self._apply_reward_defaults()
         self._name = "rolling_linprog"
+        self.last_solve_s = 0.0
+        self.last_solve_failed = False
+        self.last_solve_timed_out = False
 
     def _apply_reward_defaults(self) -> None:
         try:
@@ -351,7 +355,15 @@ class RollingLinprogController:
             options={"presolve": True, "time_limit": float(cfg.time_limit_s)},
         )
         if not res.success or res.x is None:
-            return {"ok": 0.0, "p_tp": p_tp_prev, "p_bat": 0.0, "p_gas": 0.0}
+            msg = str(getattr(res, "message", "") or "").lower()
+            timed_out = ("time" in msg) or ("limit" in msg)
+            return {
+                "ok": 0.0,
+                "p_tp": p_tp_prev,
+                "p_bat": 0.0,
+                "p_gas": 0.0,
+                "timed_out": 1.0 if timed_out else 0.0,
+            }
         x = res.x
         return {
             "ok": 1.0,
@@ -359,6 +371,7 @@ class RollingLinprogController:
             "p_bat": float(x[1] - x[2]),
             "p_gas": float(x[3] - x[4]),
             "obj": float(res.fun) if res.fun is not None else 0.0,
+            "timed_out": 0.0,
         }
 
     def predict(self, obs, deterministic: bool = True) -> dict:
@@ -366,13 +379,20 @@ class RollingLinprogController:
         try:
             feas = env.get_feasible_action_spec()
         except Exception:
+            self.last_solve_s = 0.0
+            self.last_solve_failed = True
+            self.last_solve_timed_out = False
             return {
                 "u_tp": np.asarray([1.0], np.float32),
                 "u_battery": np.asarray([0.0], np.float32),
                 "u_caes": np.asarray([0.0], np.float32),
             }
 
+        t0 = time.perf_counter()
         sol = self._solve()
+        self.last_solve_s = float(time.perf_counter() - t0)
+        self.last_solve_failed = float(sol.get("ok", 1.0)) < 0.5
+        self.last_solve_timed_out = bool(sol.get("timed_out", 0.0))
         p_tp_max = float(self.params["thermal"]["P_max_W"]) * 1e-6
         p_bat_max = float(self.params["battery"]["P_cap_W"]) * 1e-6
         p_caes_max = float(self.params["caes"]["P_cap_W"]) * 1e-6

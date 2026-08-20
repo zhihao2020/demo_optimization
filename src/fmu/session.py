@@ -30,6 +30,15 @@ from .validate import validate_inputs, validate_outputs
 # 调度输入：无量纲指令，直接对应 Modelica RealInput。
 ACTION_NAMES = ("u_tp", "u_battery", "u_caes")
 
+# 外部边界输入：物理单位；与 actions 严格分离，不得混入动作字典。
+# 只写顶层四个端口；Sysplorer 导出里那些内部同名 input（如 wind.v_in）一律不碰。
+BOUNDARY_NAMES = (
+    "v_wind_in",
+    "g_irradiance_in",
+    "t_air_in",
+    "p_load_plan_in",
+)
+
 # 顶层物理及累计经济输出（与 PowerSystem_8760h RealOutput 一一对应；全部必需）。
 # 功率单位 W；压力 Pa；温度 K；SOC ∈ [0,1]。
 # 符号约定：发电为负、用电/充电为正（与电气接口一致）。
@@ -70,8 +79,22 @@ DEFAULT_OUTPUTS = (
     "economic_cashflow_grid",
 )
 
+# 内嵌表参考输出：仅回归验收用，不进 RL observation。
+BOUNDARY_REF_OUTPUTS = (
+    "v_wind_ref",
+    "g_irradiance_ref",
+    "t_air_ref",
+    "p_load_plan_ref",
+)
+
 # 与模型 start 一致的默认初值（须落在允许输入集合内）
 DEFAULT_INITIAL_INPUTS = {"u_tp": 1.0, "u_battery": 0.0, "u_caes": 0.0}
+DEFAULT_INITIAL_BOUNDARIES = {
+    "v_wind_in": 1.45,
+    "g_irradiance_in": 0.0,
+    "t_air_in": 262.4,
+    "p_load_plan_in": 2.14e8,
+}
 
 
 def fmu_platform_supported(fmu_path: Path) -> bool:
@@ -106,7 +129,10 @@ class FmuSession:
         fmu_path: Path,
         step_size: float = 3600.0,
         initial_inputs: dict[str, float] | None = None,
+        initial_boundaries: dict[str, float] | None = None,
         outputs: tuple[str, ...] | list[str] = DEFAULT_OUTPUTS,
+        *,
+        require_boundaries: bool = True,
     ) -> None:
         """创建会话并校验 FMU 与初始输入。
 
@@ -114,7 +140,10 @@ class FmuSession:
             fmu_path: ``.fmu`` 文件路径。
             step_size: 通信步长（秒）。
             initial_inputs: 初始调度输入；默认 ``DEFAULT_INITIAL_INPUTS``。
+            initial_boundaries: 初始边界输入；默认 ``DEFAULT_INITIAL_BOUNDARIES``。
             outputs: 每步读取的 FMU 输出名列表。
+            require_boundaries: 为 True 时要求 FMU 含四个边界输入（新导出）；
+                旧 FMU 可设 False 以兼容过渡期。
 
         Raises:
             FileNotFoundError: FMU 文件不存在。
@@ -133,6 +162,10 @@ class FmuSession:
             )
         self.step_size = float(step_size)
         self.initial_inputs = dict(initial_inputs or DEFAULT_INITIAL_INPUTS)
+        self.initial_boundaries = dict(
+            initial_boundaries or DEFAULT_INITIAL_BOUNDARIES
+        )
+        self.require_boundaries = bool(require_boundaries)
         # 初始输入也必须合法，避免带着越界值进入仿真
         validate_inputs(self.initial_inputs)
 
@@ -147,9 +180,12 @@ class FmuSession:
 
         missing = [name for name in ACTION_NAMES if name not in self._vrs]
         missing.extend(name for name in requested_outputs if name not in self._vrs)
+        if self.require_boundaries:
+            missing.extend(name for name in BOUNDARY_NAMES if name not in self._vrs)
         if missing:
             raise KeyError(f"FMU variables missing: {missing}")
 
+        self._has_boundaries = all(name in self._vrs for name in BOUNDARY_NAMES)
         self.outputs = requested_outputs
         self._read_vrs = [self._vrs[name] for name in self.outputs]
         self._unzipdir: str | None = None
@@ -175,11 +211,16 @@ class FmuSession:
             self._unzipdir = str(extract(str(self.fmu_path), unzipdir=unzipdir))
         return self._unzipdir
 
-    def reset(self, start_time: float = 0.0) -> dict[str, float]:
-        """重新实例化 FMU，写入初始输入，返回 t=start_time 的输出快照。
+    def reset(
+        self,
+        start_time: float = 0.0,
+        boundaries: dict[str, float] | None = None,
+    ) -> dict[str, float]:
+        """重新实例化 FMU，写入初始动作与边界，返回 t=start_time 的输出快照。
 
         Args:
             start_time: 仿真起始时刻（秒）。
+            boundaries: 可选，覆盖 ``initial_boundaries`` 的边界字典。
 
         Returns:
             请求输出名 -> 标量值的字典（已通过 ``validate_outputs``）。
@@ -198,12 +239,13 @@ class FmuSession:
         self._fmu.instantiate()
         self._fmu.enterInitializationMode(startTime=float(start_time))
         self.set_inputs(self.initial_inputs)
+        self.set_boundaries(boundaries if boundaries is not None else self.initial_boundaries)
         self._fmu.exitInitializationMode()
         self.time = float(start_time)
         return self.read()
 
     def set_inputs(self, action: dict[str, float]) -> None:
-        """写调度输入到 FMU；先校验上下限。
+        """写调度输入到 FMU；先校验上下限。不含边界。
 
         Args:
             action: 含 ``u_tp``、``u_battery``、``u_caes`` 的字典。
@@ -217,6 +259,31 @@ class FmuSession:
         validate_inputs(action)
         for name in ACTION_NAMES:
             self._fmu.setFloat64([self._vrs[name]], [float(action[name])])
+
+    def set_boundaries(self, boundaries: dict[str, float]) -> None:
+        """写外部边界输入；与动作严格分离。
+
+        Args:
+            boundaries: 含四个边界 FMU 名的字典；允许缺省（无边界端口的旧 FMU）。
+
+        Raises:
+            RuntimeError: 未先进入实例化，或新 FMU 缺少边界却要求写入。
+            ValueError: 边界非有限或缺键。
+        """
+        if self._fmu is None:
+            raise RuntimeError("call reset()/enterInitializationMode before set_boundaries()")
+        if not self._has_boundaries:
+            if self.require_boundaries:
+                raise RuntimeError("FMU 缺少边界输入端口，无法写入")
+            return
+        missing = [name for name in BOUNDARY_NAMES if name not in boundaries]
+        if missing:
+            raise ValueError(f"边界字典缺少键: {missing}")
+        for name in BOUNDARY_NAMES:
+            value = float(boundaries[name])
+            if not np.isfinite(value):
+                raise ValueError(f"边界 {name}={value} 非有限")
+            self._fmu.setFloat64([self._vrs[name]], [value])
 
     def read(self) -> dict[str, float]:
         """读物理输出并校验数值/物理合理性。
@@ -235,11 +302,16 @@ class FmuSession:
         validate_outputs(result)
         return result
 
-    def step(self, action: dict[str, float]) -> dict[str, float]:
-        """执行一步：校验并写输入 → doStep → 读并校验输出。
+    def step(
+        self,
+        action: dict[str, float],
+        boundaries: dict[str, float] | None = None,
+    ) -> dict[str, float]:
+        """执行一步：写动作与边界 → doStep → 读并校验输出。
 
         Args:
             action: 本通信步的调度输入。
+            boundaries: 本通信步的边界输入；新 FMU 必填。
 
         Returns:
             步后 FMU 输出字典。
@@ -251,6 +323,10 @@ class FmuSession:
         if self._fmu is None:
             raise RuntimeError("call reset() before step()")
         self.set_inputs(action)
+        if boundaries is not None:
+            self.set_boundaries(boundaries)
+        elif self._has_boundaries and self.require_boundaries:
+            raise ValueError("新 FMU 每步必须提供 boundaries，否则边界会冻在上一值")
         self._fmu.doStep(
             currentCommunicationPoint=self.time,
             communicationStepSize=self.step_size,
@@ -263,6 +339,7 @@ class FmuSession:
         plan: DispatchPlan,
         horizon_hours: int | None = None,
         start_time: float | None = None,
+        boundaries_at=None,
     ) -> SimulationResult:
         """按计划滚动仿真；单步失败时记录 metadata，不向外抛出。
 
@@ -270,13 +347,16 @@ class FmuSession:
             plan: 调度计划(DispatchPlan)。
             horizon_hours: 仿真小时数；默认 ``len(plan.time) - 1``。
             start_time: 起始时刻；默认 ``plan.time[0]``。
+            boundaries_at: 可选，``Callable[[float], dict[str, float]]``，
+                按当前通信点返回边界；新 FMU 必填。
 
         Returns:
             含时间序列、变量轨迹与执行 metadata 的 SimulationResult。
         """
         hours = int(horizon_hours if horizon_hours is not None else len(plan.time) - 1)
         start = float(plan.time[0] if start_time is None else start_time)
-        initial = self.reset(start)
+        b0 = boundaries_at(start) if boundaries_at is not None else None
+        initial = self.reset(start, boundaries=b0)
         records = {name: [float(initial[name])] for name in self.outputs}
         times = [start]
         simulation_failed = False
@@ -284,12 +364,15 @@ class FmuSession:
         completed = 0
         try:
             for index in range(hours):
+                t = float(self.time)
+                boundaries = boundaries_at(t) if boundaries_at is not None else None
                 out = self.step(
                     {
                         "u_tp": float(plan.u_tp[index]),
                         "u_battery": float(plan.u_battery[index]),
                         "u_caes": float(plan.u_caes[index]),
-                    }
+                    },
+                    boundaries=boundaries,
                 )
                 completed += 1
                 times.append(self.time)

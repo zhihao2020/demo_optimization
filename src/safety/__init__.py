@@ -6,6 +6,11 @@ from .constraint_reward import ConstraintRewardCalculator
 from .constraint_checker import GiveSafeConstraintChecker
 from .shadow_fmu_validator import ShadowFmuValidator
 from .givesafe_controller import GiveSafeController, load_givesafe_config
+from .soft_constraint_shell import (
+    SoftConstraintEnv,
+    SoftConstraintShell,
+    conservative_recover_action,
+)
 
 __all__ = [
     "GiveSafeResult",           # 安全给予结果(GiveSafeResult)
@@ -16,4 +21,7 @@ __all__ = [
     "ShadowFmuValidator",       # 影子仿真校验器(ShadowFmuValidator)
     "GiveSafeController",       # 安全给予控制器(GiveSafeController)
     "load_givesafe_config",     # 加载安全给予配置(load_givesafe_config)
+    "SoftConstraintShell",      # 软约束外壳
+    "SoftConstraintEnv",        # 软约束环境包装
+    "conservative_recover_action",
 ]

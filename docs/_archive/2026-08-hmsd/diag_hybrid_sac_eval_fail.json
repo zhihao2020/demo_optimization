@@ -1,0 +1,224 @@
+{
+  "reject_stats": {
+    "winter": {
+      "n_rows": 484,
+      "n_reject": 484,
+      "top_all": [
+        [
+          "caes_pressure_low",
+          484
+        ]
+      ],
+      "top_head": [
+        [
+          "caes_pressure_low",
+          200
+        ]
+      ],
+      "top_tail": [
+        [
+          "caes_pressure_low",
+          200
+        ]
+      ]
+    }
+  },
+  "probes": [
+    {
+      "season_run": "sac_s0",
+      "eval_start": 3024000.0,
+      "deterministic": true,
+      "mode_mask": {
+        "discharge": true,
+        "idle": true,
+        "charge": true
+      },
+      "u_tp_box": [
+        0.85,
+        1.0
+      ],
+      "u_bat_box": [
+        -1.0,
+        1.0
+      ],
+      "n_propose_unique": 1,
+      "proposals_sample": [
+        {
+          "u_tp": 0.8500000238418579,
+          "u_battery": -1.0,
+          "u_caes": -1.0
+        },
+        {
+          "u_tp": 0.8500000238418579,
+          "u_battery": -1.0,
+          "u_caes": -1.0
+        },
+        {
+          "u_tp": 0.8500000238418579,
+          "u_battery": -1.0,
+          "u_caes": -1.0
+        }
+      ],
+      "attempt_count": 1,
+      "accepted": {
+        "u_tp": "[0.85]",
+        "u_battery": "[-1.]",
+        "u_caes": "[-1.]"
+      },
+      "rejection_reasons_head": [],
+      "reason_counts": []
+    },
+    {
+      "season_run": "sac_s0",
+      "eval_start": 3024000.0,
+      "deterministic": false,
+      "mode_mask": {
+        "discharge": true,
+        "idle": true,
+        "charge": true
+      },
+      "u_tp_box": [
+        0.85,
+        1.0
+      ],
+      "u_bat_box": [
+        -1.0,
+        1.0
+      ],
+      "n_propose_unique": 1,
+      "proposals_sample": [
+        {
+          "u_tp": 0.8500000238418579,
+          "u_battery": -1.0,
+          "u_caes": -1.0
+        },
+        {
+          "u_tp": 0.8500000238418579,
+          "u_battery": -1.0,
+          "u_caes": -1.0
+        },
+        {
+          "u_tp": 0.8500000238418579,
+          "u_battery": -1.0,
+          "u_caes": -1.0
+        }
+      ],
+      "attempt_count": 1,
+      "accepted": {
+        "u_tp": "[0.85]",
+        "u_battery": "[-1.]",
+        "u_caes": "[-1.]"
+      },
+      "rejection_reasons_head": [],
+      "reason_counts": []
+    },
+    {
+      "season_run": "sac_s0",
+      "eval_start": 10886400.0,
+      "deterministic": true,
+      "mode_mask": {
+        "discharge": true,
+        "idle": true,
+        "charge": true
+      },
+      "u_tp_box": [
+        0.85,
+        1.0
+      ],
+      "u_bat_box": [
+        -1.0,
+        1.0
+      ],
+      "n_propose_unique": 1,
+      "proposals_sample": [
+        {
+          "u_tp": 1.0,
+          "u_battery": 1.0,
+          "u_caes": -1.0
+        },
+        {
+          "u_tp": 1.0,
+          "u_battery": 1.0,
+          "u_caes": -1.0
+        },
+        {
+          "u_tp": 1.0,
+          "u_battery": 1.0,
+          "u_caes": -1.0
+        }
+      ],
+      "attempt_count": 1,
+      "accepted": {
+        "u_tp": "[1.]",
+        "u_battery": "[1.]",
+        "u_caes": "[-1.]"
+      },
+      "rejection_reasons_head": [],
+      "reason_counts": []
+    },
+    {
+      "season_run": "sac_s0",
+      "eval_start": 10886400.0,
+      "deterministic": false,
+      "mode_mask": {
+        "discharge": true,
+        "idle": true,
+        "charge": true
+      },
+      "u_tp_box": [
+        0.85,
+        1.0
+      ],
+      "u_bat_box": [
+        -1.0,
+        1.0
+      ],
+      "n_propose_unique": 1,
+      "proposals_sample": [
+        {
+          "u_tp": 1.0,
+          "u_battery": 1.0,
+          "u_caes": -1.0
+        },
+        {
+          "u_tp": 1.0,
+          "u_battery": 1.0,
+          "u_caes": -1.0
+        },
+        {
+          "u_tp": 1.0,
+          "u_battery": 1.0,
+          "u_caes": -1.0
+        }
+      ],
+      "attempt_count": 1,
+      "accepted": {
+        "u_tp": "[1.]",
+        "u_battery": "[1.]",
+        "u_caes": "[-1.]"
+      },
+      "rejection_reasons_head": [],
+      "reason_counts": []
+    }
+  ],
+  "td3_hours": {
+    "winter": {
+      "status": "completed",
+      "valid_steps": 13,
+      "episode_reward": 1.4222639425132442,
+      "algo": null
+    },
+    "transition": {
+      "status": "completed",
+      "valid_steps": 5,
+      "episode_reward": 1.0855851278294517,
+      "algo": null
+    },
+    "summer": {
+      "status": "completed",
+      "valid_steps": 76,
+      "episode_reward": 11.359749696126274,
+      "algo": null
+    }
+  }
+}

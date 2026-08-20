@@ -35,17 +35,20 @@ class GHTD3Agent:
         self.wear_budget = bool(cfg.get("wear_budget", False))
         self.thermal_budget = bool(cfg.get("thermal_budget", False))
         self.caes_budget = bool(cfg.get("caes_budget", False))
+        self.carbon_budget = bool(cfg.get("carbon_budget", False))
         self.hybrid_caes = bool(cfg.get("hybrid_caes", False))
         self.goal_layout = goal_budget_layout(
             wear_budget=self.wear_budget,
             caes_budget=self.caes_budget,
             thermal_budget=self.thermal_budget,
+            carbon_budget=self.carbon_budget,
         )
         dlow, dhigh = default_goal_boxes(
             self.goal_dim,
             wear_budget=self.wear_budget,
             thermal_budget=self.thermal_budget,
             caes_budget=self.caes_budget,
+            carbon_budget=self.carbon_budget,
         )
         gl_cfg = cfg.get("goal_low")
         gh_cfg = cfg.get("goal_high")
@@ -240,9 +243,11 @@ class GHTD3Agent:
             wear_budget=self.wear_budget,
             thermal_budget=self.thermal_budget,
             caes_budget=self.caes_budget,
+            carbon_budget=self.carbon_budget,
             wear_enforce=bool(self.cfg.get("wear_enforce", True)),
             thermal_enforce=bool(self.cfg.get("thermal_enforce", True)),
             caes_enforce=bool(self.cfg.get("caes_enforce", True)),
+            carbon_enforce=bool(self.cfg.get("carbon_enforce", True)),
             c=self.subgoal_interval,
             layout=self.goal_layout,
         )

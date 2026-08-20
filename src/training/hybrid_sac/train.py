@@ -24,6 +24,7 @@ from training.hybrid_td3.buffer import SafetyDataset
 from training.hybrid_td3.givesafe_collector import GiveSafeTransitionCollector
 from training.episode_starts import training_start_seconds
 from training.hybrid_td3.train import (
+    _soft_shell_enabled,
     annual_episode_start_seconds,
     check_formal_gates,
     load_givesafe_gates,
@@ -43,6 +44,7 @@ def run_hybrid_sac_training(
     forecast_enabled: bool | None = None,
     annual_evaluation: bool = False,
     resume_from: str | Path | None = None,
+    soft_shell: bool | None = None,
 ) -> dict[str, Any]:
     """Hybrid-GiveSafe-SAC 主训练循环。
 
@@ -57,10 +59,12 @@ def run_hybrid_sac_training(
         forecast_enabled: 环境预测开关。
         annual_evaluation: 是否全年评估。
         resume_from: 可选 checkpoint 路径（``hybrid_givesafe_sac.pt``）。
+        soft_shell: 软约束外壳；None 时读 ``SOFT_SHELL``。
 
     Returns:
         训练 summary 字典。
     """
+    use_soft_shell = _soft_shell_enabled(soft_shell)
     run_dir = Path(run_dir)
     root = Path(__file__).resolve().parents[3]
     prepare_run_dir(run_dir, root)
@@ -111,11 +115,12 @@ def run_hybrid_sac_training(
     )
     safety_dataset = SafetyDataset()
     collector = GiveSafeTransitionCollector(
-        buffer, controller, shadow=shadow, safety_dataset=safety_dataset
+        buffer, controller, shadow=shadow, safety_dataset=safety_dataset, soft_shell=use_soft_shell
     )
     agent = HybridSAC(
         obs_dim=int(np.prod(env.observation_space.shape)),
         gamma=float(env.reward_calculator.config.get("gamma", 0.99)),
+        parameterized_caes=True,
     )
     resumed: str | None = None
     if resume_from is not None:
@@ -152,11 +157,13 @@ def run_hybrid_sac_training(
     obs, _info0 = reset_training_episode(episode)
     result: dict[str, Any] = {
         "algo": "hybrid_givesafe_sac",
+        "parameterized_caes": bool(agent.parameterized_caes),
         "requested_valid_steps": total_valid_steps,
         "status": "running",
         "formal": formal,
         "givesafe": True,
         "use_fallback": False,
+        "soft_shell": use_soft_shell,
         "shadow_validation": shadow.capabilities() if shadow else {"enabled": False},
         "oracle_version": env.oracle.oracle_version,
         "annual_horizon_hours": env.config["fmu"].get("annual_horizon_hours"),
@@ -231,6 +238,7 @@ def run_hybrid_sac_training(
             result=result,
             step_log=step_log,
             collector_stats=collector.stats,
+            soft_shell=use_soft_shell,
             extra_result={
                 "physical_replay_size": buffer.physical_size,
                 "givesafe_replay_size": buffer.givesafe_size,

@@ -2,20 +2,23 @@ from pathlib import Path
 import json
 from calendar import monthrange
 
-ROOT = Path(r"D:\Code\0622\optimal_demo")
+ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 
-# 国网山东 2026 工商业分时 + 介子九维引擎 REFERENCE_INPUTS（山东代理购电·园区微电网算例）
-# 来源：jiezijiuwei smart-microgrid priceData.tou.provinces[shandong] + REFERENCE_INPUTS
+# 国网山东 2026 工商业分时机制 + 构造性到户价（proxy-purchase · 园区算例）
+# 时段/浮动：鲁发改价格〔2023〕914 号 + 国网山东 2026 公告（机制官方）
+# 绝对值：proxy/capacity_comp/line_loss/sys_op/fund 为算例分量，不是当月代理购电真值
+# 证据台账：docs/parameter_evidence.md
 DOC = {
     "province": "shandong",
     "province_name": "山东",
     "year": 2026,
     "doc_no": "国网山东省电力公司2026年工商业分时电价公告；框架依据鲁发改价格〔2023〕914号",
     "effective_from": "2026-01-01",
-    "path": "proxy_purchase_tou",  # 电网代理购电分时，非 ISO 出清
-    "review_status": "provincial-published (via jiezijiuwei compiled table)",
-    "source_url": "https://www.jiezijiuwei.com/tools/smart-microgrid",
+    "path": "proxy_purchase_tou",  # 电网代理购电分时路径；非 ISO 出清
+    "review_status": "mechanism-official + constructed absolute levels",
+    "claim_level": "Do not cite absolute buy levels as official 2026 settlement",
+    "source_url": "https://jndpc.jinan.gov.cn/col2191/art/2025/art_2191_4789557.html",
     "transmission_source": "国家发展改革委第四监管周期省级电网输配电价表（山东 110kV 档示例 td_energy=0.106）",
 }
 

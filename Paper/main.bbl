@@ -122,9 +122,4 @@ J.~Garc{\'i}a, F.~Fern{\'a}ndez, Safe exploration of state and action spaces in
   reinforcement learning, Journal of Artificial Intelligence Research 45 (2012)
   515--564.
 
-\bibitem{andrychowicz2017her}
-M.~Andrychowicz, F.~Wolski, A.~Ray, J.~Schneider, R.~Fong, P.~Welinder,
-  B.~McGrew, J.~Tobin, P.~Abbeel, W.~Zaremba, Hindsight experience replay, in:
-  Advances in Neural Information Processing Systems, Vol.~30, 2017.
-
 \end{thebibliography}

@@ -5,8 +5,10 @@
   "doc_no": "国网山东省电力公司2026年工商业分时电价公告；框架依据鲁发改价格〔2023〕914号",
   "effective_from": "2026-01-01",
   "path": "proxy_purchase_tou",
-  "review_status": "provincial-published (via jiezijiuwei compiled table)",
-  "source_url": "https://www.jiezijiuwei.com/tools/smart-microgrid",
+  "review_status": "mechanism-official + constructed absolute levels (not monthly agency settlement)",
+  "claim_level": "Shandong TOU mechanism + constructive delivered price; do not cite as official 2026 settlement schedule",
+  "source_url": "https://jndpc.jinan.gov.cn/col2191/art/2025/art_2191_4789557.html",
+  "evidence_doc": "docs/parameter_evidence.md",
   "transmission_source": "国家发展改革委第四监管周期省级电网输配电价表（山东 110kV 档示例 td_energy=0.106）",
   "float_base_components": {
     "proxy_price": 0.4,

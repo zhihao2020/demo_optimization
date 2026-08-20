@@ -1,31 +1,41 @@
 # Comprehensive monetary terms (Scheme B)
 
-文档更新：2026-08-17 12:30 (+08:00)
+文档更新：2026-08-20 (+08:00)  
+**Profile:** `official-2024-ets-sd-grid-v1` — 详见 [`docs/parameter_evidence.md`](parameter_evidence.md).
 
-**Authoritative layer: Python** (`RewardCalculator`).  
+**Authoritative layer: Python** (`RewardCalculator` + `src/config/reward_config.yaml`).  
 FMU supplies physics and device *energy-bookkeeping* cash; TOU grid settlement, carbon, curtailment, battery cycle, CAES startup, and the Story A interchange contract are applied here.
+
+All learning agents and classical baselines (FS-HSAC, PSO, rolling linprog/MILP, ablations) are ranked on the **same** weekly comprehensive objective when evaluated on the FMU. Do **not** invent method-specific bonus scores for paper tables.
 
 \[
 \Delta J^{\mathrm{gen}}
 =
 \Delta J^{\mathrm{cash}}
-- \pi_{\mathrm{CO_2}}\Delta m
+- C^{\mathrm{CO_2}}
 - C^{CUT}
 - C^{\mathrm{deg}}
 - C^{\mathrm{su,caes}}
-- C^{\mathrm{grid}}
+- C^{\mathrm{grid}},
+\qquad
+CC = -J^{\mathrm{gen}}.
 \]
 
-| Term | Source physics | Price / formula | Default |
-|------|----------------|-----------------|--------|
-| \(\Delta J^{cash}\) | FMU `economic_cashflow_*` Δ + optional TOU grid replace | CNY | — |
-| Carbon \(\pi\Delta m\) | `p_thermal`, `p_grid` | \(\eta_{\mathrm{th}}E_{\mathrm{th}}+\eta_g E_{\mathrm{buy}}\), \(\pi=80\) CNY/t | on |
-| \(C^{CUT}\) | `p_curtailment`, `p_unserved` | \(\nu_c E_{\mathrm{curt}}+\nu_u E_{\mathrm{uns}}\) | 300 / 1000 CNY/MWh |
-| \(C^{\mathrm{deg}}\) | discharge from `p_battery` | Cui-style \(\psi(\delta)=a_0\delta^{2.03}\), \(a_0=\mathrm{Capex}/E_{\mathrm{life}}^{2.03}\), mid-life offset \(\rho=0.25\) | convex cumulative |
-| \(C^{\mathrm{su,caes}}\) | mode from `p_caes` | Cui 2024 Table 2: \(3.42\) USD/switch at 800 kW, \(\times P/P_{\mathrm{ref}}\times\) 7.2 CNY/USD | \(\approx 4617\) CNY / event |
-| \(C^{\mathrm{grid}}\) | `|p_grid|` | \(\nu\max(0,\|P\|-P_{\lim})\Delta t\), \(P_{\lim}=200\) MW | 600 CNY/MWh |
+Primary ranking key: full-week \(CC\) (equivalently \(J^{\mathrm{gen}}\)) with `valid_steps=168`.
 
-FMU hard interchange remains ±500 MW (compiled, not settable). \(C^{\mathrm{grid}}\) is the Story A lever: 150 MW CAES blocks sit inside the 200–500 MW band that used to be free.
+| Term | Source physics | Price / formula | Default (claim level) |
+|------|----------------|-----------------|------------------------|
+| \(\Delta J^{cash}\) | FMU Δ + optional TOU replace | CNY | constructive Shandong TOU path |
+| \(C^{\mathrm{CO_2}}\) | `p_thermal`, `p_grid` | **`intensity_benchmark`:** \(A=\beta E_{\mathrm{th}}\), \(E=\eta_{\mathrm{th}}E_{\mathrm{th}}\); settle \(-\pi Q\); grid step \(\pi\eta_g E_{\mathrm{buy}}\). \(\pi=\mathbf{97.49}\) (O), \(\beta=\mathbf{0.8049}\) (O), \(\eta_g=\mathbf{0.6191}\) (O), \(\eta_{\mathrm{th}}=0.85\) (S) | on |
+| \(C^{CUT}\) | curtail / unserved | \(\nu_c E_{\mathrm{curt}}+\nu_u E_{\mathrm{uns}}\) | 300 (L≈GHTD3) / 1000 (S) |
+| \(C^{\mathrm{deg}}\) | battery discharge | \(\psi(\delta)=a_0\delta^{2.03}\) | L / LCOS |
+| \(C^{\mathrm{su,caes}}\) | CAES mode switch | Cui \(3.42\) USD@800 kW × FX × **linear \(P\) extrapolation** | ≈4617 CNY (S) |
+| \(C^{\mathrm{grid}}\) | `|p_grid|` | \(\nu\max(0,\|P\|-P_{\lim})\Delta t\), \(P_{\lim}=200\) MW | 600 (S) |
+
+FMU hard interchange remains ±500 MW. Code identity:  
+`generalized_cashflow_delta ≈ cash − carbon − cut_total − deg − caes_startup − grid_contract`.
+
+Legacy `runs/**` snapshots with π=80 / η_g=0.5703 / β=0.82 → tag `legacy-2022-grid-factor/proxy-benchmark`; do not rewrite.
 
 ## Battery degradation calibration (convex)
 
@@ -37,15 +47,7 @@ E_{\mathrm{life}}=N\cdot\mathrm{DoD}\cdot E_{\mathrm{cap}},\quad
 a_0=\mathrm{Capex}/E_{\mathrm{life}}^{p},\quad p=2.03,\quad
 C_t=\psi(\delta_0+\delta_t)-\psi(\delta_0+\delta_{t-1}).
 \]
-- \(\delta\): episode cumulative **discharge** MWh only.  
-- \(\delta_0=\rho E_{\mathrm{life}}\): mid-life offset (default \(\rho=0.25\)) so a fresh weekly episode is not stuck where marginal cost ≈ 0.  
-- Full-life identity: \(\psi(E_{\mathrm{life}})=\mathrm{Capex}\).  
-- Legacy `mode: linear_throughput` still available.
-
-## Modelica Battery (resources)
-
-`TypicalScenarios.Battery` cash is only `±P * c_buy/sale`.  
-**No** cycle-life cash. Python \(C^{\mathrm{deg}}\) does **not** double-count cycle fees.
+Weekly default \(\rho=0\). Legacy `linear_throughput` still available.
 
 ## Disable
 
@@ -53,4 +55,6 @@ C_t=\psi(\delta_0+\delta_t)-\psi(\delta_0+\delta_{t-1}).
 curtailment: {enabled: false}
 battery_degradation: {enabled: false}
 carbon: {enabled: false}
+caes_startup: {enabled: false}
+grid_contract: {enabled: false}
 ```

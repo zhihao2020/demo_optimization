@@ -1,0 +1,27 @@
+{
+  "protocol": "fair_seasonal_v1",
+  "method": "sac",
+  "season": "winter",
+  "train_weeks": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "eval_week": 5,
+  "train_start_seconds": [
+    0.0,
+    604800.0,
+    1209600.0,
+    1814400.0,
+    2419200.0
+  ],
+  "eval_start_seconds": 3024000.0,
+  "single_week_debug": false,
+  "episodes": 5000,
+  "steps": 840000,
+  "seed": 0,
+  "lock_caes": false,
+  "story": "A_grid_contract"
+}

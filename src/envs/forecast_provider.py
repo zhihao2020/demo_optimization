@@ -1,6 +1,7 @@
 """读取 ``data/`` 中与 FMU 同源的已知日前时序，提供策略前瞻观测。
 
-CSV 只扩展策略的 observation；FMU 仍是风光负荷的唯一物理驱动与真值来源。
+CSV 只扩展策略的 observation；FMU 物理真值由 ``BoundaryProvider`` 逐步写入，
+与本模块解耦。``noisy`` / ``predicted`` 模式只污染观测，不得改写边界真值。
 """
 
 from __future__ import annotations
@@ -21,7 +22,11 @@ FORECAST_FEATURE_DIM = DEFAULT_FORECAST_HORIZON_HOURS * len(FORECAST_CHANNELS)
 DEFAULT_MARKET_HORIZON_HOURS = 24
 MARKET_PRICE_CHANNELS = 2
 MARKET_FEATURE_DIM = DEFAULT_MARKET_HORIZON_HOURS * MARKET_PRICE_CHANNELS
-DEFAULT_OBSERVATION_DIM = BASE_OBSERVATION_DIM + FORECAST_FEATURE_DIM + MARKET_FEATURE_DIM
+# 年内辅助：碳头寸归一化、退化占比、进度（见 RewardCalculator.aux_observation_features）
+AUX_FEATURE_DIM = 3
+DEFAULT_OBSERVATION_DIM = (
+    BASE_OBSERVATION_DIM + FORECAST_FEATURE_DIM + MARKET_FEATURE_DIM + AUX_FEATURE_DIM
+)
 
 
 class ForecastDataError(ValueError):

@@ -1,0 +1,37 @@
+[
+  {
+    "name": "transition_fs_hsac_support_smoke_s0",
+    "bat": "D:\\xuzh\\demo_optimization\\logs\\run_v1_transition_fs_hsac_support_smoke_s0.bat",
+    "run_dir": "D:\\xuzh\\demo_optimization\\runs\\seasonal_v1\\transition\\fs_hsac_support_smoke_s0"
+  },
+  {
+    "name": "winter_fs_hsac_support_s0",
+    "bat": "D:\\xuzh\\demo_optimization\\logs\\run_v1_winter_fs_hsac_support_s0.bat",
+    "run_dir": "D:\\xuzh\\demo_optimization\\runs\\seasonal_v1\\winter\\fs_hsac_support_s0"
+  },
+  {
+    "name": "transition_fs_hsac_support_s0",
+    "bat": "D:\\xuzh\\demo_optimization\\logs\\run_v1_transition_fs_hsac_support_s0.bat",
+    "run_dir": "D:\\xuzh\\demo_optimization\\runs\\seasonal_v1\\transition\\fs_hsac_support_s0"
+  },
+  {
+    "name": "summer_fs_hsac_support_s0",
+    "bat": "D:\\xuzh\\demo_optimization\\logs\\run_v1_summer_fs_hsac_support_s0.bat",
+    "run_dir": "D:\\xuzh\\demo_optimization\\runs\\seasonal_v1\\summer\\fs_hsac_support_s0"
+  },
+  {
+    "name": "winter_fs_hsac_s0",
+    "bat": "D:\\xuzh\\demo_optimization\\logs\\run_v1_winter_fs_hsac_s0.bat",
+    "run_dir": "D:\\xuzh\\demo_optimization\\runs\\seasonal_v1\\winter\\fs_hsac_s0"
+  },
+  {
+    "name": "transition_fs_hsac_s0",
+    "bat": "D:\\xuzh\\demo_optimization\\logs\\run_v1_transition_fs_hsac_s0.bat",
+    "run_dir": "D:\\xuzh\\demo_optimization\\runs\\seasonal_v1\\transition\\fs_hsac_s0"
+  },
+  {
+    "name": "summer_fs_hsac_s0",
+    "bat": "D:\\xuzh\\demo_optimization\\logs\\run_v1_summer_fs_hsac_s0.bat",
+    "run_dir": "D:\\xuzh\\demo_optimization\\runs\\seasonal_v1\\summer\\fs_hsac_s0"
+  }
+]

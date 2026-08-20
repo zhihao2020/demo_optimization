@@ -1,13 +1,13 @@
 #!/usr/bin/env python
-"""Clean remote protocol-v0 mess, sync fair-suite code, launch full seasonal matrix.
+"""Clean remote cache, sync fair-suite code, launch seasonal matrix.
 
 Matrix (default):
-  seasons × {hmsd,td3,sac} × seeds 0..2  +  seasons × {pso,linprog} × seed 0
-Queue: max concurrent train_seasonal jobs (default 4), FMU isolate per job_id.
+  seasons × {sac,td3,pso,linprog} × seed 0
+  sac/td3 use parameterized CAES (mode, mag). HMSD is not in the default grid.
 
 Usage:
   python scripts/remote_fair_suite.py --sync-only
-  python scripts/remote_fair_suite.py --episodes 5000
+  python scripts/remote_fair_suite.py --episodes 5000 --seeds 0
   python scripts/remote_fair_suite.py --episodes 200 --max-live 4   # smoke
 """
 from __future__ import annotations
@@ -32,6 +32,7 @@ SYNC_GLOBS = [
     "src/actions/**/*.py",
     "src/config/**/*",
     "src/controllers/**/*.py",
+    "src/data/**/*.py",
     "src/envs/**/*.py",
     "src/fmu/**/*.py",
     "src/market/**/*.py",
@@ -43,7 +44,11 @@ SYNC_GLOBS = [
     "scripts/train_seasonal.py",
     "scripts/eval_seasonal_fair.py",
     "scripts/train_hybrid_sac.py",
+    "scripts/train_hybrid_td3.py",
     "scripts/train_ghtd3.py",
+    "data/scenarios/**/*",
+    "data/*.fmu",
+    "data/*.csv",
     "docs/cui_seasonal_min_protocol.md",
 ]
 SKIP_DIR = {"__pycache__", ".git", ".pytest_cache"}
@@ -77,6 +82,14 @@ def run(t, cmd, timeout=120):
         else:
             time.sleep(0.05)
     return buf.decode("utf-8", "replace")
+
+
+def safe_print(msg) -> None:
+    text = str(msg)
+    try:
+        print(text, flush=True)
+    except UnicodeEncodeError:
+        print(text.encode("ascii", "replace").decode("ascii"), flush=True)
 
 
 def mkdirs(sftp, remote: str) -> None:
@@ -157,7 +170,9 @@ def build_jobs(episodes: int, seeds: list[int], seasons: list[str], methods: lis
         for method in methods:
             mseeds = seeds if method in ("hmsd", "td3", "sac", "pso") else [0]
             for seed in mseeds:
-                name = f"{season}_{method}_s{seed}"
+                # Paper mainline SAC/TD3 use isolated *_param_s0 dirs (keep old projected runs).
+                run_method = f"{method}_param" if method in ("sac", "td3") else method
+                name = f"{season}_{run_method}_s{seed}"
                 jobs.append(
                     {
                         "name": name,
@@ -166,7 +181,7 @@ def build_jobs(episodes: int, seeds: list[int], seasons: list[str], methods: lis
                         "seed": seed,
                         "episodes": episodes,
                         "job_id": f"seasonal_{name}",
-                        "run_dir": rf"{REMOTE}\runs\seasonal_v1\{season}\{method}_s{seed}",
+                        "run_dir": rf"{REMOTE}\runs\seasonal_v1\{season}\{run_method}_s{seed}",
                         "log": rf"{REMOTE}\logs\seasonal_v1_{name}.log",
                         "bat": rf"{REMOTE}\logs\run_v1_{name}.bat",
                     }
@@ -230,6 +245,8 @@ def live_jobs():
     for ln in out.splitlines():
         if "train_seasonal.py" not in ln.lower():
             continue
+        if "seasonal_v1" not in ln.lower():
+            continue
         if "--run-dir" not in ln.lower():
             continue
         part = ln.split("--run-dir", 1)[1].strip().strip('"').strip()
@@ -281,9 +298,9 @@ while True:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--episodes", type=int, default=5000)
-    ap.add_argument("--seeds", type=str, default="0,1,2")
+    ap.add_argument("--seeds", type=str, default="0", help="comma-separated seeds (default: single seed 0)")
     ap.add_argument("--seasons", type=str, default="winter,transition,summer")
-    ap.add_argument("--methods", type=str, default="hmsd,td3,sac,pso,linprog")
+    ap.add_argument("--methods", type=str, default="sac,td3,pso,linprog")
     ap.add_argument("--max-live", type=int, default=4)
     ap.add_argument("--sync-only", action="store_true")
     ap.add_argument("--launch-only", action="store_true")
@@ -307,28 +324,55 @@ def main() -> None:
         print(sync(sftp), flush=True)
         for rel in (
             "scripts/train_seasonal.py",
+            "scripts/train_hybrid_td3.py",
             "src/training/episode_starts.py",
             "src/training/ghtd3/train.py",
+            "src/training/ghtd3/goals.py",
+            "src/training/ghtd3/agent.py",
             "src/training/hybrid_td3/train.py",
+            "src/training/hybrid_td3/actor.py",
+            "src/training/hybrid_td3/algorithm.py",
             "src/training/hybrid_sac/train.py",
+            "src/training/hybrid_sac/algorithm.py",
             "src/training/hybrid_common/eval_and_save.py",
+            "src/training/hybrid_common/stochastic_actor.py",
+            "src/training/hybrid_common/param_caes.py",
+            "src/training/hybrid_common/policy_wrapper.py",
+            "src/actions/caes_u.py",
+            "src/envs/reward_calculator.py",
+            "src/envs/power_system_env.py",
+            "src/envs/forecast_provider.py",
+            "src/envs/boundary_provider.py",
             "src/config/ghtd3_config.yaml",
+            "src/config/reward_config.yaml",
+            "src/config/env_config.yaml",
             "src/optimization/metrics.py",
             "src/optimization/pso_fmu.py",
+            "data/TypicalScensrio_Example_TypicalScene_PowerSystem_8760h.fmu",
         ):
-            force_put(sftp, rel)
+            if (LOCAL / rel).is_file():
+                force_put(sftp, rel)
 
     if not args.no_clean:
         print("=== clean old seasonal + locks + cache tmp ===", flush=True)
         clean_bat = f"""@echo off
-REM stop old queues / seasonal
+REM stop old demo_optimization python jobs only
+wmic process where "CommandLine like '%%xuzh\\\\demo_optimization%%' and Name='python.exe'" call terminate 2>nul
 wmic process where "CommandLine like '%%train_seasonal%%'" call terminate 2>nul
 wmic process where "CommandLine like '%%fair_queue%%'" call terminate 2>nul
-wmic process where "CommandLine like '%%wmic_queue%%'" call terminate 2>nul
-timeout /t 2 /nobreak >nul
-REM remove protocol-v0 seasonal runs (wrong eval week / single-week FORCE)
-if exist "{REMOTE}\\runs\\seasonal" rmdir /s /q "{REMOTE}\\runs\\seasonal"
+timeout /t 5 /nobreak >nul
+REM stale cache
 if exist "{CACHE}\\tmp" rmdir /s /q "{CACHE}\\tmp"
+if exist "{CACHE}\\fmu_copies" rmdir /s /q "{CACHE}\\fmu_copies"
+if exist "{CACHE}\\pycache" rmdir /s /q "{CACHE}\\pycache"
+REM old protocol / leftover experiment dumps
+if exist "{REMOTE}\\runs\\seasonal" rmdir /s /q "{REMOTE}\\runs\\seasonal"
+if exist "{REMOTE}\\runs\\seasonal_v1" rmdir /s /q "{REMOTE}\\runs\\seasonal_v1"
+if exist "{REMOTE}\\runs\\ablation" rmdir /s /q "{REMOTE}\\runs\\ablation"
+if exist "{REMOTE}\\runs\\aligned" rmdir /s /q "{REMOTE}\\runs\\aligned"
+if exist "{REMOTE}\\runs\\cui_style" rmdir /s /q "{REMOTE}\\runs\\cui_style"
+if exist "{REMOTE}\\runs\\wear" rmdir /s /q "{REMOTE}\\runs\\wear"
+if exist "{REMOTE}\\runs\\story_a" rmdir /s /q "{REMOTE}\\runs\\story_a"
 mkdir "{CACHE}\\tmp" 2>nul
 mkdir "{CACHE}\\fmu_copies" 2>nul
 mkdir "{REMOTE}\\runs\\seasonal_v1" 2>nul
@@ -339,7 +383,7 @@ echo CLEAN_DONE
         local_c.parent.mkdir(parents=True, exist_ok=True)
         local_c.write_text(clean_bat, encoding="ascii")
         sftp.put(str(local_c), rpath("logs", "_remote_clean_fair.bat"), confirm=False)
-        print(run(t, f'cmd /c "{rpath("logs", "_remote_clean_fair.bat")}"', timeout=180), flush=True)
+        safe_print(run(t, f'cmd /c "{rpath("logs", "_remote_clean_fair.bat")}"', timeout=180))
 
     if args.sync_only:
         sftp.close()
@@ -347,15 +391,25 @@ echo CLEAN_DONE
         print("sync-only done", flush=True)
         return
 
-    # smoke import
+    # smoke import + obs dim + FMU present
     smoke = (
         "import sys\n"
+        "from pathlib import Path\n"
         f"sys.path.insert(0, r'{REMOTE}\\src')\n"
-        "from training.episode_starts import eval_start_seconds\n"
-        "from training.ghtd3.train import load_ghtd3_config\n"
-        "c=load_ghtd3_config()['ghtd3']\n"
-        "assert c.get('low_reward')=='ext'\n"
-        "print('SMOKE_OK', c['goal_dim'], c['low_reward'])\n"
+        "from envs.forecast_provider import DEFAULT_OBSERVATION_DIM\n"
+        "from training.hybrid_common.stochastic_actor import HybridStochasticActor\n"
+        "from training.hybrid_td3.actor import HybridActor\n"
+        "from training.hybrid_sac.algorithm import HybridSAC\n"
+        "a=HybridStochasticActor(8)\n"
+        "assert a.parameterized_caes is True\n"
+        "b=HybridActor(8)\n"
+        "assert b.parameterized_caes is True\n"
+        "s=HybridSAC(obs_dim=8)\n"
+        "assert s.parameterized_caes is True\n"
+        "assert int(DEFAULT_OBSERVATION_DIM)==166, DEFAULT_OBSERVATION_DIM\n"
+        f"fmu=Path(r'{REMOTE}')/'data'/'TypicalScensrio_Example_TypicalScene_PowerSystem_8760h.fmu'\n"
+        "assert fmu.is_file() and fmu.stat().st_size>1e6, fmu\n"
+        "print('SMOKE_OK', 'param_caes', a.parameterized_caes, 'obs', DEFAULT_OBSERVATION_DIM, 'fmu', fmu.stat().st_size)\n"
     )
     local_s = LOCAL / "logs" / "_fair_smoke.py"
     local_s.write_text(smoke, encoding="utf-8")
@@ -366,7 +420,7 @@ echo CLEAN_DONE
         f'$env:PYTHONPATH=\'{REMOTE}\\src\'; & \'{PY}\' \'{rpath("logs", "_fair_smoke.py")}\'"',
         timeout=120,
     )
-    print("smoke:", smoke_out.strip()[:500], flush=True)
+    safe_print("smoke: " + smoke_out.strip()[:500])
     if "SMOKE_OK" not in smoke_out:
         raise SystemExit("remote smoke failed")
 
@@ -401,25 +455,28 @@ echo CLEAN_DONE
     sftp.put(str(local_sb), rpath("logs", "start_fair_queue.bat"), confirm=False)
 
     out = run(t, f'wmic process call create "cmd.exe /c call \\"{rpath("logs", "start_fair_queue.bat")}\\""', timeout=40)
-    print(out.strip()[:400], flush=True)
+    safe_print(out.strip()[:400])
 
     time.sleep(20)
-    print(
+    safe_print(
         run(
             t,
             f'powershell -NoProfile -Command "if(Test-Path \'{REMOTE}\\logs\\fair_queue.log\'){{ Get-Content \'{REMOTE}\\logs\\fair_queue.log\' -Tail 15 }} else {{ \'NOLOG\' }}"',
             timeout=40,
-        ).strip(),
-        flush=True,
+        ).strip()
     )
     man = LOCAL / "logs" / "remote_fair_suite_manifest.json"
     man.write_text(
         json.dumps(
             {
                 "episodes": args.episodes,
+                "seeds": seeds,
+                "seasons": seasons,
+                "methods": methods,
                 "max_live": args.max_live,
                 "n_jobs": len(jobs),
                 "jobs": [j["name"] for j in jobs],
+                "observation_dim_expected": 166,
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
             },
             indent=2,

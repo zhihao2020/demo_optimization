@@ -104,6 +104,43 @@ def apply_mode_mask_to_u_torch(u: torch.Tensor, mode_mask: torch.Tensor) -> torc
     return u
 
 
+def clamp_u_caes_to_spec(u: float, feasible: Any) -> tuple[float, bool]:
+    """把 u_caes 的幅值夹进该方向的安全子区间。
+
+    只处理幅值，不处理方向：方向是否合法由模式掩码表达，非法方向仍须被
+    ``PhysicalActionValidator`` 拒绝并计入审计——这是智能体必须学会规避的约束，
+    也是「非法动作永不触达 FMU」这一性质的依据。而安全幅值子区间逐步随状态变化，
+    智能体无从预知，故按投影处理并单独审计。
+
+    Args:
+        u: 原始 CAES 指令。
+        feasible: DynamicFeasibleActionSet，需含 mode_mask 与幅值区间。
+
+    Returns:
+        (投影后的 u_caes, 幅值是否被夹紧)。
+
+    Raises:
+        无。
+    """
+    original = float(u)
+    mask = feasible.mode_mask
+    if original < 0.0:
+        if not mask.discharge:
+            return original, False
+        span = getattr(feasible, "u_caes_discharge", None)
+    elif original > 0.0:
+        if not mask.charge:
+            return original, False
+        span = getattr(feasible, "u_caes_charge", None)
+    else:
+        return original, False
+    if span is None:
+        return original, False
+    lo, hi = float(span[0]), float(span[1])
+    out = float(np.clip(original, min(lo, hi), max(lo, hi)))
+    return out, bool(abs(out - original) > _EPS)
+
+
 def u_from_mode_mag(mode: CaesMode | int, mag: float) -> float:
     """mode + mag∈[0,1] → 合法带内 u_caes。idle 忽略幅值。"""
     mode_i = int(mode)
@@ -121,6 +158,78 @@ def u_from_mode_onehot_torch(onehot: torch.Tensor, mag: torch.Tensor) -> torch.T
     u_dis = DISCHARGE_LO + mag * (DISCHARGE_HI - DISCHARGE_LO)
     u_chg = CHARGE_LO + mag * (CHARGE_HI - CHARGE_LO)
     return onehot[:, 0] * u_dis + onehot[:, 2] * u_chg
+
+
+def legalize_mode_mask(mode_mask: torch.Tensor) -> torch.Tensor:
+    """(B,3) or (3,) bool mask; if a row is all-false, allow every mode."""
+    legal = mode_mask.to(dtype=torch.bool)
+    if legal.dim() == 1:
+        legal = legal.view(1, -1)
+    if legal.size(-1) != 3:
+        raise ValueError(f"mode_mask last dim must be 3, got {tuple(legal.shape)}")
+    fill = legal.any(dim=-1, keepdim=True)
+    return torch.where(fill, legal, torch.ones_like(legal))
+
+
+def mask_mode_logits(logits: torch.Tensor, mode_mask: torch.Tensor) -> torch.Tensor:
+    """Illegal modes → -1e9 so softmax/argmax cannot pick them."""
+    if logits.dim() == 1:
+        logits = logits.view(1, -1)
+    legal = legalize_mode_mask(mode_mask)
+    if legal.size(0) == 1 and logits.size(0) > 1:
+        legal = legal.expand(logits.size(0), -1)
+    return logits.masked_fill(~legal, -1.0e9)
+
+
+def gumbel_mode_onehot(
+    logits: torch.Tensor,
+    tau: float = 1.0,
+    *,
+    deterministic: bool = False,
+    soft_for_grad: bool = True,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Masked logits → (one-hot [B,3], idx [B]). Straight-through when training."""
+    if deterministic:
+        idx = logits.argmax(dim=-1)
+        onehot = torch.nn.functional.one_hot(idx, 3).to(dtype=logits.dtype)
+        return onehot, idx
+    gumbel = -torch.log(-torch.log(torch.rand_like(logits).clamp(1e-6, 1.0)))
+    y_soft = torch.softmax((logits + gumbel) / max(float(tau), 1e-3), dim=-1)
+    idx = y_soft.argmax(dim=-1)
+    y_hard = torch.nn.functional.one_hot(idx, 3).to(dtype=y_soft.dtype)
+    onehot = y_hard + y_soft - y_soft.detach() if soft_for_grad else y_hard
+    return onehot, idx
+
+
+def mode_index_from_u_torch(u: torch.Tensor) -> torch.Tensor:
+    """Physical u_caes → mode index 0=dis, 1=idle, 2=chg."""
+    u = u.float()
+    idx = torch.ones_like(u, dtype=torch.long)
+    idx = torch.where(u < -_EPS, torch.zeros_like(idx), idx)
+    idx = torch.where(u > _EPS, torch.full_like(idx, 2), idx)
+    return idx
+
+
+def mag_from_u_torch(u: torch.Tensor) -> torch.Tensor:
+    """Legal-band u → [0,1] magnitude (idle → 0)."""
+    u = u.float()
+    mag_dis = ((u - DISCHARGE_LO) / (DISCHARGE_HI - DISCHARGE_LO)).clamp(0.0, 1.0)
+    mag_chg = ((u - CHARGE_LO) / (CHARGE_HI - CHARGE_LO)).clamp(0.0, 1.0)
+    mag = torch.where(u < -_EPS, mag_dis, torch.where(u > _EPS, mag_chg, torch.zeros_like(u)))
+    return mag
+
+
+def perturb_u_caes_keep_mode(u: torch.Tensor, noise: torch.Tensor) -> torch.Tensor:
+    """Add noise inside the current legal band; idle stays idle."""
+    u = u.float()
+    noise = noise.float()
+    idle = u.abs() <= _EPS
+    dis = u < -_EPS
+    u_n = u + noise
+    u_dis = u_n.clamp(DISCHARGE_LO, DISCHARGE_HI)
+    u_chg = u_n.clamp(CHARGE_LO, CHARGE_HI)
+    out = torch.where(dis, u_dis, u_chg)
+    return torch.where(idle, torch.zeros_like(u), out)
 
 
 def compressor_expander_bits(mode: CaesMode | int) -> tuple[int, int]:

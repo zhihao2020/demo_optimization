@@ -1,0 +1,27 @@
+{
+  "protocol": "fair_seasonal_v1",
+  "method": "pso",
+  "season": "summer",
+  "train_weeks": [
+    26,
+    27,
+    28,
+    29,
+    30
+  ],
+  "eval_week": 31,
+  "train_start_seconds": [
+    15724800.0,
+    16329600.0,
+    16934400.0,
+    17539200.0,
+    18144000.0
+  ],
+  "eval_start_seconds": 18748800.0,
+  "single_week_debug": false,
+  "episodes": null,
+  "steps": null,
+  "seed": 0,
+  "lock_caes": false,
+  "story": "A_grid_contract"
+}

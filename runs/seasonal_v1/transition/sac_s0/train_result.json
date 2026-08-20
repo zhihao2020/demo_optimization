@@ -1,0 +1,42 @@
+{
+  "status": "eval_failed",
+  "algorithm": "hybrid_givesafe_sac",
+  "observation_dim": 166,
+  "checkpoint": "D:/0622/optimization/demo_optimization/runs/seasonal_v1/transition/sac_s0/checkpoints/hybrid_givesafe_sac.pt",
+  "eval_start_time_seconds": 10886400.0,
+  "protocol": {
+    "protocol": "fair_seasonal_v1",
+    "method": "sac",
+    "season": "transition",
+    "train_weeks": [
+      13,
+      14,
+      15,
+      16,
+      17
+    ],
+    "eval_week": 18,
+    "train_start_seconds": [
+      7862400.0,
+      8467200.0,
+      9072000.0,
+      9676800.0,
+      10281600.0
+    ],
+    "eval_start_seconds": 10886400.0,
+    "single_week_debug": false,
+    "episodes": 5000,
+    "steps": 840000,
+    "seed": 0,
+    "lock_caes": false,
+    "story": "A_grid_contract"
+  },
+  "givesafe_fallback": false,
+  "reeval": true,
+  "reeval_note": "post-hoc held-out eval; NoSafeActionFound recorded as eval_failed (no fallback)",
+  "failure_type": "NoSafeActionFoundError",
+  "failure_reason": "[NoSafeActionFound/unknown] 在 64 次尝试后仍无安全动作（无 fallback）",
+  "failure_attempts": 64,
+  "eval_wall_seconds": 1.4415506001096219,
+  "traceback": "Traceback (most recent call last):\n  File \"D:\\0622\\optimization\\demo_optimization\\scripts\\eval_seasonal_sac_ckpt.py\", line 100, in main\n    eval_res = evaluate_policy(\n               ^^^^^^^^^^^^^^^^\n  File \"D:\\0622\\optimization\\demo_optimization\\src\\training\\evaluate_td3.py\", line 63, in evaluate_policy\n    predicted = policy.predict(obs, deterministic=True)\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\0622\\optimization\\demo_optimization\\src\\training\\hybrid_common\\policy_wrapper.py\", line 115, in predict\n    gs = self.controller.select_safe_action(\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\0622\\optimization\\demo_optimization\\src\\safety\\givesafe_controller.py\", line 146, in select_safe_action\n    raise NoSafeActionFoundError(\nsafety.no_safe_action.NoSafeActionFoundError: [NoSafeActionFound/unknown] 在 64 次尝试后仍无安全动作（无 fallback）\n"
+}

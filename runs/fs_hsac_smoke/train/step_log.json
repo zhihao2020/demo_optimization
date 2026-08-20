@@ -1,0 +1,19 @@
+[
+  {
+    "valid_step": 20,
+    "reward": -1.5083477561502834,
+    "attempts": 1,
+    "rejected": 0,
+    "critic_loss": 3248169943040.0,
+    "actor_loss": 8464722.0,
+    "alpha_d": 0.9997000694274902,
+    "alpha_c": 0.9997000694274902,
+    "alpha_d_loss": -0.0,
+    "alpha_c_loss": -0.0,
+    "entropy_mode": 0.0,
+    "entropy_cont": -5715348.0,
+    "q1_mean": 1102928.75,
+    "nonfinite_skips": 0.0,
+    "skipped": 0.0
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "host": "172.16.1.80",
+  "profile": "official-2024-ets-sd-grid-v1",
+  "price_cny_per_t": 97.49,
+  "beta_t_per_mwh": 0.8049,
+  "eta_grid_t_per_mwh": 0.6191,
+  "episodes": 5000,
+  "max_live": 5,
+  "jobs": [
+    "transition_fs_hsac_support_smoke_s0",
+    "winter_fs_hsac_support_s0",
+    "transition_fs_hsac_support_s0",
+    "summer_fs_hsac_support_s0",
+    "winter_fs_hsac_s0",
+    "transition_fs_hsac_s0",
+    "summer_fs_hsac_s0"
+  ],
+  "ts": "2026-08-20T15:00:00",
+  "note": "killed legacy queues/param; wiped fs_hsac run dirs; resynced reward_config; restarted FS-HSAC queue"
+}

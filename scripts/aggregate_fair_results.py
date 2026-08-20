@@ -83,11 +83,6 @@ def extract_row(path: Path) -> dict | None:
         or kpi.get("sum_delta_cf")
         or j.get("net_cashflow_j")
     )
-    soc = eval_.get("terminal_soc_satisfied")
-    if soc is None:
-        soc = kpi.get("terminal_soc_satisfied")
-    if soc is None:
-        soc = j.get("terminal_soc_satisfied")
     uns = metrics.get("unserved_energy_mwh")
     if uns is None:
         uns = kpi.get("unserved_energy_mwh")
@@ -95,15 +90,22 @@ def extract_row(path: Path) -> dict | None:
         uns = j.get("unserved_mwh")
 
     safety = j.get("safety_learning") or {}
+    status = j.get("status")
+    if not status:
+        if j.get("failure_type"):
+            status = "eval_failed"
+        elif r is not None:
+            status = "completed"
+        else:
+            status = "unknown"
     return {
         "season": season,
         "method": method,
         "seed": seed,
-        "status": j.get("status", "unknown"),
+        "status": status,
         "R": float(r) if r is not None else None,
         "Jgen": float(jgen) if jgen is not None else None,
         "CF": float(cf) if cf is not None else None,
-        "SOC_ok": bool(soc) if soc is not None else None,
         "unserved": float(uns) if uns is not None else None,
         "reject_rate": safety.get("reject_rate"),
         "path": str(path),
@@ -144,19 +146,18 @@ def main() -> None:
         "",
         "## Per seed",
         "",
-        "| season | method | seed | R | Jgen | CF | SOC_ok | unserved | reject_rate |",
-        "|--------|--------|------|---|------|----|--------|----------|-------------|",
+        "| season | method | seed | R | Jgen | CF | unserved | reject_rate |",
+        "|--------|--------|------|---|------|----|----------|-------------|",
     ]
     for r in sorted(rows, key=lambda x: (x["season"], x["method"], x["seed"])):
         lines.append(
-            "| {season} | {method} | {seed} | {R} | {Jgen} | {CF} | {SOC_ok} | {unserved} | {reject_rate} |".format(
+            "| {season} | {method} | {seed} | {R} | {Jgen} | {CF} | {unserved} | {reject_rate} |".format(
                 season=r["season"],
                 method=r["method"],
                 seed=r["seed"],
                 R=f"{r['R']:.3f}" if r["R"] is not None else "—",
                 Jgen=f"{r['Jgen']:.3e}" if r["Jgen"] is not None else "—",
                 CF=f"{r['CF']:.3e}" if r["CF"] is not None else "—",
-                SOC_ok=r["SOC_ok"] if r["SOC_ok"] is not None else "—",
                 unserved=f"{r['unserved']:.3f}" if r["unserved"] is not None else "—",
                 reject_rate=f"{r['reject_rate']:.3f}" if r["reject_rate"] is not None else "—",
             )
@@ -164,18 +165,15 @@ def main() -> None:
 
     lines += ["", "## Mean ± std (by season × method)", ""]
     lines += [
-        "| season | method | n | R mean±std | Jgen mean±std | SOC_ok rate |",
-        "|--------|--------|---|------------|---------------|-------------|",
+        "| season | method | n | R mean±std | Jgen mean±std |",
+        "|--------|--------|---|------------|---------------|",
     ]
     for (season, method), rs in sorted(groups.items()):
         rm, rs_ = mean_std([x["R"] for x in rs if x["R"] is not None])
         jm, js = mean_std([x["Jgen"] for x in rs if x["Jgen"] is not None])
-        socs = [x["SOC_ok"] for x in rs if x["SOC_ok"] is not None]
-        soc_rate = (sum(1 for s in socs if s) / len(socs)) if socs else None
         r_s = f"{rm:.2f}±{rs_:.2f}" if rm is not None else "—"
         j_s = f"{jm:.3e}±{js:.3e}" if jm is not None else "—"
-        s_s = f"{soc_rate:.0%}" if soc_rate is not None else "—"
-        lines.append(f"| {season} | {method} | {len(rs)} | {r_s} | {j_s} | {s_s} |")
+        lines.append(f"| {season} | {method} | {len(rs)} | {r_s} | {j_s} |")
 
     # simple win rate HMSD vs TD3 per season on R
     lines += ["", "## HMSD vs TD3 (mean R)", ""]

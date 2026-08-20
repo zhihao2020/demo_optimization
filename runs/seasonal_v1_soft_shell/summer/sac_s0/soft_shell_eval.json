@@ -1,0 +1,12 @@
+{
+  "status": "skipped_missing_checkpoint",
+  "protocol": "soft_shell_eval_v1",
+  "source_run": "D:/0622/optimization/demo_optimization/runs/seasonal_v1/summer/sac_s0",
+  "season": "summer",
+  "method": "sac",
+  "seed": 0,
+  "soft_shell": true,
+  "use_fallback": false,
+  "note": "eval-only soft shell on frozen weights; does not replace hard-protocol seasonal_v1",
+  "error": "missing D:\\0622\\optimization\\demo_optimization\\runs\\seasonal_v1\\summer\\sac_s0\\checkpoints\\hybrid_givesafe_sac.pt"
+}

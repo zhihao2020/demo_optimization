@@ -1,0 +1,11 @@
+# Annual / intensity-quota ablation: 2D inventory + carbon pacing dim
+# Use with episode_steps=8760 and reward_config carbon.mode=intensity_benchmark
+ghtd3:
+  goal_dim: 3
+  goal_low:  [-0.30, -0.12, 0.0]
+  goal_high: [ 0.30,  0.12, 1.0]
+  carbon_budget: true
+  carbon_enforce: true
+  wear_budget: false
+  thermal_budget: false
+  caes_budget: false

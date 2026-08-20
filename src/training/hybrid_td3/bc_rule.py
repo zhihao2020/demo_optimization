@@ -113,8 +113,9 @@ def behavior_clone_actor(
     tp_weight: float = 2.0,
     bat_weight: float = 8.0,
 ) -> dict[str, float]:
-    """监督学习：logit MSE（火电/电池/u_caes）。"""
-    _ = (mode_weight, mag_weight)
+    """监督学习：火电/电池 logit MSE；压空为模式 CE + 幅值 MSE（参数化）或 z_caes MSE。"""
+    from actions.caes_u import mag_from_u_torch, mask_mode_logits, mode_index_from_u_torch
+
     device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     actor = actor.to(device)
     actor.train()
@@ -147,8 +148,16 @@ def behavior_clone_actor(
             logits_out = actor.forward_logits(obs_t[b])
             loss_tp = F.mse_loss(logits_out["z_tp"], z_tp_tgt[b])
             loss_bat = F.mse_loss(logits_out["z_bat"], z_bat_tgt[b])
-            loss_caes = F.mse_loss(logits_out["z_caes"], z_caes_tgt[b])
-            loss = tp_weight * loss_tp + bat_weight * loss_bat + 2.0 * loss_caes
+            if getattr(actor, "parameterized_caes", True):
+                mode_logits = mask_mode_logits(logits_out["mode_logits"], mask[b])
+                mode_tgt = mode_index_from_u_torch(u_caes_t[b])
+                mag_tgt = mag_from_u_torch(u_caes_t[b])
+                loss_mode = F.cross_entropy(mode_logits, mode_tgt)
+                loss_mag = F.mse_loss(torch.sigmoid(logits_out["z_mag"]), mag_tgt)
+                loss_caes = mode_weight * loss_mode + mag_weight * loss_mag
+            else:
+                loss_caes = 2.0 * F.mse_loss(logits_out["z_caes"], z_caes_tgt[b])
+            loss = tp_weight * loss_tp + bat_weight * loss_bat + loss_caes
             opt.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(actor.parameters(), 5.0)

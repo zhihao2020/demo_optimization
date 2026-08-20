@@ -3,11 +3,53 @@
 from __future__ import annotations
 
 import csv
+import time
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from tqdm import tqdm
+
+from envs.failures import FeasibleSetEmpty
+from safety import NoSafeActionFoundError
+from safety.soft_constraint_shell import SoftConstraintEnv, SoftConstraintShell
+
+
+def _grid_contract_p_lim_w(env) -> float:
+    rc = getattr(env, "reward_calculator", None)
+    cfg = getattr(rc, "config", None) or {}
+    gc = cfg.get("grid_contract") or {}
+    return float(gc.get("p_lim_w", 2.0e8))
+
+
+def _finalize_metric_rates(metrics: dict[str, float]) -> None:
+    """Derive rates / peak-valley stats after the episode loop."""
+    res_avail = float(metrics.get("renewable_available_mwh", 0.0))
+    curt = float(metrics.get("curtailment_energy_mwh", 0.0))
+    wind_a = float(metrics.get("wind_available_mwh", 0.0))
+    pv_a = float(metrics.get("pv_available_mwh", 0.0))
+    wind_u = float(metrics.get("wind_actual_mwh", 0.0))
+    pv_u = float(metrics.get("pv_actual_mwh", 0.0))
+    metrics["curtailment_rate"] = float(curt / max(res_avail, 1e-9))
+    metrics["renewable_utilization"] = float((wind_u + pv_u) / max(res_avail, 1e-9))
+    metrics["wind_utilization"] = float(wind_u / max(wind_a, 1e-9))
+    metrics["pv_utilization"] = float(pv_u / max(pv_a, 1e-9))
+    g_max = float(metrics.get("grid_export_max_mw", 0.0))
+    g_min = float(metrics.get("grid_import_max_mw", 0.0))  # stored as positive import
+    # peak-to-valley of signed P_grid: max(export) - min(import as negative) = g_max + g_min
+    metrics["grid_peak_valley_mw"] = float(g_max + g_min)
+    times = metrics.pop("_decision_times_s", None)
+    if isinstance(times, list) and times:
+        arr = np.asarray(times, dtype=np.float64)
+        metrics["decision_time_mean_s"] = float(arr.mean())
+        metrics["decision_time_p95_s"] = float(np.quantile(arr, 0.95))
+        metrics["decision_time_max_s"] = float(arr.max())
+        metrics["decision_time_sum_s"] = float(arr.sum())
+    else:
+        metrics.setdefault("decision_time_mean_s", 0.0)
+        metrics.setdefault("decision_time_p95_s", 0.0)
+        metrics.setdefault("decision_time_max_s", 0.0)
+        metrics.setdefault("decision_time_sum_s", 0.0)
 
 
 def evaluate_policy(
@@ -18,6 +60,7 @@ def evaluate_policy(
     *,
     reset_options: dict[str, Any] | None = None,
     max_steps: int | None = None,
+    soft_shell: bool = False,
 ) -> dict[str, Any]:
     """评估单个时间窗口内的策略表现。
 
@@ -28,6 +71,7 @@ def evaluate_policy(
         gamma: 折扣因子，用于计算折扣回报。
         reset_options: 传给 ``env.reset(options=...)`` 的选项，如 ``start_time``。
         max_steps: 最大步数；用于年度尾窗不足一周时截断。
+        soft_shell: 为 True 时包装预检重试，并在 ``predict`` 抛 NoSafeAction 时用保守动作。
 
     Returns:
         含步数、奖励、成本分项、SOC、CAES 合规率等字段的字典。
@@ -37,32 +81,78 @@ def evaluate_policy(
     """
     if max_steps is not None and max_steps <= 0:
         raise ValueError("max_steps 必须为正数")
-    obs, info0 = env.reset(options=reset_options)
+    shell = SoftConstraintShell() if soft_shell else None
+    step_env = SoftConstraintEnv(env, shell) if soft_shell else env
+    obs, info0 = step_env.reset(options=reset_options)
     if hasattr(policy, "on_episode_reset"):
         policy.on_episode_reset(info0)
     rows: list[dict[str, Any]] = []
     totals: dict[str, float] = {}
-    metrics = {
+    metrics: dict[str, Any] = {
         "curtailment_energy_mwh": 0.0,
         "unserved_energy_mwh": 0.0,
         "battery_throughput_mwh": 0.0,
         "caes_throughput_mwh": 0.0,
         "thermal_generation_mwh": 0.0,
         "max_thermal_ramp_mw": 0.0,
+        "wind_available_mwh": 0.0,
+        "pv_available_mwh": 0.0,
+        "wind_actual_mwh": 0.0,
+        "pv_actual_mwh": 0.0,
+        "renewable_available_mwh": 0.0,
+        "grid_export_max_mw": 0.0,
+        "grid_import_max_mw": 0.0,
+        "grid_abs_max_mw": 0.0,
+        "max_grid_ramp_mw": 0.0,
+        "grid_contract_excess_mwh": 0.0,
+        "grid_contract_violation_hours": 0.0,
+        "solver_timeout_count": 0.0,
+        "solver_fail_count": 0.0,
+        "_decision_times_s": [],
     }
     previous_thermal: float | None = None
+    previous_grid: float | None = None
+    p_lim_w = _grid_contract_p_lim_w(env)
     weekly_raw = 0.0
     weekly_reward = 0.0
     weekly_discounted = 0.0
     terminal_bonus = 0.0
     forbidden = 0
     invalid_transition = 0
+    soft_shell_count = 0
     caes_segments: list[dict[str, Any]] = []
     caes_interruptions = 0
     while True:
-        predicted = policy.predict(obs, deterministic=True)
-        action = predicted[0] if isinstance(predicted, tuple) else predicted
-        obs, reward, terminated, truncated, info = env.step(action)
+        t_dec0 = time.perf_counter()
+        try:
+            predicted = policy.predict(obs, deterministic=True)
+            action = predicted[0] if isinstance(predicted, tuple) else predicted
+        except (NoSafeActionFoundError, FeasibleSetEmpty):
+            if not soft_shell or shell is None:
+                raise
+            action = shell.recover(env if not isinstance(step_env, SoftConstraintEnv) else step_env.env)
+            soft_shell_count += 1
+        # Prefer controller-reported solve time when present (MILP/linprog).
+        solve_s = getattr(policy, "last_solve_s", None)
+        if solve_s is None and hasattr(policy, "agent"):
+            solve_s = getattr(policy.agent, "last_solve_s", None)
+        if solve_s is None and hasattr(policy, "ctrl"):
+            solve_s = getattr(policy.ctrl, "last_solve_s", None)
+        decision_s = float(solve_s) if solve_s is not None else float(time.perf_counter() - t_dec0)
+        metrics["_decision_times_s"].append(decision_s)
+        if getattr(policy, "last_solve_timed_out", False) or getattr(
+            getattr(policy, "agent", None), "last_solve_timed_out", False
+        ):
+            metrics["solver_timeout_count"] += 1.0
+        if getattr(policy, "last_solve_failed", False) or getattr(
+            getattr(policy, "agent", None), "last_solve_failed", False
+        ):
+            metrics["solver_fail_count"] += 1.0
+        obs, reward, terminated, truncated, info = step_env.step(action)
+        if info.get("soft_shell_applied"):
+            soft_shell_count = max(
+                soft_shell_count, int(info.get("soft_shell_count") or soft_shell_count + 1)
+            )
         if hasattr(policy, "on_transition"):
             policy.on_transition(info)
         if info.get("failure_type") in ("StaticActionViolation", "ForbiddenModeViolation", "DynamicStateConstraintViolation"):
@@ -131,26 +221,67 @@ def evaluate_policy(
             metrics["battery_throughput_mwh"] += abs(float(current.get("p_battery", 0))) * 1e-6 * dt_hours
             metrics["caes_throughput_mwh"] += abs(float(current.get("p_caes", 0))) * 1e-6 * dt_hours
             metrics["thermal_generation_mwh"] += abs(float(current.get("p_thermal", 0))) * 1e-6 * dt_hours
+            # Generation channels are negative watts in the FMU; report positive MWh.
+            w_av = abs(float(current.get("p_wind_available", 0))) * 1e-6 * dt_hours
+            p_av = abs(float(current.get("p_pv_available", 0))) * 1e-6 * dt_hours
+            w_ac = abs(float(current.get("p_wind_actual", 0))) * 1e-6 * dt_hours
+            p_ac = abs(float(current.get("p_pv_actual", 0))) * 1e-6 * dt_hours
+            metrics["wind_available_mwh"] += w_av
+            metrics["pv_available_mwh"] += p_av
+            metrics["wind_actual_mwh"] += w_ac
+            metrics["pv_actual_mwh"] += p_ac
+            metrics["renewable_available_mwh"] += w_av + p_av
+            p_grid = float(current.get("p_grid", 0.0))
+            p_grid_mw = p_grid * 1e-6
+            # Convention: p_grid > 0 buy/import, p_grid < 0 sell/export.
+            if p_grid_mw > 0:
+                metrics["grid_import_max_mw"] = max(float(metrics["grid_import_max_mw"]), p_grid_mw)
+            else:
+                metrics["grid_export_max_mw"] = max(float(metrics["grid_export_max_mw"]), -p_grid_mw)
+            metrics["grid_abs_max_mw"] = max(float(metrics["grid_abs_max_mw"]), abs(p_grid_mw))
+            if abs(p_grid) > p_lim_w + 1.0:
+                metrics["grid_contract_violation_hours"] += dt_hours
+                metrics["grid_contract_excess_mwh"] += (abs(p_grid) - p_lim_w) * 1e-6 * dt_hours
             if previous_thermal is not None:
                 metrics["max_thermal_ramp_mw"] = max(
                     metrics["max_thermal_ramp_mw"],
                     abs(float(current["p_thermal"]) - previous_thermal) * 1e-6,
                 )
+            if previous_grid is not None:
+                metrics["max_grid_ramp_mw"] = max(
+                    float(metrics["max_grid_ramp_mw"]),
+                    abs(p_grid - previous_grid) * 1e-6,
+                )
             previous_thermal = float(current["p_thermal"])
+            previous_grid = p_grid
         if terminated or truncated:
             break
         if max_steps is not None and len(rows) >= max_steps:
             break
     if output_csv and rows:
         output_csv.parent.mkdir(parents=True, exist_ok=True)
+        # Soft-shell rows may add constraint_reward keys mid-episode; union all fields.
+        fieldnames: list[str] = []
+        seen: set[str] = set()
+        for row in rows:
+            for key in row:
+                if key not in seen:
+                    seen.add(key)
+                    fieldnames.append(key)
         with output_csv.open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+            writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(rows)
     last = env.last_outputs or {}
+    if shell is not None:
+        soft_shell_count = max(soft_shell_count, int(shell.recovery_count))
+    _finalize_metric_rates(metrics)
     return {
         "steps": len(rows),
         "valid_steps": sum(1 for r in rows if r.get("transition_valid")),
+        "soft_shell": bool(soft_shell),
+        "soft_shell_count": int(soft_shell_count),
+        "soft_shell_hours": int(soft_shell_count),
         "episode_reward": weekly_reward,
         "weekly_episode_reward": weekly_reward,
         "weekly_discounted_return": weekly_discounted,
@@ -272,15 +403,18 @@ def evaluate_continuous_annual_policy(
     start_time: float = 0.0,
     snapshot_hours: int | None = None,
 ) -> dict[str, Any]:
-    """连续年 SOC 附录协议：单次 reset 后连续滚动全年，储能状态跨周传递。
+    """连续年 SOC 协议：单次 reset 后连续滚动全年，储能状态跨周传递。
 
     与主表 ``evaluate_annual_policy``（周窗口 reset）的差异：
     - **不**在每 168 h 边界重置 FMU / SOC；
-    - 将 ``env.episode_steps`` 临时拉长为全年步数，仅在年终触发 terminal SOC 门控；
-    - 仍按 ``snapshot_hours``（默认原周长）切片汇总周级 KPI，便于与主表对照。
+    - episode 长度取 ``annual_horizon_hours``（通常 8760），仅在年终触发
+      terminal SOC 门控；若环境构造时已设 ``episode_steps=8760``，则不再临时改写；
+    - 仍按 ``snapshot_hours``（默认 168）切片汇总周级 KPI，便于与主表对照。
 
-    物理依据：FMU 内部状态仅在 ``adapter.reset`` 时回到标称初值；连续轨迹是唯一
-    能在不改写 FMU 连续状态的前提下实现「跨周 SOC 传递」的协议。
+    推荐构造::
+
+        env = PowerSystemEnv(episode_steps=8760, scenario_id=\"year_001\")
+        evaluate_continuous_annual_policy(env, policy, annual_horizon_hours=8760)
 
     Args:
         env: PowerSystemEnv。
@@ -289,10 +423,11 @@ def evaluate_continuous_annual_policy(
         gamma: 折扣因子（用于切片回报；连续年总回报亦累计）。
         output_dir: 可选，写逐步 CSV 与周切片摘要。
         start_time: 仿真起点秒。
-        snapshot_hours: 周切片长度；None 时用环境原 ``episode_steps`` 小时数。
+        snapshot_hours: 周切片长度；None 时若当前 episode 已是全年则用 168，
+            否则用环境原 ``episode_steps`` 小时数。
 
     Returns:
-        连续年汇总字典，含 ``protocol="continuous_soc"`` 与 ``window_snapshots``。
+        连续年汇总字典，含 ``protocol=\"continuous_soc\"`` 与 ``window_snapshots``。
 
     Raises:
         ValueError: 配置非法时抛出。
@@ -307,18 +442,25 @@ def evaluate_continuous_annual_policy(
         raise ValueError("annual_horizon_hours 须整除决策间隔小时数")
     annual_steps = int(annual_horizon_hours // step_hours_i)
     default_episode = int(env.episode_steps)
-    snap_h = int(snapshot_hours if snapshot_hours is not None else default_episode * step_hours_i)
+    if snapshot_hours is not None:
+        snap_h = int(snapshot_hours)
+    elif default_episode == annual_steps:
+        snap_h = 168  # 环境已是全年 episode，切片仍按周
+    else:
+        snap_h = int(default_episode * step_hours_i)
     if snap_h <= 0 or snap_h % step_hours_i != 0:
         raise ValueError("snapshot_hours 必须为正且整除决策间隔")
     snap_steps = int(snap_h // step_hours_i)
 
-    # 临时拉长 episode，使 truncation / terminal_soc 仅在年终触发
+    # 若环境尚未配置为全年 episode，临时拉长；已是全年则原样使用。
+    already_annual = default_episode == annual_steps
     saved_env_steps = int(env.episode_steps)
     saved_rc_steps = int(env.reward_calculator.episode_steps)
     saved_rc_cfg = env.reward_calculator.config.get("episode_steps")
-    env.episode_steps = annual_steps
-    env.reward_calculator.episode_steps = annual_steps
-    env.reward_calculator.config["episode_steps"] = annual_steps
+    if not already_annual:
+        env.episode_steps = annual_steps
+        env.reward_calculator.episode_steps = annual_steps
+        env.reward_calculator.config["episode_steps"] = annual_steps
 
     output_csv = None
     if output_dir is not None:
@@ -336,12 +478,13 @@ def evaluate_continuous_annual_policy(
             max_steps=annual_steps,
         )
     finally:
-        env.episode_steps = saved_env_steps
-        env.reward_calculator.episode_steps = saved_rc_steps
-        if saved_rc_cfg is None:
-            env.reward_calculator.config.pop("episode_steps", None)
-        else:
-            env.reward_calculator.config["episode_steps"] = saved_rc_cfg
+        if not already_annual:
+            env.episode_steps = saved_env_steps
+            env.reward_calculator.episode_steps = saved_rc_steps
+            if saved_rc_cfg is None:
+                env.reward_calculator.config.pop("episode_steps", None)
+            else:
+                env.reward_calculator.config["episode_steps"] = saved_rc_cfg
 
     # 从逐步 CSV 重建周切片（若无 CSV 则仅返回年汇总）
     window_snapshots: list[dict[str, Any]] = []

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 from dataclasses import replace
+import os
 
 import gymnasium as gym
 import numpy as np
@@ -19,7 +20,7 @@ from actions import (
     ModeMask,
     PhysicalFmuAction,
 )
-from actions.caes_u import mode_from_u, u_from_mode_mag
+from actions.caes_u import clamp_u_caes_to_spec, mode_from_u, u_from_mode_mag
 from actions.failure_taxonomy import classify_failure
 from actions.validator import PhysicalActionValidator, physical_from_dict
 from envs.failures import (
@@ -34,8 +35,10 @@ from envs.failures import (
     StaticActionViolation,
 )
 from config.paths import resolve_fmu_path
+from data.scenario_years import apply_scenario_to_env_config
 from fmu import FmuAdapter, FmuSolverError, build_registry
 from market.price_profile import PriceProfile
+from envs.boundary_provider import BoundaryProvider
 from .observation_builder import ObservationBuilder
 from .forecast_provider import ForecastProvider
 from .reward_calculator import RewardCalculator
@@ -109,12 +112,32 @@ class PowerSystemEnv(gym.Env):
         forecast_noise_sigma: float | dict | None = None,
         forecast_lag_hours: int | None = None,
         market_enabled: bool | None = None,
+        scenario_id: str | None = None,
+        episode_steps: int | None = None,
     ):
         super().__init__()
         self.root = Path(__file__).resolve().parents[2]
         self.config_path = self._resolve(config_path)
         with self.config_path.open(encoding="utf-8") as stream:
             self.config = yaml.safe_load(stream)
+        # 情景年：显式参数 > 环境变量 > env_config.scenarios.active
+        active_scenario = (
+            scenario_id
+            or os.environ.get("OPTIMAL_DEMO_SCENARIO")
+            or (self.config.get("scenarios") or {}).get("active")
+        )
+        if active_scenario:
+            self.config = apply_scenario_to_env_config(
+                self.config, self.root, str(active_scenario)
+            )
+        self.scenario_id = str(active_scenario) if active_scenario else None
+        # episode 长度：显式参数 > OPTIMAL_DEMO_EPISODE_STEPS > 配置
+        # 设为 8760 即连续年 episode，与周窗口共用同一套 env/reward 路径。
+        env_episode = os.environ.get("OPTIMAL_DEMO_EPISODE_STEPS")
+        if episode_steps is not None:
+            self.config["fmu"]["episode_steps"] = int(episode_steps)
+        elif env_episode:
+            self.config["fmu"]["episode_steps"] = int(env_episode)
         reward_path = self._resolve(reward_config_path)
         with reward_path.open(encoding="utf-8") as stream:
             reward_config = yaml.safe_load(stream)
@@ -148,6 +171,20 @@ class PowerSystemEnv(gym.Env):
                 noise_sigma=forecast_noise_sigma,
                 lag_hours=forecast_lag_hours,
             )
+        # 边界真值：真实 FMU 路径必填；FakeAdapter 单元测试可跳过。
+        boundary_cfg = self.config.get("boundaries") or {}
+        self.boundary_provider: BoundaryProvider | None = None
+        if adapter is None:
+            if not boundary_cfg.get("sources"):
+                raise ValueError(
+                    "env_config.boundaries.sources 缺失：新 FMU 每步必须写入边界输入"
+                )
+            self.boundary_provider = BoundaryProvider(
+                self.root,
+                boundary_cfg,
+                annual_horizon_hours=int(self.config["fmu"]["annual_horizon_hours"]),
+                step_seconds=float(self.config["fmu"]["decision_interval_seconds"]),
+            )
         market_cfg = self.config.get("market") or {}
         self.market_enabled = (
             bool(market_cfg.get("available", False)) if market_enabled is None else bool(market_enabled)
@@ -164,9 +201,10 @@ class PowerSystemEnv(gym.Env):
         forecast_high = self.forecast_provider.feature_high if self.forecast_provider is not None else np.empty(0, dtype=np.float32)
         price_low = self.price_profile.feature_low if self.price_profile is not None else np.empty(0, dtype=np.float32)
         price_high = self.price_profile.feature_high if self.price_profile is not None else np.empty(0, dtype=np.float32)
+        aux_low, aux_high = RewardCalculator.aux_feature_bounds()
         self.observation_space = Box(
-            low=np.concatenate((self.observation_builder.low, forecast_low, price_low)),
-            high=np.concatenate((self.observation_builder.high, forecast_high, price_high)),
+            low=np.concatenate((self.observation_builder.low, forecast_low, price_low, aux_low)),
+            high=np.concatenate((self.observation_builder.high, forecast_high, price_high, aux_high)),
             dtype=np.float32,
         )
         self.action_space = PhysicalDictSpace(
@@ -228,7 +266,7 @@ class PowerSystemEnv(gym.Env):
         self.caes_min_run = CaesMinimumRunController()
 
     def build_observation(self) -> np.ndarray:
-        """物理输出 + 可选日前 forecast + 可选分时电价前瞻。"""
+        """物理输出 + 可选日前 forecast + 可选分时电价前瞻 + 年内辅助特征。"""
         if self.last_outputs is None:
             raise RuntimeError("环境未 reset")
         parts = [self.observation_builder.build(self.last_outputs)]
@@ -237,6 +275,7 @@ class PowerSystemEnv(gym.Env):
             parts.append(self.forecast_provider.at_time(t))
         if self.price_profile is not None:
             parts.append(self.price_profile.features_at(t))
+        parts.append(self.reward_calculator.aux_observation_features())
         if len(parts) == 1:
             return parts[0]
         return np.concatenate(parts).astype(np.float32, copy=False)
@@ -395,6 +434,12 @@ class PowerSystemEnv(gym.Env):
         )
         return replace(feasible, mode_mask=mask, metadata=metadata)
 
+    def _boundaries_at(self, simulation_time_seconds: float) -> dict[str, float] | None:
+        """当前通信点的边界字典；FakeAdapter 测试路径返回 None。"""
+        if self.boundary_provider is None:
+            return None
+        return self.boundary_provider.at_time(simulation_time_seconds)
+
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
         """重置 FMU 与 episode 状态，返回初始观测。
 
@@ -415,8 +460,10 @@ class PowerSystemEnv(gym.Env):
             )
         )
         try:
-            # FMU的初始输出值
-            self.last_outputs = self.adapter.reset(start)
+            # FMU的初始输出值；新 FMU 须在初始化模式写入边界
+            self.last_outputs = self.adapter.reset(
+                start, boundaries=self._boundaries_at(start)
+            )
         except FmuSolverError as exc:
             raise FmiLifecycleFailure(str(exc)) from exc
         self.step_index = 0
@@ -441,6 +488,7 @@ class PowerSystemEnv(gym.Env):
             "feasible_action_spec": self._current_feasible.as_dict(),
             "oracle_version": self.oracle.oracle_version,
             "episode": self.episode_index,
+            "scenario_id": self.scenario_id,
         }
         self.episode_index += 1
         return observation, info
@@ -467,6 +515,7 @@ class PowerSystemEnv(gym.Env):
 
         physical: PhysicalFmuAction | None = None
         recovery_applied = False
+        caes_magnitude_projected = False
         try:
             physical = (
                 action
@@ -482,6 +531,18 @@ class PowerSystemEnv(gym.Env):
             physical, recovery_applied = self._apply_terminal_soc_recovery(
                 physical, feasible
             )
+            # CAES 幅值投影：可行集只给方向掩码时，智能体会在合法带内挑到越界幅值
+            # 而被逐动作预检拒绝，叠加最短运行锁还会走进无合法动作的死角。
+            # 这里把幅值夹进该方向的安全子区间，属投影而非拒绝，单独审计。
+            u_caes_projected, caes_magnitude_projected = clamp_u_caes_to_spec(
+                physical.u_caes, feasible
+            )
+            if caes_magnitude_projected:
+                physical = PhysicalFmuAction(
+                    u_tp=physical.u_tp,
+                    u_battery=physical.u_battery,
+                    u_caes=u_caes_projected,
+                )
             self.action_validator.validate(physical, feasible)
             ok, reason = self.oracle.check_action_executable(
                 physical, self.last_outputs, feasible, self.previous_thermal
@@ -516,7 +577,10 @@ class PowerSystemEnv(gym.Env):
         outputs: dict[str, float] | None = None
         try:
             for _ in range(self.n_substeps):
-                outputs = self.adapter.step(physical.as_dict())
+                outputs = self.adapter.step(
+                    physical.as_dict(),
+                    boundaries=self._boundaries_at(step_start_time),
+                )
             assert outputs is not None
             if any(not np.isfinite(float(v)) for v in outputs.values()):
                 raise NonFiniteOutputFailure(
@@ -669,6 +733,7 @@ class PowerSystemEnv(gym.Env):
             "safety_threshold": action_meta.get("safety_threshold"),
             "safety_model_version": action_meta.get("safety_model_version"),
             "soc_recovery_applied": recovery_applied,
+            "caes_magnitude_projected": caes_magnitude_projected,
             **feasible.as_dict(),
             "observations": dict(outputs),
             "initial_soc": dict(self.initial_soc) if self.initial_soc else None,

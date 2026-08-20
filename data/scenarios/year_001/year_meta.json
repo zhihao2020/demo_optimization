@@ -1,0 +1,327 @@
+{
+  "id": "year_001",
+  "kind": "bootstrap",
+  "seed": 1009,
+  "path": "data/scenarios/year_001",
+  "donors": [
+    {
+      "slot": 0,
+      "kind": "week",
+      "season": "winter",
+      "donor_week": 48
+    },
+    {
+      "slot": 1,
+      "kind": "week",
+      "season": "winter",
+      "donor_week": 0
+    },
+    {
+      "slot": 2,
+      "kind": "week",
+      "season": "winter",
+      "donor_week": 7
+    },
+    {
+      "slot": 3,
+      "kind": "week",
+      "season": "winter",
+      "donor_week": 4
+    },
+    {
+      "slot": 4,
+      "kind": "week",
+      "season": "winter",
+      "donor_week": 3
+    },
+    {
+      "slot": 5,
+      "kind": "week",
+      "season": "winter",
+      "donor_week": 0
+    },
+    {
+      "slot": 6,
+      "kind": "week",
+      "season": "winter",
+      "donor_week": 8
+    },
+    {
+      "slot": 7,
+      "kind": "week",
+      "season": "winter",
+      "donor_week": 3
+    },
+    {
+      "slot": 8,
+      "kind": "week",
+      "season": "winter",
+      "donor_week": 49
+    },
+    {
+      "slot": 9,
+      "kind": "week",
+      "season": "spring",
+      "donor_week": 19
+    },
+    {
+      "slot": 10,
+      "kind": "week",
+      "season": "spring",
+      "donor_week": 16
+    },
+    {
+      "slot": 11,
+      "kind": "week",
+      "season": "spring",
+      "donor_week": 16
+    },
+    {
+      "slot": 12,
+      "kind": "week",
+      "season": "spring",
+      "donor_week": 19
+    },
+    {
+      "slot": 13,
+      "kind": "week",
+      "season": "spring",
+      "donor_week": 16
+    },
+    {
+      "slot": 14,
+      "kind": "week",
+      "season": "spring",
+      "donor_week": 11
+    },
+    {
+      "slot": 15,
+      "kind": "week",
+      "season": "spring",
+      "donor_week": 15
+    },
+    {
+      "slot": 16,
+      "kind": "week",
+      "season": "spring",
+      "donor_week": 13
+    },
+    {
+      "slot": 17,
+      "kind": "week",
+      "season": "spring",
+      "donor_week": 9
+    },
+    {
+      "slot": 18,
+      "kind": "week",
+      "season": "spring",
+      "donor_week": 21
+    },
+    {
+      "slot": 19,
+      "kind": "week",
+      "season": "spring",
+      "donor_week": 10
+    },
+    {
+      "slot": 20,
+      "kind": "week",
+      "season": "spring",
+      "donor_week": 18
+    },
+    {
+      "slot": 21,
+      "kind": "week",
+      "season": "spring",
+      "donor_week": 21
+    },
+    {
+      "slot": 22,
+      "kind": "week",
+      "season": "summer",
+      "donor_week": 33
+    },
+    {
+      "slot": 23,
+      "kind": "week",
+      "season": "summer",
+      "donor_week": 22
+    },
+    {
+      "slot": 24,
+      "kind": "week",
+      "season": "summer",
+      "donor_week": 23
+    },
+    {
+      "slot": 25,
+      "kind": "week",
+      "season": "summer",
+      "donor_week": 31
+    },
+    {
+      "slot": 26,
+      "kind": "week",
+      "season": "summer",
+      "donor_week": 27
+    },
+    {
+      "slot": 27,
+      "kind": "week",
+      "season": "summer",
+      "donor_week": 25
+    },
+    {
+      "slot": 28,
+      "kind": "week",
+      "season": "summer",
+      "donor_week": 24
+    },
+    {
+      "slot": 29,
+      "kind": "week",
+      "season": "summer",
+      "donor_week": 25
+    },
+    {
+      "slot": 30,
+      "kind": "week",
+      "season": "summer",
+      "donor_week": 34
+    },
+    {
+      "slot": 31,
+      "kind": "week",
+      "season": "summer",
+      "donor_week": 30
+    },
+    {
+      "slot": 32,
+      "kind": "week",
+      "season": "summer",
+      "donor_week": 24
+    },
+    {
+      "slot": 33,
+      "kind": "week",
+      "season": "summer",
+      "donor_week": 31
+    },
+    {
+      "slot": 34,
+      "kind": "week",
+      "season": "summer",
+      "donor_week": 27
+    },
+    {
+      "slot": 35,
+      "kind": "week",
+      "season": "autumn",
+      "donor_week": 41
+    },
+    {
+      "slot": 36,
+      "kind": "week",
+      "season": "autumn",
+      "donor_week": 36
+    },
+    {
+      "slot": 37,
+      "kind": "week",
+      "season": "autumn",
+      "donor_week": 38
+    },
+    {
+      "slot": 38,
+      "kind": "week",
+      "season": "autumn",
+      "donor_week": 47
+    },
+    {
+      "slot": 39,
+      "kind": "week",
+      "season": "autumn",
+      "donor_week": 39
+    },
+    {
+      "slot": 40,
+      "kind": "week",
+      "season": "autumn",
+      "donor_week": 43
+    },
+    {
+      "slot": 41,
+      "kind": "week",
+      "season": "autumn",
+      "donor_week": 35
+    },
+    {
+      "slot": 42,
+      "kind": "week",
+      "season": "autumn",
+      "donor_week": 47
+    },
+    {
+      "slot": 43,
+      "kind": "week",
+      "season": "autumn",
+      "donor_week": 40
+    },
+    {
+      "slot": 44,
+      "kind": "week",
+      "season": "autumn",
+      "donor_week": 45
+    },
+    {
+      "slot": 45,
+      "kind": "week",
+      "season": "autumn",
+      "donor_week": 44
+    },
+    {
+      "slot": 46,
+      "kind": "week",
+      "season": "autumn",
+      "donor_week": 40
+    },
+    {
+      "slot": 47,
+      "kind": "week",
+      "season": "autumn",
+      "donor_week": 47
+    },
+    {
+      "slot": 48,
+      "kind": "week",
+      "season": "winter",
+      "donor_week": 6
+    },
+    {
+      "slot": 49,
+      "kind": "week",
+      "season": "winter",
+      "donor_week": 5
+    },
+    {
+      "slot": 50,
+      "kind": "week",
+      "season": "winter",
+      "donor_week": 2
+    },
+    {
+      "slot": 51,
+      "kind": "week",
+      "season": "winter",
+      "donor_week": 51
+    },
+    {
+      "slot": "remainder",
+      "kind": "day",
+      "season": "winter",
+      "donor_week": 2,
+      "donor_day": 2
+    }
+  ]
+}

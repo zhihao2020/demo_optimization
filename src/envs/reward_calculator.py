@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+import numpy as np
+
 from market.settlement import settle_grid_step
 
 
@@ -49,6 +51,9 @@ class RewardCalculator:
         self.step_in_episode = 0
         # Cumulative battery discharge energy this episode [MWh] (Cui-style δ)
         self._batt_discharge_cum_mwh: float = 0.0
+        # Intensity-benchmark carbon bookkeeping [tCO2e]
+        self._carbon_allowance_t: float = 0.0
+        self._carbon_emissions_t: float = 0.0
         self._prev_caes_mode: int | None = None
         self.episode_steps = int(config.get("episode_steps", 168))
         self.require_complete = require_complete
@@ -135,6 +140,8 @@ class RewardCalculator:
         self.previous_soc_l1 = 0.0  # 起点相对自身 L1=0
         self.step_in_episode = 0
         self._batt_discharge_cum_mwh = 0.0
+        self._carbon_allowance_t = 0.0
+        self._carbon_emissions_t = 0.0
         from actions.caes_u import mode_from_u
 
         p_cap = float((self.config.get("caes_startup") or {}).get("p_cap_w", 1.5e8))
@@ -212,19 +219,32 @@ class RewardCalculator:
         coef = float(shaping.get("coef", 1.0))
         abs_coef = float(shaping.get("absolute_coef", 0.0))
         mode = str(shaping.get("mode", "potential"))
-        # 末段回收：剩余步数 ≤ recovery_horizon 时放大 shaping
+        # 年末硬门 + 日历周末软锚：取较大 scale（不叠乘）
         episode_steps = int(self.config.get("episode_steps", self.episode_steps))
         done = int(steps_done if steps_done is not None else self.step_in_episode + 1)
         remaining = max(episode_steps - done, 0)
         recovery_h = int(shaping.get("recovery_horizon_steps", 0) or 0)
-        recovery_scale = 1.0
+        scale = 1.0
+        abs_scale = 1.0
         if recovery_h > 0 and remaining <= recovery_h:
-            # 线性升温：刚进回收窗 scale→1，最后一步接近 recovery_coef_scale
             base = float(shaping.get("recovery_coef_scale", 3.0))
             frac = 1.0 - (remaining / max(recovery_h, 1))
-            recovery_scale = 1.0 + (base - 1.0) * float(frac)
-            coef *= recovery_scale
-            abs_coef *= float(shaping.get("recovery_absolute_scale", recovery_scale))
+            rs = 1.0 + (base - 1.0) * float(frac)
+            scale = max(scale, rs)
+            abs_scale = max(abs_scale, float(shaping.get("recovery_absolute_scale", rs)))
+        period = int(term.get("period_hours", 168) or 168)
+        wh = int(shaping.get("weekend_horizon_steps", 0) or 0)
+        if bool(shaping.get("weekend_soft_anchor", False)) and period > 0 and wh > 0:
+            into = ((done - 1) % period) + 1
+            week_rem = period - into
+            if week_rem < wh:
+                base_w = float(shaping.get("weekend_coef_scale", 2.0))
+                frac_w = 1.0 - (week_rem / max(wh, 1))
+                ws = 1.0 + (base_w - 1.0) * float(frac_w)
+                scale = max(scale, ws)
+                abs_scale = max(abs_scale, float(shaping.get("weekend_absolute_scale", ws)))
+        coef *= scale
+        abs_coef *= abs_scale
         prev = float(self.previous_soc_l1)
         l1f = float(l1)
         pot = 0.0
@@ -242,7 +262,7 @@ class RewardCalculator:
             "soc_shaping_potential": float(pot),
             "soc_shaping_absolute": float(abs_pen),
             "soc_shaping_coef": coef,
-            "soc_recovery_scale": float(recovery_scale),
+            "soc_recovery_scale": float(scale),
             "soc_l1_prev": prev,
         }
 
@@ -251,8 +271,14 @@ class RewardCalculator:
         """Convert W over dt_h hours to MWh."""
         return float(power_w) * float(dt_h) / 1.0e6
 
-    def _carbon_cost(self, outputs: Mapping[str, float], *, dt_h: float) -> tuple[float, dict[str, float]]:
-        """ETS-style CO2 cost [CNY] from p_thermal / p_grid (no Modelica change)."""
+    def _carbon_cost(
+        self,
+        outputs: Mapping[str, float],
+        *,
+        dt_h: float,
+        is_final_step: bool = False,
+    ) -> tuple[float, dict[str, float]]:
+        """ETS CO2 cost [CNY]: flat_tax 逐步，或 intensity_benchmark 年末结算。"""
         cc = self.config.get("carbon") or {}
         if not bool(cc.get("enabled", False)):
             return 0.0, {
@@ -260,10 +286,16 @@ class RewardCalculator:
                 "carbon_mass_t": 0.0,
                 "carbon_cost_cny": 0.0,
                 "carbon_price_cny_per_t": 0.0,
+                "carbon_mode": 0.0,
+                "carbon_allowance_t": float(self._carbon_allowance_t),
+                "carbon_emissions_t": float(self._carbon_emissions_t),
+                "carbon_position_t": float(self._carbon_allowance_t - self._carbon_emissions_t),
             }
         price = float(cc.get("price_cny_per_t", 80.0))
         eta_th = float(cc.get("eta_thermal_t_per_mwh", 0.85))
         eta_g = float(cc.get("eta_grid_t_per_mwh", 0.5703))
+        beta = float(cc.get("beta_t_per_mwh", eta_th))
+        mode = str(cc.get("mode", "flat_tax")).lower().strip()
         p_th = float(outputs.get(str(cc.get("thermal_power_key", "p_thermal")), 0.0) or 0.0)
         p_g = float(outputs.get(str(cc.get("grid_power_key", "p_grid")), 0.0) or 0.0)
         e_th = self._power_mwh(abs(p_th), dt_h)
@@ -271,18 +303,76 @@ class RewardCalculator:
             e_buy = self._power_mwh(max(p_g, 0.0), dt_h)
         else:
             e_buy = self._power_mwh(abs(p_g), dt_h)
-        mass = eta_th * e_th + eta_g * e_buy
-        cost = price * mass
+        mass_th = eta_th * e_th
+        mass_g = eta_g * e_buy
+        mass = mass_th + mass_g
+
+        grid_step = price * mass_g
+        thermal_step = 0.0
+        settlement = 0.0
+        if mode in ("intensity", "intensity_benchmark", "benchmark"):
+            # 配额累积：A += β·E_th；排放累积：E += η_th·E_th（默认电网不进配额）
+            self._carbon_allowance_t += beta * e_th
+            self._carbon_emissions_t += mass_th
+            if bool(cc.get("grid_in_quota", False)):
+                self._carbon_allowance_t += beta * e_buy
+                self._carbon_emissions_t += mass_g
+                grid_step = 0.0
+            if bool(cc.get("settle_at_episode_end", True)) and is_final_step:
+                q = self._carbon_allowance_t - self._carbon_emissions_t
+                # Q>0 盈余可卖 → 负成本；Q<0 缺口需买 → 正成本
+                settlement = -price * q
+            cost = float(grid_step + settlement)
+            mode_code = 2.0
+        else:
+            # flat_tax：逐步 π·(η_th E_th + η_g E_buy)
+            thermal_step = price * mass_th
+            cost = float(thermal_step + grid_step)
+            mode_code = 1.0
+
+        q_pos = self._carbon_allowance_t - self._carbon_emissions_t
         return float(cost), {
             "carbon_enabled": 1.0,
+            "carbon_mode": float(mode_code),
             "carbon_mass_t": float(mass),
+            "carbon_mass_thermal_t": float(mass_th),
+            "carbon_mass_grid_t": float(mass_g),
             "carbon_cost_cny": float(cost),
+            "carbon_thermal_step_cny": float(thermal_step),
+            "carbon_grid_step_cny": float(grid_step),
+            "carbon_settlement_cny": float(settlement),
             "carbon_price_cny_per_t": price,
             "carbon_eta_thermal": eta_th,
             "carbon_eta_grid": eta_g,
+            "carbon_beta_t_per_mwh": beta,
             "carbon_e_thermal_mwh": float(e_th),
             "carbon_e_grid_buy_mwh": float(e_buy),
+            "carbon_allowance_t": float(self._carbon_allowance_t),
+            "carbon_emissions_t": float(self._carbon_emissions_t),
+            "carbon_position_t": float(q_pos),
         }
+
+    def aux_observation_features(self) -> np.ndarray:
+        """三年内辅助特征：[碳头寸归一化, 退化占比, 年内进度]。"""
+        cc = self.config.get("carbon") or {}
+        q = float(self._carbon_allowance_t - self._carbon_emissions_t)
+        q_scale = float(cc.get("q_norm_scale_t", 1.0e5))
+        q_norm = float(np.tanh(q / max(q_scale, 1.0)))
+        bd = self.config.get("battery_degradation") or {}
+        if bd:
+            e_life = float(self._battery_deg_params(bd)["e_life_mwh"])
+        else:
+            e_life = 1.0
+        deg_frac = float(np.clip(self._batt_discharge_cum_mwh / max(e_life, 1e-9), 0.0, 1.0))
+        ep = max(int(self.config.get("episode_steps", self.episode_steps)), 1)
+        progress = float(np.clip(float(self.step_in_episode) / float(ep), 0.0, 1.0))
+        return np.asarray([q_norm, deg_frac, progress], dtype=np.float32)
+
+    @staticmethod
+    def aux_feature_bounds() -> tuple[np.ndarray, np.ndarray]:
+        low = np.asarray([-1.0, 0.0, 0.0], dtype=np.float32)
+        high = np.asarray([1.0, 1.0, 1.0], dtype=np.float32)
+        return low, high
 
     def _grid_contract_cost(
         self, outputs: Mapping[str, float], *, dt_h: float
@@ -360,7 +450,7 @@ class RewardCalculator:
         else:
             # ψ(E_life) = Capex_total  ⇒  a0 = Capex_total / E_life^p
             a0 = capex_total / (e_life**p_exp)
-        off_frac = float(cfg.get("offset_frac_of_life", 0.25))
+        off_frac = float(cfg.get("offset_frac_of_life", 0.0))
         delta_offset = max(0.0, off_frac) * e_life
         # Reference linear CNY/MWh for diagnostics: Capex_total / E_life
         c_lin = capex_total / e_life
@@ -458,10 +548,12 @@ class RewardCalculator:
 
     @staticmethod
     def caes_startup_unit_cny(cfg: Mapping[str, Any]) -> float:
-        """CNY per compressor/expander switch from Cui 2024 Table 2, capacity-scaled.
+        """CNY per compressor/expander switch from Cui 2024 Table 2.
 
-        Default: 3.42 USD at 800 kW, times (P_cap / 800 kW) times USD/CNY.
-        Explicit ``c_su_cny`` overrides the scaled value (tests only).
+        Source case: 3.42 USD at 800 kW. Default ``scale_mode: linear_capacity``
+        extrapolates by P_cap/P_ref (scenario, not authorised by the source paper).
+        Modes: ``none`` (no capacity scale), ``linear_capacity``, ``sqrt_capacity``.
+        Explicit ``c_su_cny`` overrides (tests only).
         """
         if cfg.get("c_su_cny") is not None and str(cfg.get("c_su_cny")).strip() != "":
             return float(cfg["c_su_cny"])
@@ -471,7 +563,15 @@ class RewardCalculator:
         fx = float(cfg.get("usd_cny", 7.2))
         if p_ref <= 0.0:
             return 0.0
-        return float(c_usd * (p_cap / p_ref) * fx)
+        mode = str(cfg.get("scale_mode", "linear_capacity")).lower().strip()
+        ratio = max(p_cap / p_ref, 0.0)
+        if mode in ("none", "unscaled", "ref"):
+            scale = 1.0
+        elif mode in ("sqrt", "sqrt_capacity"):
+            scale = float(ratio ** 0.5)
+        else:
+            scale = float(ratio)
+        return float(c_usd * scale * fx)
 
     def _caes_startup_cost(self, outputs: Mapping[str, float]) -> tuple[float, dict[str, float]]:
         """Cui 2024 start–stop charge [CNY], scaled from Table 2 (3.42 USD @ 800 kW)."""
@@ -570,7 +670,9 @@ class RewardCalculator:
                 "fmu_grid_cashflow_delta": fmu_grid_delta,
             }
 
-        carbon_cost, carbon_terms = self._carbon_cost(outputs, dt_h=dt_h)
+        carbon_cost, carbon_terms = self._carbon_cost(
+            outputs, dt_h=dt_h, is_final_step=bool(is_final_step)
+        )
         cut_cost, cut_terms = self._curtailment_cost(outputs, dt_h=dt_h)
         deg_cost, deg_terms = self._battery_deg_cost(outputs, dt_h=dt_h)
         su_cost, su_terms = self._caes_startup_cost(outputs)

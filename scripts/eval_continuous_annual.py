@@ -139,7 +139,11 @@ def main() -> None:
 
     for method in methods:
         print(f"=== continuous annual: {method} horizon={horizon}h ===", flush=True)
-        env = PowerSystemEnv(run_id=f"cont_{method}_{horizon}", forecast_enabled=True)
+        env = PowerSystemEnv(
+            run_id=f"cont_{method}_{horizon}",
+            forecast_enabled=True,
+            episode_steps=horizon,
+        )
         try:
             pol = build_policy(method, env, args)
             sub = out / method

@@ -1,0 +1,246 @@
+{
+  "winter": {
+    "season": "winter",
+    "n_ok": 10,
+    "last_ok": [
+      {
+        "t": 7,
+        "u": {
+          "u_tp": 0.3333333432674408,
+          "u_battery": 0.00015065608022268862,
+          "u_caes": 0.0
+        },
+        "attempts": 1,
+        "n_reject_before_accept": 0,
+        "gas_soc": 0.6821898605330534,
+        "reward": 0.7922548821768733
+      },
+      {
+        "t": 8,
+        "u": {
+          "u_tp": 0.3333333432674408,
+          "u_battery": 0.00017093624046538025,
+          "u_caes": 0.0
+        },
+        "attempts": 1,
+        "n_reject_before_accept": 0,
+        "gas_soc": 0.6862748015152332,
+        "reward": 0.6791839435998294
+      },
+      {
+        "t": 9,
+        "u": {
+          "u_tp": 0.3333333432674408,
+          "u_battery": 2.7364247216610238e-05,
+          "u_caes": 0.0
+        },
+        "attempts": 1,
+        "n_reject_before_accept": 0,
+        "gas_soc": 0.6922452961848639,
+        "reward": 0.5992818251316384
+      }
+    ],
+    "first_ok": [
+      {
+        "t": 0,
+        "u": {
+          "u_tp": 0.8500000238418579,
+          "u_battery": -1.0,
+          "u_caes": -1.0
+        },
+        "attempts": 1,
+        "n_reject_before_accept": 0,
+        "gas_soc": 0.8016821161344084,
+        "reward": -2.3658946782196226
+      },
+      {
+        "t": 1,
+        "u": {
+          "u_tp": 0.7000000476837158,
+          "u_battery": -0.5874999761581421,
+          "u_caes": -1.0
+        },
+        "attempts": 1,
+        "n_reject_before_accept": 0,
+        "gas_soc": 0.7629523249397557,
+        "reward": -1.4901809366506142
+      }
+    ],
+    "failed": {
+      "t": 10,
+      "exc": "[NoSafeActionFound/unknown] 在 64 次尝试后仍无安全动作（无 fallback）",
+      "attempts": 64,
+      "mode_mask": {
+        "discharge": true,
+        "idle": true,
+        "charge": true
+      },
+      "collapsed_action": {
+        "u_tp": 0.3333333432674408,
+        "u_battery": -8.098982107185293e-06,
+        "u_caes": -1.0
+      },
+      "checks": [
+        {
+          "safe": false,
+          "stage": "oracle",
+          "type": "caes_state",
+          "oracle": "u_caes=-1.0 超出该方向安全幅值区间 [-0.6859375000000001, -0.33]",
+          "proposed": {
+            "u_tp": 0.3333333432674408,
+            "u_battery": -8.098982107185293e-06,
+            "u_caes": -1.0
+          }
+        },
+        {
+          "safe": false,
+          "stage": "oracle",
+          "type": "caes_state",
+          "oracle": "u_caes=-1.0 超出该方向安全幅值区间 [-0.6859375000000001, -0.33]",
+          "proposed": {
+            "u_tp": 0.3333333432674408,
+            "u_battery": -8.098982107185293e-06,
+            "u_caes": -1.0
+          }
+        },
+        {
+          "safe": false,
+          "stage": "oracle",
+          "type": "caes_state",
+          "oracle": "u_caes=-1.0 超出该方向安全幅值区间 [-0.6859375000000001, -0.33]",
+          "proposed": {
+            "u_tp": 0.3333333432674408,
+            "u_battery": -8.098982107185293e-06,
+            "u_caes": -1.0
+          }
+        }
+      ],
+      "gas_soc": 0.6922452961848639,
+      "gas_p": 6922452.961848638,
+      "bat_soc": 0.15000190564285262
+    },
+    "u_unique": 9
+  },
+  "transition": {
+    "season": "transition",
+    "n_ok": 5,
+    "last_ok": [
+      {
+        "t": 2,
+        "u": {
+          "u_tp": 1.0,
+          "u_battery": -0.01500004529953003,
+          "u_caes": -1.0
+        },
+        "attempts": 1,
+        "n_reject_before_accept": 0,
+        "gas_soc": 0.7496646385174435,
+        "reward": -0.5471647462933593
+      },
+      {
+        "t": 3,
+        "u": {
+          "u_tp": 1.0,
+          "u_battery": -0.08411765098571777,
+          "u_caes": -1.0
+        },
+        "attempts": 1,
+        "n_reject_before_accept": 0,
+        "gas_soc": 0.7229960500527266,
+        "reward": -0.4693428224008371
+      },
+      {
+        "t": 4,
+        "u": {
+          "u_tp": 1.0,
+          "u_battery": 0.006712794303894043,
+          "u_caes": -1.0
+        },
+        "attempts": 1,
+        "n_reject_before_accept": 0,
+        "gas_soc": 0.6981767203383036,
+        "reward": -0.33144730808196937
+      }
+    ],
+    "first_ok": [
+      {
+        "t": 0,
+        "u": {
+          "u_tp": 1.0,
+          "u_battery": 1.0,
+          "u_caes": -1.0
+        },
+        "attempts": 1,
+        "n_reject_before_accept": 0,
+        "gas_soc": 0.8120665954592317,
+        "reward": -0.8879846705361419
+      },
+      {
+        "t": 1,
+        "u": {
+          "u_tp": 1.0,
+          "u_battery": 0.8500000238418579,
+          "u_caes": -1.0
+        },
+        "attempts": 1,
+        "n_reject_before_accept": 0,
+        "gas_soc": 0.7786290396375777,
+        "reward": -0.849907676849362
+      }
+    ],
+    "failed": {
+      "t": 5,
+      "exc": "[NoSafeActionFound/unknown] 在 64 次尝试后仍无安全动作（无 fallback）",
+      "attempts": 64,
+      "mode_mask": {
+        "discharge": true,
+        "idle": false,
+        "charge": false
+      },
+      "collapsed_action": {
+        "u_tp": 1.0,
+        "u_battery": 0.010567516088485718,
+        "u_caes": -1.0
+      },
+      "checks": [
+        {
+          "safe": false,
+          "stage": "oracle",
+          "type": "caes_state",
+          "oracle": "u_caes=-1.0 超出该方向安全幅值区间 [-0.8953125, -0.33]",
+          "proposed": {
+            "u_tp": 1.0,
+            "u_battery": 0.010567516088485718,
+            "u_caes": -1.0
+          }
+        },
+        {
+          "safe": false,
+          "stage": "oracle",
+          "type": "caes_state",
+          "oracle": "u_caes=-1.0 超出该方向安全幅值区间 [-0.8953125, -0.33]",
+          "proposed": {
+            "u_tp": 1.0,
+            "u_battery": 0.010567516088485718,
+            "u_caes": -1.0
+          }
+        },
+        {
+          "safe": false,
+          "stage": "oracle",
+          "type": "caes_state",
+          "oracle": "u_caes=-1.0 超出该方向安全幅值区间 [-0.8953125, -0.33]",
+          "proposed": {
+            "u_tp": 1.0,
+            "u_battery": 0.010567516088485718,
+            "u_caes": -1.0
+          }
+        }
+      ],
+      "gas_soc": 0.6981767203383036,
+      "gas_p": 6981767.203383036,
+      "bat_soc": 0.8478864968524259
+    },
+    "u_unique": 5
+  }
+}

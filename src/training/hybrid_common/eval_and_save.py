@@ -45,6 +45,37 @@ def prepare_run_dir(run_dir: Path, root: Path) -> None:
             shutil.copy2(src, run_dir / "config" / cfg_name)
 
 
+def parameter_profile_fields(run_dir: Path) -> dict[str, Any]:
+    """Read stamped parameter provenance from the run's reward_config snapshot."""
+    fields: dict[str, Any] = {
+        "parameter_profile_id": "unspecified",
+        "carbon_price_cny_per_t": None,
+        "carbon_beta_t_per_mwh": None,
+        "carbon_eta_grid_t_per_mwh": None,
+        "carbon_price_source": None,
+        "carbon_beta_source": None,
+        "carbon_eta_grid_source": None,
+    }
+    try:
+        import yaml
+
+        cfg_path = Path(run_dir) / "config" / "reward_config.yaml"
+        if not cfg_path.exists():
+            return fields
+        snap = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+        carbon = snap.get("carbon") or {}
+        fields["parameter_profile_id"] = snap.get("parameter_profile_id") or "unspecified"
+        fields["carbon_price_cny_per_t"] = carbon.get("price_cny_per_t")
+        fields["carbon_beta_t_per_mwh"] = carbon.get("beta_t_per_mwh")
+        fields["carbon_eta_grid_t_per_mwh"] = carbon.get("eta_grid_t_per_mwh")
+        fields["carbon_price_source"] = carbon.get("price_source")
+        fields["carbon_beta_source"] = carbon.get("beta_source")
+        fields["carbon_eta_grid_source"] = carbon.get("eta_grid_source")
+    except Exception:
+        pass
+    return fields
+
+
 def finalize_training_run(
     *,
     run_dir: Path,
@@ -59,6 +90,7 @@ def finalize_training_run(
     collector_stats: dict[str, Any] | None = None,
     extra_result: dict[str, Any] | None = None,
     make_shadow: Callable[..., ShadowFmuValidator] | None = None,
+    soft_shell: bool = False,
 ) -> dict[str, Any]:
     """规则评估 + GiveSafe 策略评估 + 写 summary + 生成可读报告。
 
@@ -75,6 +107,7 @@ def finalize_training_run(
         collector_stats: 可选收集器统计，用于拒绝率等指标。
         extra_result: 额外合并进 summary 的字段。
         make_shadow: 可选自定义影子校验器工厂。
+        soft_shell: 终评是否启用软约束外壳。
 
     Returns:
         更新后的完整 result 字典。
@@ -117,13 +150,16 @@ def finalize_training_run(
                 mode=str(shadow_cfg.get("mode", "always")),
             )
     eval_ctrl = GiveSafeController(oracle=eval_env.oracle, shadow=eval_shadow, config=gs_cfg)
-    eval_policy = HybridGiveSafePolicyWrapper(agent, eval_env, eval_ctrl, deterministic=True)
+    eval_policy = HybridGiveSafePolicyWrapper(
+        agent, eval_env, eval_ctrl, deterministic=True, soft_shell=soft_shell
+    )
     try:
         eval_result = evaluate_policy(
             eval_env,
             eval_policy,
             run_dir / "trajectories" / "eval.csv",
             reset_options=eval_opts,
+            soft_shell=soft_shell,
         )
     finally:
         if eval_shadow is not None:
@@ -156,7 +192,7 @@ def finalize_training_run(
             oracle=annual_env.oracle, shadow=annual_shadow, config=gs_cfg
         )
         annual_policy = HybridGiveSafePolicyWrapper(
-            agent, annual_env, annual_ctrl, deterministic=True
+            agent, annual_env, annual_ctrl, deterministic=True, soft_shell=soft_shell
         )
         try:
             annual_eval_result = evaluate_annual_policy(
@@ -171,12 +207,17 @@ def finalize_training_run(
             annual_env.close()
 
     result = dict(result)
+    from optimization.metrics import extract_kpi_from_eval
+
     result.update(
         {
             "eval": eval_result,
             "annual_eval": annual_eval_result,
             "rule": rule_result,
+            "kpi": extract_kpi_from_eval(eval_result),
+            "rule_kpi": extract_kpi_from_eval(rule_result),
             "last_metrics": getattr(agent, "last_metrics", {}),
+            **parameter_profile_fields(run_dir),
         }
     )
     if collector_stats is not None:

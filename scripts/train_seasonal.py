@@ -1,19 +1,21 @@
 #!/usr/bin/env python
-"""Unified seasonal suite: HMSD / TD3 / SAC (RL) + PSO / linprog (open-loop baselines).
+"""Unified seasonal suite: HMSD / TD3 / SAC (RL) + PSO / linprog / milp baselines.
 
 Same env reward and explicit week protocol for all methods.
 
 RL:
   multi-week train + held-out eval week (default)
 
-PSO / linprog:
+PSO / linprog / milp:
   optimize or control on eval week (and PSO may search on that week); same KPI dump
+  milp: binary CAES commitment + min-load bands on the same energy surrogate as linprog
 
 Examples:
   python scripts/train_seasonal.py --method hmsd --season winter --episodes 5000 --seed 0
   python scripts/train_seasonal.py --method sac --season winter --episodes 5000 --seed 0
   python scripts/train_seasonal.py --method pso --season winter --seed 0
   python scripts/train_seasonal.py --method linprog --season winter --seed 0
+  python scripts/train_seasonal.py --method milp --season winter --seed 0
 """
 from __future__ import annotations
 
@@ -35,6 +37,7 @@ from envs.power_system_env import PowerSystemEnv  # noqa: E402
 from training.evaluate_td3 import evaluate_policy  # noqa: E402
 from training.ghtd3.train import run_ghtd3_training  # noqa: E402
 from training.hybrid_sac.train import run_hybrid_sac_training  # noqa: E402
+from training.fs_hsac.train import run_fs_hsac_training  # noqa: E402
 from training.hybrid_td3.train import annual_episode_start_seconds, run_td3_scratch  # noqa: E402
 
 SEASON_WEEKS = {
@@ -43,8 +46,8 @@ SEASON_WEEKS = {
     "summer": {"train": [26, 27, 28, 29, 30], "eval": 31},
 }
 EPISODE_HOURS = 168
-RL_METHODS = ("hmsd", "td3", "sac")
-ALL_METHODS = ("hmsd", "td3", "sac", "pso", "linprog")
+RL_METHODS = ("hmsd", "td3", "sac", "fs_hsac")
+ALL_METHODS = ("hmsd", "td3", "sac", "fs_hsac", "pso", "linprog", "milp")
 
 
 def week_start_seconds(week_index: int) -> float:
@@ -62,18 +65,10 @@ def parse_weeks(raw: str | None, default: list[int]) -> list[int]:
 
 
 def kpi_from_eval(ev: dict) -> dict:
-    terms = ev.get("cost_terms") or {}
-    metrics = ev.get("metrics") or {}
-    return {
-        "sum_delta_j_gen": terms.get("generalized_cashflow_delta"),
-        "sum_delta_cf": terms.get("economic_cashflow_delta") or terms.get("cashflow_delta"),
-        "episode_reward": ev.get("episode_reward"),
-        "unserved_energy_mwh": metrics.get("unserved_energy_mwh"),
-        "terminal_soc_satisfied": ev.get("terminal_soc_satisfied"),
-        "battery_throughput_mwh": metrics.get("battery_throughput_mwh"),
-        "caes_throughput_mwh": metrics.get("caes_throughput_mwh"),
-        "thermal_generation_mwh": metrics.get("thermal_generation_mwh"),
-    }
+    from optimization.metrics import extract_kpi_from_eval
+
+    return extract_kpi_from_eval(ev)
+
 
 
 def run_pso_job(run_dir: Path, eval_start: float, seed: int, pso_iters: int, pso_particles: int) -> dict:
@@ -121,11 +116,51 @@ def run_linprog_job(run_dir: Path, eval_start: float) -> dict:
     return out
 
 
+def run_milp_job(run_dir: Path, eval_start: float) -> dict:
+    from optimization.rolling_milp import RollingMilpController
+
+    env = PowerSystemEnv(run_id=run_dir.name, forecast_enabled=True)
+    try:
+        pol = RollingMilpController(env)
+        t0 = time.perf_counter()
+        ev = evaluate_policy(
+            env,
+            pol,
+            run_dir / "trajectories" / "eval.csv",
+            reset_options={"start_time": eval_start},
+        )
+        wall = time.perf_counter() - t0
+    finally:
+        env.close()
+    out = {
+        "status": "completed",
+        "method": "milp",
+        "eval": ev,
+        "kpi": kpi_from_eval(ev),
+        "eval_start_time_seconds": eval_start,
+        "wall_s": wall,
+        "baseline_notes": {
+            "forecast": "perfect horizon from forecast_provider (same as linprog/PSO)",
+            "caes": "binary commitment + min-load bands; energy SoC only (no hot/cold/pressure DAE)",
+            "min_run_steps": 4,
+        },
+    }
+    (run_dir / "train_result.json").write_text(
+        json.dumps(out, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
+    )
+    return out
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Fair seasonal suite (RL + baselines)")
     p.add_argument("--method", choices=list(ALL_METHODS), required=True)
     p.add_argument("--season", choices=list(SEASON_WEEKS.keys()), required=True)
-    p.add_argument("--episodes", type=int, default=5000, help="RL E_max; steps=E*168 (ignored for pso/linprog)")
+    p.add_argument(
+        "--episodes",
+        type=int,
+        default=5000,
+        help="RL E_max; steps=E*168 (ignored for pso/linprog/milp)",
+    )
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--run-dir", type=str, default=None)
     p.add_argument("--config", type=str, default=str(ROOT / "src/config/ghtd3_config.yaml"))
@@ -217,8 +252,19 @@ def main() -> None:
             enable_shadow=False,
             annual_evaluation=False,
         )
+    elif args.method == "fs_hsac":
+        result = run_fs_hsac_training(
+            total_valid_steps=steps,
+            run_dir=run_dir,
+            seed=args.seed,
+            enable_shadow=False,
+            annual_evaluation=False,
+            use_feasibility_penalty=True,
+        )
     elif args.method == "pso":
         result = run_pso_job(Path(run_dir), eval_start, args.seed, args.pso_iters, args.pso_particles)
+    elif args.method == "milp":
+        result = run_milp_job(Path(run_dir), eval_start)
     else:
         result = run_linprog_job(Path(run_dir), eval_start)
 

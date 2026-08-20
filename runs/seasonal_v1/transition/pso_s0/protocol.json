@@ -1,0 +1,27 @@
+{
+  "protocol": "fair_seasonal_v1",
+  "method": "pso",
+  "season": "transition",
+  "train_weeks": [
+    13,
+    14,
+    15,
+    16,
+    17
+  ],
+  "eval_week": 18,
+  "train_start_seconds": [
+    7862400.0,
+    8467200.0,
+    9072000.0,
+    9676800.0,
+    10281600.0
+  ],
+  "eval_start_seconds": 10886400.0,
+  "single_week_debug": false,
+  "episodes": null,
+  "steps": null,
+  "seed": 0,
+  "lock_caes": false,
+  "story": "A_grid_contract"
+}

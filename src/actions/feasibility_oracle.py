@@ -5,7 +5,14 @@ from pathlib import Path
 from typing import Any, Mapping
 import numpy as np
 import yaml
-from .caes_u import mode_from_u, u_from_mode_mag
+from .caes_u import (
+    CHARGE_HI,
+    CHARGE_LO,
+    DISCHARGE_HI,
+    DISCHARGE_LO,
+    mode_from_u,
+    u_from_mode_mag,
+)
 from .feasible_set import DynamicFeasibleActionSet
 from .mode_mask import ModeMask
 from .types import CaesMode, PhysicalFmuAction
@@ -163,10 +170,9 @@ class FeasibilityOracle:
             else outputs.get("p_thermal", 0.0)
         )
         bat = self._battery_bounds(float(outputs["battery_soc"]))
-        mode = self._caes_mode_mask(outputs)
+        mode, intervals = self._caes_mask_and_intervals(outputs)
         tp = self._thermal_bounds_from_actual(p_prev)
-        # CAES 幅值联合可行性记入 metadata（mask 已编码模式可否）
-        caes_mag = self._caes_magnitude_caps(outputs)
+        caes_mag = self._caes_magnitude_caps(intervals)
         empty = (
             bat[0] > bat[1] + 1e-12
             or tp[0] > tp[1] + 1e-12
@@ -177,7 +183,7 @@ class FeasibilityOracle:
             "thermal_ramp_enforced_in_python": True,
             "thermal_ramp_active_in_fmu": False,
             "thermal_uses_actual_previous_p_thermal": True,
-            "caes_feasibility": "mode_specific_joint_soc_pressure_temp",
+            "caes_feasibility": "mode_specific_joint_soc_pressure_temp_with_magnitude_interval",
             "oracle_version": self.oracle_version,
             "feasible_set_empty": empty,
             "caes_magnitude_caps": caes_mag,
@@ -188,6 +194,8 @@ class FeasibilityOracle:
             u_battery_low=bat[0],
             u_battery_high=bat[1],
             mode_mask=mode,
+            u_caes_discharge=intervals["discharge"],
+            u_caes_charge=intervals["charge"],
             grid_violation_predicted=False,
             metadata=meta,
         )
@@ -238,6 +246,19 @@ class FeasibilityOracle:
             return False, "CHARGE 被 mask 禁止"
         if mode == CaesMode.DISCHARGE and not feasible.mode_mask.discharge:
             return False, "DISCHARGE 被 mask 禁止"
+        span = (
+            feasible.u_caes_charge
+            if mode == CaesMode.CHARGE
+            else feasible.u_caes_discharge
+            if mode == CaesMode.DISCHARGE
+            else None
+        )
+        if span is not None:
+            lo, hi = min(span), max(span)
+            if not (lo - 1e-9 <= physical.u_caes <= hi + 1e-9):
+                return False, (
+                    f"u_caes={physical.u_caes} 超出该方向安全幅值区间 [{lo}, {hi}]"
+                )
         predicted = self.predict_next_state(outputs, action, previous_thermal_w)
         ok, reason = self.post_step_hard_ok(predicted, use_safe=False)
         if not ok:
@@ -300,11 +321,10 @@ class FeasibilityOracle:
         em = self.margins.get("caes", {}).get("energy_model", {})
         e_ref = float(em.get("E_ref_J", 5.4e12))
         energy = p_caes * self.dt / max(e_ref, 1.0)
-        gas = float(outputs["caes_gas_soc"]) + float(em.get("alpha_gas", 1.0)) * energy
-        hot = float(outputs["caes_hot_soc"]) + float(em.get("alpha_hot", 0.35)) * energy
-        cold = (
-            float(outputs["caes_cold_soc"]) + float(em.get("alpha_cold", 0.35)) * energy
-        )
+        alpha = self._caes_alphas(em, energy)
+        gas = float(outputs["caes_gas_soc"]) + alpha["gas"] * energy
+        hot = float(outputs["caes_hot_soc"]) + alpha["hot"] * energy
+        cold = float(outputs["caes_cold_soc"]) + alpha["cold"] * energy
         # 压力与 SOC 近似耦合
         d_soc_gas = gas - float(outputs["caes_gas_soc"])
         pressure = (
@@ -334,6 +354,39 @@ class FeasibilityOracle:
             "u_caes": float(physical.u_caes),
             "caes_mode": int(mode),  # 派生诊断字段
         }
+
+    @staticmethod
+    def _caes_alphas(
+        energy_model: Mapping[str, Any], energy: float
+    ) -> dict[str, float]:
+        """按 energy 符号取充/放电各自的库存斜率。
+
+        充放电斜率并不对称（实测放电幅度比充电大 ~40%），因此按符号分支。
+        配置缺少 charge/discharge 子段时回落到合并标量值。
+
+        注意 alpha_cold 必须为负：充电抽冷罐、放电回灌冷罐，与热罐反号。
+        默认值取自 scripts/fit_caes_transition.py 的实测拟合，即使配置文件过期
+        也不会退回到符号错误的旧值。
+
+        Args:
+            energy_model: caes.energy_model 配置子字典。
+            energy: 带符号的无量纲能量增量，>0 表示充电。
+
+        Returns:
+            含 "gas" / "hot" / "cold" 三个斜率的字典。
+
+        Raises:
+            无。
+        """
+        fallback = {"gas": 0.213, "hot": 0.106, "cold": -0.103}
+        section = "charge" if energy > 0 else "discharge"
+        sub = energy_model.get(section)
+        sub = sub if isinstance(sub, Mapping) else {}
+        out: dict[str, float] = {}
+        for name, default in fallback.items():
+            legacy = energy_model.get(f"alpha_{name}", default)
+            out[name] = float(sub.get(f"alpha_{name}", legacy))
+        return out
 
     def residual(
         self,
@@ -523,15 +576,10 @@ class FeasibilityOracle:
         plo, phi = float(c["gas_pressure_min_Pa"]), float(c["gas_pressure_max_Pa"])
         if not (plo - 1.0 <= p <= phi + 1.0):
             return False, f"caes_gas_pressure={p} 越界 [{plo}, {phi}]"
-        for tname, lo_k, hi_k in (
-            ("caes_gas_temperature", "gas_temp_min_K", "gas_temp_max_K"),
-            ("caes_hot_temperature", "hot_temp_min_K", "hot_temp_max_K"),
-            ("caes_cold_temperature", "cold_temp_min_K", "cold_temp_max_K"),
-        ):
+        for tname, lo, hi in self._temp_bounds():
             if tname not in outputs:
                 continue
             val = float(outputs[tname])
-            lo, hi = float(c[lo_k]), float(c[hi_k])
             if not (lo - 1e-6 <= val <= hi + 1e-6):
                 return False, f"{tname}={val} 越界 [{lo}, {hi}]"
         g = self.params["grid"]
@@ -551,6 +599,32 @@ class FeasibilityOracle:
             if not np.isfinite(float(val)):
                 return False, f"{name} 非有限"
         return True, None
+
+    def _temp_bounds(self) -> tuple[tuple[str, float, float], ...]:
+        """三个罐体温度的可行性判定区间。
+
+        气罐温度下界在 Modelica 里是 ``T = max(Medium.T_ph(p, h), 253)`` 这样的
+        数值钳位而非物理约束，FMU 不可能输出低于它的值、也不会因此报错。把它当硬
+        约束会让环境温度（全年最低 248.36 K）在寒冷时段永久锁死 CAES 放电，
+        故当 ``gas_temp_min_is_numeric_clamp`` 为真时下界取 -inf。
+
+        Returns:
+            (输出名, 下界, 上界) 三元组序列。
+
+        Raises:
+            无。
+        """
+        c = self.params["caes"]
+        gas_lo = (
+            float("-inf")
+            if bool(c.get("gas_temp_min_is_numeric_clamp", False))
+            else float(c["gas_temp_min_K"])
+        )
+        return (
+            ("caes_gas_temperature", gas_lo, float(c["gas_temp_max_K"])),
+            ("caes_hot_temperature", float(c["hot_temp_min_K"]), float(c["hot_temp_max_K"])),
+            ("caes_cold_temperature", float(c["cold_temp_min_K"]), float(c["cold_temp_max_K"])),
+        )
 
     def _battery_bounds(self, soc: float) -> tuple[float, float]:
         """由当前 SOC 与方向裕度计算 u_battery 动态上下界。
@@ -625,7 +699,134 @@ class FeasibilityOracle:
         return low, high
 
     def _caes_mode_mask(self, outputs: Mapping[str, float]) -> ModeMask:
-        """模式特定联合可行性：gas/hot/cold SOC + pressure + temps。
+        """模式特定联合可行性，并附加一步生存性过滤。
+
+        单步硬界检查在周重置下够用，但连续年运行会暴露递归不可行：某个动作本身合法，
+        却把系统推进「非 idle 模式全被封死」的死角（典型是冷罐见底同时气罐见底，
+        既不能充也不能放，只能永久 idle）。这里在基础掩码之上多看一步：
+        若后继状态连一个非 idle 模式都不剩，则当前模式判为不可行。
+
+        Args:
+            outputs: 当前 FMU 输出。
+
+        Returns:
+            允许的 CAES 模式掩码(ModeMask)。
+
+        Raises:
+            无。
+        """
+        return self._caes_mask_and_intervals(outputs)[0]
+
+    def _caes_mask_and_intervals(
+        self, outputs: Mapping[str, float]
+    ) -> tuple[ModeMask, dict[str, tuple[float, float] | None]]:
+        """同时给出模式掩码与各方向的安全幅值子区间。
+
+        掩码与区间必须由同一次扫描导出，否则会出现「方向被判合法、但带内多数
+        幅值其实会越界」的不一致——这正是历史上智能体动作被大量拒绝、并在最短
+        运行锁下走进死角的原因。
+
+        Args:
+            outputs: 当前 FMU 输出。
+
+        Returns:
+            (mask, intervals)，intervals 的键为 "charge" / "discharge"，
+            值为 (u_low, u_high) 或 None（该方向不可行）。
+
+        Raises:
+            无。
+        """
+        base = self._caes_mode_mask_base(outputs)
+        intervals: dict[str, tuple[float, float] | None] = {
+            "charge": self._caes_feasible_u_interval(outputs, CaesMode.CHARGE)
+            if base.charge
+            else None,
+            "discharge": self._caes_feasible_u_interval(outputs, CaesMode.DISCHARGE)
+            if base.discharge
+            else None,
+        }
+        charge_ok = intervals["charge"] is not None
+        discharge_ok = intervals["discharge"] is not None
+        # 一步生存性：某方向即使本步合法，若会把系统推进「非 idle 全被封死」的
+        # 死角也判为不可行。这是连续年运行相对周重置的额外要求，周重置会掩盖
+        # 递归不可行。用该方向区间内最激进的一端做最坏情况前推。
+        if charge_ok and not self._successor_has_reversible_mode(
+            outputs, intervals["charge"][1]
+        ):
+            charge_ok = False
+            intervals["charge"] = None
+        if discharge_ok and not self._successor_has_reversible_mode(
+            outputs, intervals["discharge"][0]
+        ):
+            discharge_ok = False
+            intervals["discharge"] = None
+        mask = ModeMask(
+            discharge=bool(discharge_ok), idle=bool(base.idle), charge=bool(charge_ok)
+        )
+        return mask, intervals
+
+    def _successor_has_reversible_mode(
+        self, outputs: Mapping[str, float], u_caes: float
+    ) -> bool:
+        """以给定 u_caes 走一步后，后继状态是否还剩至少一个非 idle 模式。
+
+        只向前看一步，且后继状态用不含生存性过滤的基础掩码判定，避免无限递归。
+
+        Args:
+            outputs: 当前 FMU 输出。
+            u_caes: 待检的 CAES 指令（取该方向区间内最激进的一端）。
+
+        Returns:
+            后继状态仍允许充或放则为 True。
+
+        Raises:
+            无。
+        """
+        action = PhysicalFmuAction(u_tp=1.0, u_battery=0.0, u_caes=float(u_caes))
+        pred = self.predict_next_state(outputs, action)
+        nxt = self._caes_mode_mask_base(pred)
+        return bool(nxt.charge or nxt.discharge)
+
+    def _caes_feasible_u_interval(
+        self, outputs: Mapping[str, float], mode: CaesMode
+    ) -> tuple[float, float] | None:
+        """扫描该方向的合法带，返回一步预测仍在硬界内的 u_caes 子区间。
+
+        用等距网格扫描而非二分：一步预测对 u 是线性的，可行集通常是从带内最弱端
+        出发的一段区间，但当前状态已越界时（需要反向动作把库存拉回）单调性会反转，
+        二分会给出错误答案。网格扫描对此免疫，且预测只是几次算术运算，开销可忽略。
+
+        Args:
+            outputs: 当前 FMU 输出。
+            mode: CHARGE 或 DISCHARGE。
+
+        Returns:
+            (u_low, u_high) 安全子区间；该方向无任何合法幅值时为 None。
+
+        Raises:
+            无。
+        """
+        cm = self.margins.get("caes", {})
+        if mode == CaesMode.CHARGE:
+            lo_band, hi_band = CHARGE_LO, CHARGE_HI
+            margins, direction = cm.get("charge", {}), "high"
+        else:
+            lo_band, hi_band = DISCHARGE_LO, DISCHARGE_HI
+            margins, direction = cm.get("discharge", {}), "low"
+        grid = np.linspace(lo_band, hi_band, self._CAES_SCAN_POINTS)
+        feasible = [
+            float(u)
+            for u in grid
+            if self._u_caes_step_ok(outputs, float(u), margins, direction)
+        ]
+        if not feasible:
+            return None
+        return min(feasible), max(feasible)
+
+    _CAES_SCAN_POINTS = 33
+
+    def _caes_mode_mask_base(self, outputs: Mapping[str, float]) -> ModeMask:
+        """基础模式掩码：gas/hot/cold SOC + pressure + temps，不含生存性过滤。
 
         Args:
             outputs: 当前 FMU 输出。
@@ -645,32 +846,33 @@ class FeasibilityOracle:
         tg = float(outputs.get("caes_gas_temperature", 300.0))
         th = float(outputs.get("caes_hot_temperature", 400.0))
         tc = float(outputs.get("caes_cold_temperature", 290.0))
-        # 用最大可行动作预测下一状态能否留在物理界内
-        charge_ok = self._caes_mode_feasible(
-            outputs,
-            CaesMode.CHARGE,
-            mag=1.0,
-            margins=cm.get("charge", {}),
-            direction="high",
+        # 方向是否可行 = 带内「最温和」的动作能否留在物理界内。
+        # 历史实现用 u_from_mode_mag(mode, 1.0) 当最坏情况探针，但该函数是在合法带内
+        # 线性插值：充电 mag=1.0 -> u=1.0（最强），放电 mag=1.0 -> u=-0.33（最弱）。
+        # 于是放电方向拿最温和动作判「合法」、充电方向拿最强动作判「合法」，两侧语义
+        # 相反且都不符合注释。现在统一为最弱端探针，具体幅值由安全子区间约束。
+        charge_ok = self._u_caes_step_ok(
+            outputs, CHARGE_LO, cm.get("charge", {}), "high"
         )
-        discharge_ok = self._caes_mode_feasible(
-            outputs,
-            CaesMode.DISCHARGE,
-            mag=1.0,
-            margins=cm.get("discharge", {}),
-            direction="low",
+        discharge_ok = self._u_caes_step_ok(
+            outputs, DISCHARGE_HI, cm.get("discharge", {}), "low"
         )
         # IDLE：当前态在物理界内则始终允许（残差裕度不得禁止待机）
         idle_ok, _ = self.post_step_hard_ok(outputs, use_safe=False)
         # 即使预测失败，仍保留温度硬门（禁充放，不禁 idle）
-        temp_ok = (
-            float(c["gas_temp_min_K"]) <= tg <= float(c["gas_temp_max_K"])
-            and float(c["hot_temp_min_K"]) <= th <= float(c["hot_temp_max_K"])
-            and float(c["cold_temp_min_K"]) <= tc <= float(c["cold_temp_max_K"])
+        current_temps = {
+            "caes_gas_temperature": tg,
+            "caes_hot_temperature": th,
+            "caes_cold_temperature": tc,
+        }
+        temp_ok = all(
+            lo <= current_temps[name] <= hi for name, lo, hi in self._temp_bounds()
         )
         if not temp_ok:
             charge_ok = discharge_ok = False
         # 额外：接近物理界时用联合阈值（仅充/放）
+        # 方向约定：充电抬升气罐与热罐、抽低冷罐；放电反向。
+        # 冷罐守卫方向必须与气/热罐相反，否则充电时冷罐被抽干却无人拦截。
         chg = cm.get("charge", {})
         dis = cm.get("discharge", {})
         charge_ok = charge_ok and (
@@ -683,9 +885,9 @@ class FeasibilityOracle:
             - float(chg.get("margin_hot", 0.0))
             - float(chg.get("residual_p99_hot_high", 0.0))
             and cold
-            < float(c["cold_SOC_max"])
-            - float(chg.get("margin_cold", 0.0))
-            - float(chg.get("residual_p99_cold_high", 0.0))
+            > float(c["cold_SOC_min"])
+            + float(chg.get("margin_cold", 0.0))
+            + float(chg.get("residual_p99_cold_low", 0.0))
             and p
             < float(c["gas_pressure_max_Pa"])
             - float(chg.get("margin_pressure_Pa", 0.0))
@@ -701,9 +903,9 @@ class FeasibilityOracle:
             + float(dis.get("margin_hot", 0.0))
             + float(dis.get("residual_p99_hot_low", 0.0))
             and cold
-            > float(c["cold_SOC_min"])
-            + float(dis.get("margin_cold", 0.0))
-            + float(dis.get("residual_p99_cold_low", 0.0))
+            < float(c["cold_SOC_max"])
+            - float(dis.get("margin_cold", 0.0))
+            - float(dis.get("residual_p99_cold_high", 0.0))
             and p
             > float(c["gas_pressure_min_Pa"])
             + float(dis.get("margin_pressure_Pa", 0.0))
@@ -721,12 +923,16 @@ class FeasibilityOracle:
         margins: Mapping[str, Any],
         direction: str,
     ) -> bool:
-        """预测给定模式与幅值下一步是否仍在物理界内（含 residual 裕度）。
+        """预测给定模式与 ``mag`` 带内位置下一步是否仍在物理界内。
+
+        注意 ``mag`` 是合法带内的插值位置而非物理幅值：放电 mag=1.0 对应 u=-0.33
+        （最弱），充电 mag=1.0 对应 u=1.0（最强）。需要按物理幅值判定时请直接用
+        ``_u_caes_step_ok``。
 
         Args:
             outputs: 当前 FMU 输出。
             mode: 待检 CAES 模式。
-            mag: CAES 幅值 [0, 1]。
+            mag: 合法带内插值位置 [0, 1]。
             margins: 该模式方向的裕度子字典。
             direction: "high" / "low" / "both"，危险 SOC 方向。
 
@@ -736,9 +942,32 @@ class FeasibilityOracle:
         Raises:
             无。
         """
-        action = PhysicalFmuAction(
-            u_tp=1.0, u_battery=0.0, u_caes=u_from_mode_mag(mode, mag)
+        return self._u_caes_step_ok(
+            outputs, u_from_mode_mag(mode, mag), margins, direction
         )
+
+    def _u_caes_step_ok(
+        self,
+        outputs: Mapping[str, float],
+        u_caes: float,
+        margins: Mapping[str, Any],
+        direction: str,
+    ) -> bool:
+        """给定具体 u_caes，一步预测是否仍在物理界内（含 residual 方向裕度）。
+
+        Args:
+            outputs: 当前 FMU 输出。
+            u_caes: 具体 CAES 指令。
+            margins: 该方向的裕度子字典。
+            direction: "high" / "low" / "both"，危险 SOC 方向。
+
+        Returns:
+            若预测状态满足硬界与方向裕度则为 True。
+
+        Raises:
+            无。
+        """
+        action = PhysicalFmuAction(u_tp=1.0, u_battery=0.0, u_caes=float(u_caes))
         pred = self.predict_next_state(outputs, action)
         ok, _ = self.post_step_hard_ok(pred, use_safe=False)
         if not ok:
@@ -760,24 +989,28 @@ class FeasibilityOracle:
                 return False
         return True
 
-    def _caes_magnitude_caps(self, outputs: Mapping[str, float]) -> dict[str, float]:
-        """二分搜索各方向最大安全幅值 [0,1]（metadata/诊断用）。"""
+    @staticmethod
+    def _caes_magnitude_caps(
+        intervals: Mapping[str, tuple[float, float] | None],
+    ) -> dict[str, float]:
+        """各方向最大安全物理幅值 |u|（metadata/诊断用）。
+
+        原实现对 ``u_from_mode_mag(mode, mid)`` 做二分，隐含假设「mid 越大越危险」。
+        该假设对充电成立、对放电反号（mid=1.0 是最弱放电），因此放电方向的
+        cap 恒为 0，诊断值一直是错的。现在直接由安全子区间导出。
+
+        Args:
+            intervals: ``_caes_mask_and_intervals`` 给出的方向区间。
+
+        Returns:
+            键为 "discharge" / "charge" 的最大安全 |u|；该方向不可行时为 0。
+
+        Raises:
+            无。
+        """
         caps = {"discharge": 0.0, "charge": 0.0}
-        for mode, key in (
-            (CaesMode.DISCHARGE, "discharge"),
-            (CaesMode.CHARGE, "charge"),
-        ):
-            lo, hi = 0.0, 1.0
-            best = 0.0
-            for _ in range(8):
-                mid = 0.5 * (lo + hi)
-                action = PhysicalFmuAction(1.0, 0.0, u_from_mode_mag(mode, mid))
-                pred = self.predict_next_state(outputs, action)
-                ok, _ = self.post_step_hard_ok(pred, use_safe=False)
-                if ok:
-                    best = mid
-                    lo = mid
-                else:
-                    hi = mid
-            caps[key] = float(best)
+        for key in caps:
+            span = intervals.get(key)
+            if span is not None:
+                caps[key] = float(max(abs(span[0]), abs(span[1])))
         return caps

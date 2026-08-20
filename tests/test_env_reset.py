@@ -34,27 +34,31 @@ class FakeAdapter:
             "economic_cashflow_load": 0., "economic_cashflow_grid": 0.,
         }
 
-    def reset(self, start):
+    def reset(self, start, boundaries=None):
         """重置仿真时刻并返回初始输出。
 
         Args:
             start: 起始时刻(秒)。
+            boundaries: 可选边界字典（真实 FMU 路径使用；此处忽略）。
 
         Returns:
             初始 FMU 输出字典。
         """
+        _ = boundaries
         self.time = start
         return self._out()
 
-    def step(self, action):
+    def step(self, action, boundaries=None):
         """模拟一步 FMU 并递增时刻。
 
         Args:
             action: FMU 调度输入（未修改输出）。
+            boundaries: 可选边界字典（真实 FMU 路径使用；此处忽略）。
 
         Returns:
             步进后 FMU 输出字典。
         """
+        _ = boundaries
         self.set_calls += 1
         self.step_calls += 1
         self.time += 3600
