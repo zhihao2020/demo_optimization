@@ -47,12 +47,19 @@ def run_fs_hsac_training(
     feasibility_beta: float = 0.1,
     soft_shell: bool | None = None,
 ) -> dict[str, Any]:
-    """Train FS-HSAC v2 on the FMU twin with split Bellman / feasibility replay."""
+    """Train FS-HSAC v2 on the FMU twin with split Bellman / feasibility replay.
+
+    Paper mainline is support-only: ``use_feasibility_penalty=False`` or
+    ``FS_HSAC_NO_FEAS=1`` (``scripts/train_seasonal.py --method fs_hsac --support``)
+    versus in-house fixed-band Hybrid SAC (``--method sac``). Full residual
+    ``C_ψ`` remains available when the penalty is left on (appendix). Soft shell
+    stays off for the paper protocol.
+    """
     import os
 
     if os.environ.get("FS_HSAC_NO_FEAS", "").strip() in ("1", "true", "True"):
         use_feasibility_penalty = False
-    _ = _soft_shell_enabled(soft_shell)  # FS-HSAC keeps soft_shell off by default
+    _ = _soft_shell_enabled(False if soft_shell is None else soft_shell)
     run_dir = Path(run_dir)
     root = Path(__file__).resolve().parents[3]
     prepare_run_dir(run_dir, root)

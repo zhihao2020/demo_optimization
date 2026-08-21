@@ -1,9 +1,10 @@
 # Fair seasonal comparison protocol
 
-文档更新：2026-08-17 12:30 (+08:00)
+文档更新：2026-08-21
 
-Code truth: `scripts/train_seasonal.py`, `scripts/eval_seasonal_fair.py`,  
-`src/config/ghtd3_config_seasonal_min.yaml` (same stack as `ghtd3_config.yaml`).
+论文 live 方法已改为 **FS-HSAC-support** vs **sac_param**（见 `docs/paper_outline_and_figures.md`）。下文 HMSD 窗口仍可用作**设定**（三季 week index），不是论文身份。
+
+Code truth: `scripts/train_seasonal.py` (`--method fs_hsac --support` vs `--method sac`).
 
 ## Principle
 

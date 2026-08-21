@@ -1,7 +1,7 @@
 # PAMDP / FS-HSAC formalization for multi-mode CAES plant dispatch
 
-Status: paper §4.1–4.2 draft for **FS-HSAC v2** (feasible-support hybrid SAC).  
-Code: `src/training/fs_hsac/`. Old Hybrid SAC remains an ablation (`parameterized_caes` fixed-band).
+Status: paper §4 draft for **FS-HSAC-support** (same-hour support-consistent rewrite of Hybrid SAC).  
+Code: `src/training/fs_hsac/`. Live contrast: in-house fixed-band Hybrid SAC (`--method sac`, `parameterized_caes=True`). Residual $C_\psi$ is appendix-only.
 
 ---
 
@@ -20,8 +20,9 @@ and a **state-dependent action support**
 \{k\}\times\mathcal M_k(s).
 \]
 
-- \(\mathcal K(s)\subseteq\{\mathrm{dis},\mathrm{idle},\mathrm{chg}\}\) from inventory + mode lock.
-- \(\mathcal M_k(s)=[\underline u_k(s),\overline u_k(s)]\) from the feasibility oracle (dynamic magnitude intervals).
+- \(\mathcal K(s)\subseteq\{\mathrm{dis},\mathrm{idle},\mathrm{chg}\}\) is a mode mask.
+- \(\mathcal M_k(s)=[\underline u_k(s),\overline u_k(s)]\) is an inventory interval box.
+- Autoconsistency: sample and $\log\pi$ use the same \(\mathcal A(s)\). This is **not** plant/FMU feasibility (no min-run / SoC veto / FMU residual).
 - Idle is a point mass (no continuous magnitude entropy).
 
 Decoding maps normalized magnitude through the **current** physical interval (not the static device envelope alone).
@@ -38,7 +39,7 @@ Decoding maps normalized magnitude through the **current** physical interval (no
 
 Continuous components use a Gaussian latent + sigmoid + affine map into \([\underline u,\overline u]\), with log-density corrected by both Jacobians. Illegal modes receive \(-\infty\) logits.
 
-Exact soft value / actor objectives enumerate the three modes (no Gumbel approximation):
+Actor / critic objectives use a discrete sum over \(\mathcal K(s)\) (no Gumbel approximation). That sum may be exact; do **not** write exact hybrid entropy:
 \[
 \sum_{k\in\mathcal K(s)}\pi_d(k\mid s)\,
 \mathbb E_{u_k}\big[Q(s,k,u_k)-\alpha_c\log\pi_c(u_k\mid s,k)\big]
@@ -50,11 +51,9 @@ Critic input is \((s,u^{\mathrm{tp}},u^{\mathrm{bat}},\mathrm{onehot}(k),m)\), n
 
 ---
 
-## 3. Residual twin feasibility (not Bellman self-loops)
+## 3. Residual twin feasibility (appendix only)
 
-Known analytic constraints enter \(\mathcal A(s)\) as hard support. GiveSafe rejections and post-step FMU failures train a residual classifier \(C_\psi(s,a)=P(\mathrm{accept}\mid s,a)\) on a **separate** feasibility replay. They do **not** enter the economic Bellman update as fake self-loop transitions.
-
-Actor objective may include \(\beta[-\log C_\psi(s,a)]\) once enough unsafe labels exist. GiveSafe remains the final shield (adopted, not proposed).
+GiveSafe is adopted on the live stack. Residual \(C_\psi\) (split feasibility replay, optional \(\beta[-\log C_\psi]\)) is an **appendix** variant of full FS-HSAC, not the live claim. Rejections do **not** enter the economic Bellman update as fake self-loop transitions.
 
 ---
 
@@ -67,16 +66,16 @@ Actor objective may include \(\beta[-\log C_\psi(s,a)]\) once enough unsafe labe
 | Magnitude support | option policy | low-level continuous | static device band | \(\mathcal M_k(s)\) with Jacobians |
 | Method claim | multi-timescale skills | inventory goals | hybrid heads | support-consistent hybrid SAC |
 
-Do **not** write that options assume free mode selection. Initiation sets can restrict modes; the difference here is writing \(\mathcal K(s),\mathcal M_k(s)\) into a same-hour maximum-entropy hybrid density with exact mode enumeration.
+Do **not** write option/HRL back into the contribution. OCTD3 did not compare MILP; do not write RL>exact opt. GHTD3's convex QP often has the lowest scalar CC because the surrogate is low-dimensional.
 
 ---
 
 ## 5. Claims discipline
 
-- PAMDP / state-dependent support is the **problem formalization**.
-- Algorithm contribution is FS-HSAC (same-timescale support-consistent hybrid SAC + residual feasibility learning).
-- FMI is an exchange/co-simulation standard for closed-loop verification, not a discovery.
-- Disconnected legal set is a device envelope (§3.4), not a discovery.
-- Dynamic intervals mix twin physics and oracle margins; sensitivity separates them.
+- **One contribution:** same-hour Hybrid SAC ties sampling and $\log\pi$ to \(\mathcal A(s)=\mathcal K(s)\times\mathcal M_k(s)\).
+- Contrast: in-house fixed-band Hybrid SAC (latent density then clamp).
+- FMI / TOU / ETS / disconnected CAES envelope / electricity-only sale are **setting**.
+- GiveSafe is adopted.
+- Do not claim superiority while `docs/fs_hsac_results_gate.md` is false.
 - Do not claim FS-HSAC is universally better than HRL.
 - Do not write until `docs/fs_hsac_results_gate.md` passes.

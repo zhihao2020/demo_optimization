@@ -1,7 +1,13 @@
 #!/usr/bin/env python
-"""Unified seasonal suite: HMSD / TD3 / SAC (RL) + PSO / linprog / milp baselines.
+"""Unified seasonal suite: FS-HSAC / SAC / TD3 / HMSD (RL) + PSO / linprog / milp.
 
 Same env reward and explicit week protocol for all methods.
+
+Paper mainline (when the results gate opens):
+  --method fs_hsac --support   (or FS_HSAC_NO_FEAS=1)   → fs_hsac_support
+  --method sac                 (parameterized_caes=True) → sac_param
+Same GiveSafe; soft_shell OFF. Full residual-feasibility FS-HSAC is appendix only
+(``--method fs_hsac`` without --support / --no-feas).
 
 RL:
   multi-week train + held-out eval week (default)
@@ -11,15 +17,13 @@ PSO / linprog / milp:
   milp: binary CAES commitment + min-load bands on the same energy surrogate as linprog
 
 Examples:
-  python scripts/train_seasonal.py --method hmsd --season winter --episodes 5000 --seed 0
+  python scripts/train_seasonal.py --method fs_hsac --support --season winter --episodes 5000 --seed 0
   python scripts/train_seasonal.py --method sac --season winter --episodes 5000 --seed 0
+  python scripts/train_seasonal.py --method fs_hsac --season winter --episodes 5000 --seed 0
   python scripts/train_seasonal.py --method pso --season winter --seed 0
-  python scripts/train_seasonal.py --method linprog --season winter --seed 0
-  python scripts/train_seasonal.py --method milp --season winter --seed 0
 """
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import sys
@@ -27,8 +31,16 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
 
+from seasonal_cli import (  # noqa: E402
+    ALL_METHODS,
+    EPISODE_HOURS,
+    RL_METHODS,
+    SEASON_WEEKS,
+    parse_args,
+)
 from config.paths import apply_process_cache_env, resolve_run_dir  # noqa: E402
 
 apply_process_cache_env()
@@ -39,15 +51,6 @@ from training.ghtd3.train import run_ghtd3_training  # noqa: E402
 from training.hybrid_sac.train import run_hybrid_sac_training  # noqa: E402
 from training.fs_hsac.train import run_fs_hsac_training  # noqa: E402
 from training.hybrid_td3.train import annual_episode_start_seconds, run_td3_scratch  # noqa: E402
-
-SEASON_WEEKS = {
-    "winter": {"train": [0, 1, 2, 3, 4], "eval": 5},
-    "transition": {"train": [13, 14, 15, 16, 17], "eval": 18},
-    "summer": {"train": [26, 27, 28, 29, 30], "eval": 31},
-}
-EPISODE_HOURS = 168
-RL_METHODS = ("hmsd", "td3", "sac", "fs_hsac")
-ALL_METHODS = ("hmsd", "td3", "sac", "fs_hsac", "pso", "linprog", "milp")
 
 
 def week_start_seconds(week_index: int) -> float:
@@ -152,29 +155,7 @@ def run_milp_job(run_dir: Path, eval_start: float) -> dict:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Fair seasonal suite (RL + baselines)")
-    p.add_argument("--method", choices=list(ALL_METHODS), required=True)
-    p.add_argument("--season", choices=list(SEASON_WEEKS.keys()), required=True)
-    p.add_argument(
-        "--episodes",
-        type=int,
-        default=5000,
-        help="RL E_max; steps=E*168 (ignored for pso/linprog/milp)",
-    )
-    p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--run-dir", type=str, default=None)
-    p.add_argument("--config", type=str, default=str(ROOT / "src/config/ghtd3_config.yaml"))
-    p.add_argument("--train-weeks", type=str, default=None)
-    p.add_argument("--eval-week", type=int, default=None)
-    p.add_argument("--single-week", action="store_true")
-    p.add_argument(
-        "--lock-caes",
-        action="store_true",
-        help="Story A counterfactual: force u_caes=0 (idle) for train+eval",
-    )
-    p.add_argument("--pso-iters", type=int, default=25)
-    p.add_argument("--pso-particles", type=int, default=12)
-    args = p.parse_args()
+    args = parse_args()
 
     meta = SEASON_WEEKS[args.season]
     if args.single_week:
@@ -188,7 +169,10 @@ def main() -> None:
     eval_start = week_start_seconds(eval_week)
 
     steps = int(args.episodes) * EPISODE_HOURS if args.method in RL_METHODS else 0
-    method_tag = f"{args.method}_lockcaes" if args.lock_caes else args.method
+    method_name = args.method
+    if args.method == "fs_hsac" and args.support_only:
+        method_name = "fs_hsac_support"
+    method_tag = f"{method_name}_lockcaes" if args.lock_caes else method_name
     run_dir = args.run_dir or f"runs/seasonal/{args.season}/{method_tag}_s{args.seed}"
     run_dir = str(resolve_run_dir(run_dir))
     Path(run_dir).mkdir(parents=True, exist_ok=True)
@@ -207,6 +191,14 @@ def main() -> None:
         "steps": steps or None,
         "seed": args.seed,
         "lock_caes": bool(args.lock_caes),
+        "support_only": bool(args.support_only) if args.method == "fs_hsac" else None,
+        "use_feasibility_penalty": (
+            (not bool(args.support_only)) if args.method == "fs_hsac" else None
+        ),
+        "soft_shell": False,
+        "paper_mainline": (
+            args.method == "fs_hsac" and bool(args.support_only)
+        ) or args.method == "sac",
         "story": "A_grid_contract",
     }
     (Path(run_dir) / "protocol.json").write_text(json.dumps(protocol, indent=2), encoding="utf-8")
@@ -223,6 +215,10 @@ def main() -> None:
         os.environ["OPTIMAL_DEMO_LOCK_CAES"] = "1"
     else:
         os.environ.pop("OPTIMAL_DEMO_LOCK_CAES", None)
+    if args.method == "fs_hsac" and args.support_only:
+        os.environ["FS_HSAC_NO_FEAS"] = "1"
+    elif args.method == "fs_hsac":
+        os.environ.pop("FS_HSAC_NO_FEAS", None)
     if args.single_week:
         os.environ["OPTIMAL_DEMO_FORCE_EPISODE_START"] = str(train_starts[0])
     else:
@@ -251,6 +247,7 @@ def main() -> None:
             seed=args.seed,
             enable_shadow=False,
             annual_evaluation=False,
+            soft_shell=False,
         )
     elif args.method == "fs_hsac":
         result = run_fs_hsac_training(
@@ -259,7 +256,8 @@ def main() -> None:
             seed=args.seed,
             enable_shadow=False,
             annual_evaluation=False,
-            use_feasibility_penalty=True,
+            use_feasibility_penalty=not bool(args.support_only),
+            soft_shell=False,
         )
     elif args.method == "pso":
         result = run_pso_job(Path(run_dir), eval_start, args.seed, args.pso_iters, args.pso_particles)
