@@ -116,9 +116,10 @@
 
 ### 5. Simulation results（门仍关）
 
+- **冻结:** support = `FS_HSAC_NO_FEAS=1`；sac = `parameterized_caes=True`；两者 `SOFT_SHELL=0`；`soc_recovery_horizon: 0`（`env.step` 不改写 `u_caes`）。不提 `*_horizon40`。
 - 主实验（若存在）: 季节 seed-0 `fs_hsac_support` vs `sac_param`
 - 指标稍后: reject rate, `valid_steps=168`, comprehensive cost
-- 表留空；不填优越性
+- `train_result` 未落地前表留空；不填优越性；不写赢过 24 h linprog
 
 ### 6. Conclusions
 

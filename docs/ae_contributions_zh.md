@@ -30,7 +30,7 @@
 
 ## 主实验（过门后才填数）
 
-季节 seed-0：`fs_hsac_support`（`--method fs_hsac --support` 或 `FS_HSAC_NO_FEAS=1`）vs `sac_param`（`--method sac`）。同一 GiveSafe，soft_shell OFF。指标：reject rate、`valid_steps=168`、comprehensive cost。结果门仍为 `false`，不写优越性。
+季节 seed-0：`fs_hsac_support`（`FS_HSAC_NO_FEAS=1`）vs `sac_param`（`parameterized_caes=True`）。两者 `SOFT_SHELL=0`，`soc_recovery_horizon: 0`。指标：reject rate、`valid_steps=168`、comprehensive cost。`train_result` 未落地前不写优越性。不提 `*_horizon40`。
 
 训练目标 $\max\mathbb E\sum\gamma^t r_t$；评测 168 h $J^{\mathrm{gen}}$。不写 $\min J^{\mathrm{gen}}$。
 

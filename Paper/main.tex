@@ -66,7 +66,7 @@ hybrid-action reinforcement learning \sep soft actor--critic \sep feasible actio
     $\mathcal{S},\mathcal{A}(s)$ & state space and state-dependent hybrid action support &
     $\mathcal{K}(s),\mathcal{M}_k(s)$ & admissible CAES modes and magnitude interval for mode $k$ \\
     $\mathcal{F}(s)$ & dynamic feasible set used to build $\mathcal{A}(s)$ &
-    $k_t,\,\mu_t$ & CAES mode and normalised magnitude \\
+    $k_t,\,\mu_t$ & CAES mode and normalised coordinate on $\mathcal{M}_k(s)$ \\
     \midrule
     \multicolumn{4}{@{}l}{\textit{Plant and market variables}} \\
     \midrule
@@ -138,7 +138,7 @@ The remaining gap is narrower. In-house fixed-band Hybrid SAC samples from a lat
 \bigcup_{k\in\mathcal{K}(s)}
 \bigl(\{k\}\times\mathcal{M}_k(s)\bigr),
 \end{equation*}
-where $\mathcal{K}(s)$ is a mode mask and $\mathcal{M}_k(s)$ an inventory interval box. Autoconsistency means only that sample and $\log\pi$ use that same $\mathcal{A}(s)$. The set is \emph{not} plant or FMU feasibility: it does not encode min-run, SoC veto or FMU residual. GiveSafe is the adopted execution screen~\cite{garcia2015safe,sun2024constrained}.
+where $\mathcal{K}(s)$ is a mode mask and $\mathcal{M}_k(s)$ an Oracle inventory interval box. Autoconsistency means only that sample and $\log\pi$ use that same $\mathcal{A}(s)$. The set is the Oracle box, \emph{not} plant or FMU feasibility: it does not encode min-run, SoC veto or FMU residual. GiveSafe is the adopted execution screen~\cite{garcia2015safe,sun2024constrained}.
 
 FS-HSAC is that rewrite of Hybrid SAC---not a new actor--critic family, and not HMSD/GHTD3. The discrete sum over $\mathcal{K}(s)$ may be exact; we do not write an exact hybrid entropy. Training maximises $\mathbb{E}\sum_t\gamma^t r_t$. Evaluation of a completed week reports the $168$~h $J^{\mathrm{gen}}$ (equivalently $CC=-J^{\mathrm{gen}}$). We do not train by $\min J^{\mathrm{gen}}$.
 
@@ -236,7 +236,7 @@ Episode length \(T\) & 168~h & Weekly MDP; calendar only rotates week starts \\
 \label{sec:problem}
 % =====================================================================
 
-This section formulates the plant physics, operating constraints and market score that define the \emph{weekly} scheduling problem (\(T=168\)~h). Electricity is the only sold carrier. Continuous-time differential--algebraic equations of the plant (thermal unit, battery, multi-tank CAES, renewables and grid interface) are integrated in the Sysplorer-exported FMU with communication interval $\tau_s=1$~h; the relations below are the dispatch-level models realised by that twin and used by optimisers and learning agents. The 8760~h plant calendar only rotates weekly episode starts; it is not an annual MDP. We adopt the following sign convention throughout: renewable and thermal generation are non-negative when injecting power; battery and CAES charge is positive and discharge is negative; grid import is positive. Component sets are
+This section formulates the plant physics, operating constraints and market score that define the \emph{weekly} scheduling problem (\(T=168\)~h). Electricity is the only sold carrier. Continuous-time differential--algebraic equations of the plant (thermal unit, battery, multi-tank CAES, renewables and grid interface) are integrated in the Sysplorer-exported FMU with communication interval $\tau_s=1$~h; the relations below are the dispatch-level models realised by that twin and used by optimisers and learning agents. The 8760~h plant calendar only rotates weekly episode starts; it is not an annual MDP. We adopt the following sign convention throughout: renewable and thermal generation are non-negative when injecting power; battery and CAES \emph{charge is a load} (positive) and discharge is negative; grid import is positive. Charging is never written on the generation side of the bus. Component sets are
 \begin{equation}
 \begin{aligned}
 I_1&=\{\mathrm{w},\mathrm{pv}\},\quad
@@ -314,31 +314,21 @@ where $r_{\max}=0.0025/60$~s$^{-1}$ is the Modelica load-rate limit (equivalentl
 
 \subsubsection{CAES conversion}
 
-CAES is a hybrid conversion--storage plant. The hybrid command comprises a discrete mode and continuous magnitude
-\begin{equation}
-m_{\mathrm{caes},t}\in\{\mathrm{charge},\mathrm{idle},\mathrm{discharge}\},\qquad
-\mu_{\mathrm{caes},t}\in[0,1],
-\label{eq:caes-cmd}
-\end{equation}
-mapped to a signed electric power command on capacity $P_{\mathrm{cap}}^{\mathrm{caes}}=150$~MW,
-\begin{equation}
-P_t^{\mathrm{caes}}
-=
-\begin{cases}
-+\mu_{\mathrm{caes},t}\,P_{\mathrm{cap}}^{\mathrm{caes}}, & m=\mathrm{charge},\\
-0, & m=\mathrm{idle},\\
--\mu_{\mathrm{caes},t}\,P_{\mathrm{cap}}^{\mathrm{caes}}, & m=\mathrm{discharge},
-\end{cases}
-\label{eq:caes-p}
-\end{equation}
-or equivalently $P_t^{\mathrm{caes}}=u_{\mathrm{caes},t}P_{\mathrm{cap}}^{\mathrm{caes}}$ with the non-convex legal set
+CAES is a hybrid conversion--storage plant. The physical electric command lives on the disconnected legal set
 \begin{equation}
 u_{\mathrm{caes},t}
 \in
-[-1,-0.33]\cup\{0\}\cup[0.86,1]
+[-1,-0.33]\cup\{0\}\cup[0.86,1],
 \label{eq:caes-legal}
 \end{equation}
-encoding minimum compressor/expander loading. Mode locks and minimum-run dwell constraints further restrict admissible transitions of $m_{\mathrm{caes}}$. Electric power is realised as planned ($P^{\mathrm{act}}=P^{\mathrm{plan}}$); mass-flow set-points of air and thermal fluid scale with $|P_t^{\mathrm{caes}}|$ and reverse direction between compression and expansion.
+with $u<0$ discharge, $u=0$ idle and $u>0$ charge. The signed electric power on capacity $P_{\mathrm{cap}}^{\mathrm{caes}}=150$~MW is
+\begin{equation}
+P_t^{\mathrm{caes}}
+=
+u_{\mathrm{caes},t}\,P_{\mathrm{cap}}^{\mathrm{caes}}.
+\label{eq:caes-p}
+\end{equation}
+A normalised actor coordinate $\mu\in[0,1]$ is \emph{not} a fraction of nameplate: it is affinely mapped onto the current Oracle interval $\mathcal{M}_k(s)\subseteq$~\eqref{eq:caes-legal} (Section~\ref{sec:pamdp}). Writing $P^{\mathrm{caes}}=\pm\mu P_{\mathrm{cap}}$ would put illegal part-load points such as $0.1P_{\mathrm{cap}}$ inside the charge band. Mode locks and minimum-run dwell further restrict admissible transitions of the discrete mode; they are outside $\mathcal{A}(s)$. Electric power is realised as planned ($P^{\mathrm{act}}=P^{\mathrm{plan}}$); mass-flow set-points of air and thermal fluid scale with $|P_t^{\mathrm{caes}}|$ and reverse direction between compression and expansion.
 
 \subsection{Energy storage units}
 
@@ -419,13 +409,12 @@ Compression ($P^{\mathrm{caes}}>0$) charges the gas inventory and drives the the
 
 \subsection{System operation constraints}
 
-The electric bus closes the power balance with curtailment and unserved load. Let $P_t^{\mathrm{w,avail}},P_t^{\mathrm{pv,avail}}$ be renewable availability and $P_t^{\mathrm{load,plan}}$ the scheduled demand. Residual power after dispatchable assets is absorbed first by curtailing wind, then PV; residual deficit is met by demand response down to $20\%$ of plan, with remainder counted as unserved:
+The electric bus closes the power balance with curtailment and unserved load. Let $P_t^{\mathrm{w,avail}},P_t^{\mathrm{pv,avail}}$ be renewable availability and $P_t^{\mathrm{load,plan}}$ the scheduled demand. Residual surplus after the bus is absorbed first by curtailing wind, then PV; residual deficit is met by demand response down to $20\%$ of plan, with remainder counted as unserved. With charge-positive storage,
 \begin{equation}
 \begin{aligned}
-&P_t^{\mathrm{th}}+P_t^{\mathrm{bat}}+P_t^{\mathrm{caes}}
-+P_t^{\mathrm{w}}+P_t^{\mathrm{pv}}+P_t^{\mathrm{grid}}
+&P_t^{\mathrm{th}}+P_t^{\mathrm{w}}+P_t^{\mathrm{pv}}+P_t^{\mathrm{grid}}
 =
-P_t^{\mathrm{load}},\\
+P_t^{\mathrm{load}}+P_t^{\mathrm{bat}}+P_t^{\mathrm{caes}},\\
 &0\le P_t^{\mathrm{w}}\le P_t^{\mathrm{w,avail}},\quad
 0\le P_t^{\mathrm{pv}}\le P_t^{\mathrm{pv,avail}},\\
 &P_t^{\mathrm{curt}}\ge 0,\quad
@@ -434,7 +423,7 @@ P_t^{\mathrm{uns}}\ge 0,\quad
 \end{aligned}
 \label{eq:balance}
 \end{equation}
-Here $P_t^{\mathrm{curt}}$ is residual surplus after wind-then-PV curtailment and $P_t^{\mathrm{uns}}$ is residual shortfall after load reduction. Box and ramp limits, inventory bounds and grid exchange limits are
+Injection (thermal, wind, PV, grid import) sits on the left; electric load and storage \emph{charge} sit on the right. Discharge ($P^{\mathrm{bat}}<0$ or $P^{\mathrm{caes}}<0$) reduces the right-hand side and therefore supplies the bus; charging is a demand, not generation. $P_t^{\mathrm{w}},P_t^{\mathrm{pv}}$ are post-curtailment injections. $P_t^{\mathrm{curt}}$ is residual surplus after wind-then-PV curtailment and $P_t^{\mathrm{uns}}$ is residual shortfall after load reduction. Box and ramp limits, inventory bounds and grid exchange limits are
 \begin{equation}
 \underline{P}_{i}\le P_t^{i}\le \overline{P}_{i},\qquad
 \bigl|P_t^{i}-P_{t-1}^{i}\bigr|\le \Delta_i^{\max},
@@ -451,7 +440,7 @@ P_{\mathrm{grid}}^{\min}\le P_t^{\mathrm{grid}}\le P_{\mathrm{grid}}^{\max},
 \end{equation}
 with $(P_{\mathrm{grid}}^{\min},P_{\mathrm{grid}}^{\max})=(-500,500)$~MW. Actions that would violate~\eqref{eq:balance}--\eqref{eq:grid},~\eqref{eq:caes-legal} or CAES mode locks lie outside the dynamic feasible set $\mathcal{F}(s_t)$.
 
-Weekly operation records an optional energy-SoC recovery score on primary inventories, following the soft indicator of~\cite{cui2025ghtd3} rather than a hard action override or feasibility veto,
+Weekly operation records an optional energy-SoC recovery score on primary inventories, following the soft indicator of~\cite{cui2025ghtd3},
 \begin{equation}
 L_1^{\mathrm{e}}
 = \bigl|s_{T,\mathrm{bat}}-s_{0,\mathrm{bat}}\bigr|
@@ -459,7 +448,7 @@ L_1^{\mathrm{e}}
 \le \varepsilon,
 \label{eq:soc}
 \end{equation}
-with $\varepsilon=0.06$. Operating boxes remain $s_{\mathrm{bat}}\in[0.1,0.9]$. The battery command is never rewritten at week-end;~\eqref{eq:soc} only gates the terminal bonus in~\eqref{eq:term} and is not used to rank policies.
+with $\varepsilon=0.06$. Operating boxes remain $s_{\mathrm{bat}}\in[0.1,0.9]$. This indicator only gates the terminal bonus in~\eqref{eq:term} and is not used to rank policies. It is \emph{not} a physics fact that the environment never rewrites actions: the paper protocol sets \texttt{soc\_recovery\_horizon: 0}, so \texttt{env.step} does not rewrite $u_{\mathrm{caes}}$. A positive horizon would allow that rewrite.
 
 \subsection{Optimization objectives}
 
@@ -554,7 +543,7 @@ a_t^{\mathrm{hyb}}
 \bigl(u_{\mathrm{tp},t},\, u_{\mathrm{bat},t},\, k_t,\, \mu_t\bigr),
 \qquad
 k_t\in\{\mathrm{dis},\mathrm{idle},\mathrm{chg}\},\quad
-\mu_t\in[0,1],
+\mu_t\in[0,1]\ \text{(normalised on $\mathcal{M}_k(s)$, not a nameplate fraction)},
 \label{eq:action-hyb}
 \end{equation}
 with support
@@ -567,7 +556,7 @@ with support
 \bigl(\{k\}\times\mathcal{M}_k(s)\bigr).
 \label{eq:support}
 \end{equation}
-Here $\mathcal{K}(s)\subseteq\{\mathrm{dis},\mathrm{idle},\mathrm{chg}\}$ is a mode mask and $\mathcal{M}_k(s)=[\underline{u}_k(s),\overline{u}_k(s)]$ is an inventory interval box for mode~$k$. Autoconsistency requires only that sample and $\log\pi$ use this $\mathcal{A}(s)$. The box is \emph{not} plant or FMU feasibility: min-run, SoC veto and FMU residual are outside $\mathcal{A}(s)$ and remain with GiveSafe or the twin. Idle is a point mass (no continuous magnitude). The physical FMU command is the continuous triple
+Here $\mathcal{K}(s)\subseteq\{\mathrm{dis},\mathrm{idle},\mathrm{chg}\}$ is a mode mask and $\mathcal{M}_k(s)=[\underline{u}_k(s),\overline{u}_k(s)]$ is the Oracle inventory interval box for mode~$k$. Autoconsistency requires only that sample and $\log\pi$ use this $\mathcal{A}(s)$. The Oracle box is \emph{not} plant or FMU feasibility: min-run, SoC veto and FMU residual are outside $\mathcal{A}(s)$ and remain with GiveSafe or the twin. Idle is a point mass (no continuous magnitude). The physical FMU command is the continuous triple
 \begin{equation}
 a_t = \bigl(u_{\mathrm{tp},t},\, u_{\mathrm{bat},t},\, u_{\mathrm{caes},t}\bigr),
 \label{eq:action}
@@ -607,7 +596,7 @@ r_t^{\mathrm{shape}}
 - \kappa_t^{\mathrm{abs}} L_{1,t},
 \label{eq:shape}
 \end{equation}
-with base $\kappa=5$ and a recovery-window scale-up over the last $H=40$~h. At a completed, failure-free terminal step the Cui-style indicator is
+with base $\kappa=5$ and an optional late-episode scale-up of the shaping coefficient (reward-config only; not an action rewrite). At a completed, failure-free terminal step the Cui-style indicator is
 \begin{equation}
 r_T^{\mathrm{term}}
 =
@@ -617,7 +606,7 @@ B, & L_1^{\mathrm{e}}\le\varepsilon,\\
 \end{cases}
 \label{eq:term}
 \end{equation}
-with $B=15$. Missing~\eqref{eq:soc} costs the bonus only; it does not apply a proportional fail penalty, does not rewrite actions and does not invalidate the week. The extrinsic reward is the sum of the three terms
+with $B=15$. Missing~\eqref{eq:soc} costs the bonus only; it does not apply a proportional fail penalty and does not invalidate the week. Action rewrite is a separate env switch: the paper protocol sets \texttt{soc\_recovery\_horizon: 0}, so \texttt{env.step} does not rewrite $u_{\mathrm{caes}}$. The extrinsic reward is the sum of the three terms
 \begin{equation}
 r_t^{\mathrm{ext}}
 = r_t^{\mathrm{econ}}+r_t^{\mathrm{shape}}+r_t^{\mathrm{term}}.
@@ -701,7 +690,7 @@ u_{\mathrm{caes}}
 \Pi_{\mathrm{bands}}\bigl(\tanh(z)\bigr),
 \label{eq:project}
 \end{equation}
-where $\Pi_{\mathrm{bands}}$ clamps into the nearest charge/discharge band or to idle~$0$ when $\tanh(z)$ falls in the open gap. Classical programmes (PSO, rolling linprog, rolling MILP) may appear as setting diagnostics after the results gate; they are not used here to claim superiority.
+where $\Pi_{\mathrm{bands}}$ clamps into the nearest charge/discharge band or to idle~$0$ when $\tanh(z)$ falls in the open gap. Classical programmes (PSO, $24$~h rolling linprog, rolling MILP) may appear as setting diagnostics after the results gate; they are not used here to claim superiority.
 
 \begin{algorithm}[!htbp]
 \caption{Support-consistent Hybrid SAC (live: FS-HSAC-support) with GiveSafe}
@@ -756,8 +745,8 @@ soft shell & off & GiveSafe fallback & off \\
 
 The numerical study is a fair \emph{weekly} protocol on the same Sysplorer FMU, TOU table and resource files. Each episode lasts \(T=168\)~h. The 8760~h calendar only supplies rotating week-start times; energy inventories are re-initialised at each reset. Continuous-year carry is an appendix protocol only and is \emph{not} used to claim annual RL superiority. Three seasons follow the same week windows used in the GHTD3 setting~\cite{cui2025ghtd3} (setting, not a hierarchical-method claim): winter trains on weeks \(0\)--\(4\) and evaluates week~\(5\); transition trains on weeks \(13\)--\(17\) and evaluates week~\(18\); summer trains on weeks \(26\)--\(30\) and evaluates week~\(31\). Learning agents use seed~\(0\) and \(E_{\max}=5\times10^{3}\) episodes (\(\approx 8.4\times10^{5}\) valid steps). Hyperparameters are Table~\ref{tab:hyper}. Electricity-only sale, FMI, TOU and ETS stay in this setup paragraph, not in Highlights.
 
-\paragraph{Methods.}
-The live contrast is \textbf{FS-HSAC-support} versus in-house \textbf{fixed-band Hybrid SAC} (\texttt{sac\_param}). Commands: \texttt{python scripts/train\_seasonal.py --method fs\_hsac --support} (or \texttt{FS\_HSAC\_NO\_FEAS=1}) versus \texttt{--method sac} (\texttt{parameterized\_caes=True}). GiveSafe is on for both; fallback and soft shell are \emph{off}. Full residual-feasibility FS-HSAC is appendix only. Projected continuous SAC/TD3 and classical programmes are optional later controls; they do not replace the live pair. Rows that are still missing while \texttt{docs/fs\_hsac\_results\_gate.md} records \texttt{gate\_passed: false} stay blank. Older archive numbers, including a held-out winter PSO versus linprog cash pair, are not claims of this paper.
+\paragraph{Frozen live pair.}
+Support-consistent FS-HSAC is launched with \texttt{FS\_HSAC\_NO\_FEAS=1} (equivalently \texttt{--method fs\_hsac --support}). The in-house contrast is Hybrid SAC with \texttt{parameterized\_caes=True} (\texttt{--method sac}). Both runs set \texttt{SOFT\_SHELL=0} and \texttt{soc\_recovery\_horizon: 0}, so \texttt{env.step} does not rewrite $u_{\mathrm{caes}}$. GiveSafe is on; fallback is off. Full residual-feasibility FS-HSAC, hierarchy, and beating a $24$~h rolling linprog are not the live claim. Rows stay blank while \texttt{train\_result} is not on disk and \texttt{docs/fs\_hsac\_results\_gate.md} records \texttt{gate\_passed: false}. No superiority is claimed in that state.
 
 \paragraph{Metrics.}
 When a full week exists, report GiveSafe reject rate, $\texttt{valid\_steps}=168$, and comprehensive cost $CC=-J^{\mathrm{gen}}$ (equivalently $J^{\mathrm{gen}}$). Cost breakdown columns may expose cash, carbon, $C^{CUT}$, degradation, CAES startup and soft grid-contract charges (fields in \texttt{train\_result.json}/\texttt{kpi}). Independent physical KPIs are reported in parallel and never replace $CC$ as the economic ranking key:
@@ -767,7 +756,7 @@ When a full week exists, report GiveSafe reject rate, $\texttt{valid\_steps}=168
   \item \emph{Reliability / executability:} unserved MWh, valid steps, FMU failures, GiveSafe rejects, terminal inventory diagnostics.
   \item \emph{Online compute:} mean/p95/max decision time; for rolling MILP/linprog also timeout and fail counts.
 \end{itemize}
-Hours survived and \texttt{eval\_failed} remain a separate executability table (Table~\ref{tab:run}); truncated sums are never compared with full weeks. Battery/gas SoC trajectories are qualitative; the week-end indicator~\eqref{eq:term} is a soft bonus, not a ranking KPI. No numeric superiority is written while the results gate is closed. After the gate, lowest $CC$ is ``economically lowest on that week''; better curtailment or fewer contract excesses is stated only on that axis.
+Hours survived and \texttt{eval\_failed} remain a separate executability table (Table~\ref{tab:run}); truncated sums are never compared with full weeks. Battery/gas SoC trajectories are qualitative; the week-end indicator~\eqref{eq:term} is a soft bonus, not a ranking KPI. No numeric superiority is written while \texttt{train\_result} is not on disk. After the gate, lowest $CC$ is ``economically lowest on that week''; better curtailment or fewer contract excesses is stated only on that axis.
 
 % =====================================================================
 \section{Simulation results}
@@ -776,7 +765,7 @@ Hours survived and \texttt{eval\_failed} remain a separate executability table (
 
 \subsection{Executability under the hard filter}
 
-\emph{Results gate.} \texttt{docs/fs\_hsac\_results\_gate.md} records \texttt{gate\_passed: false}. Tables in this section are empty templates for the live pair \texttt{fs\_hsac\_support} versus \texttt{sac\_param}. They are not filled from older archives. A held-out winter PSO versus linprog cash pair that appeared in a previous draft is withdrawn: it was a held-out fit, not a claim of this paper.
+\emph{Results gate.} \texttt{docs/fs\_hsac\_results\_gate.md} records \texttt{gate\_passed: false}. Tables in this section are empty templates for the live pair \texttt{fs\_hsac\_support} (\texttt{FS\_HSAC\_NO\_FEAS=1}) versus \texttt{sac\_param} (\texttt{parameterized\_caes=True}). Cells stay blank while \texttt{train\_result} is not on disk. No superiority is claimed.
 
 Table~\ref{tab:run} will report executability under GiveSafe with fallback and soft shell off. Hours are valid FMU steps. A row enters Table~\ref{tab:econ} only when $\texttt{valid\_steps}=168$.
 
@@ -881,7 +870,7 @@ Summer & \texttt{sac\_param} & --- & --- & --- & --- & --- \\
 \FloatBarrier
 
 \paragraph{What is not claimed.}
-Classical programmes, if added later, diagnose the plant object. They are not used to claim that FS-HSAC already wins cash. A previous winter PSO versus linprog $J^{\mathrm{gen}}$ pair is withdrawn. Incomplete weeks are not ranked.
+Classical programmes, if added later, diagnose the plant object. They are not used to claim that FS-HSAC already wins cash or beats a $24$~h rolling linprog. Incomplete weeks are not ranked. Residual $C_{\psi}$ and hierarchy are not the live contribution.
 
 \subsection{Discussion}
 \label{sec:support}
