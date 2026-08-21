@@ -1,10 +1,10 @@
 # 文档索引（FS-HSAC）
 
-文档更新：2026-08-20
+文档更新：2026-08-21
 
 **现行论文提纲（唯一）：** [paper_outline_and_figures.md](paper_outline_and_figures.md)
 
-主方法：**FS-HSAC v2**（`src/training/fs_hsac/`）。旧 HMSD / GHTD3 / 早期 hybrid-SAC 叙事已移至 [`_archive/`](_archive/README.md)，**不可当作现行口径**。
+主方法（live）：**FS-HSAC-support**（`--method fs_hsac --support` 或 `FS_HSAC_NO_FEAS=1`）。对照：固定带 Hybrid SAC（`--method sac`）。完整残余 $C_\psi$ FS-HSAC 仅附录。旧 HMSD / GHTD3 叙事已移至 [`_archive/`](_archive/README.md)，**不可当作现行口径**。结果门：`gate_passed: false`。
 
 ## 主线真源
 
@@ -21,15 +21,15 @@
 | **参数证据台账** | [parameter_evidence.md](parameter_evidence.md)（profile `official-2024-ets-sd-grid-v1`） |
 | 综合成本分项 | [comprehensive_cost_terms.md](comprehensive_cost_terms.md) |
 | 正文 | [`Paper/main.tex`](../Paper/main.tex) |
-| 训练入口 | `scripts/train_seasonal.py --method fs_hsac` |
+| 训练入口 | `scripts/train_seasonal.py --method fs_hsac --support` vs `--method sac` |
 
 ## 推荐阅读顺序
 
 1. [paper_outline_and_figures.md](paper_outline_and_figures.md) — 提纲与勿写清单  
-2. [pamdp_formalization.md](pamdp_formalization.md) — \(\mathcal A(s)\) / FS-HSAC  
-3. [ae_contributions_zh.md](ae_contributions_zh.md) — 四条贡献  
+2. [pamdp_formalization.md](pamdp_formalization.md) — \(\mathcal A(s)\) / 支撑一致 Hybrid SAC  
+3. [ae_contributions_zh.md](ae_contributions_zh.md) — **一条**贡献  
 4. [fs_hsac_ablation_matrix.md](fs_hsac_ablation_matrix.md) + [fs_hsac_results_gate.md](fs_hsac_results_gate.md)  
-5. [cui_seasonal_min_protocol.md](cui_seasonal_min_protocol.md) — 公平周协议（主方法已换为 FS-HSAC）  
+5. [cui_seasonal_min_protocol.md](cui_seasonal_min_protocol.md) — 公平周窗口（设定；论文方法已换为 FS-HSAC-support）  
 6. 环境接口：`FMU输入上下限.md`、`comprehensive_cost_terms.md`、`data_dictionary.md`
 
 ## 写作辅助（保留）

@@ -5,30 +5,24 @@ Date checked: 2026-08-20 (restart under **official-2024-ets-sd-grid-v1**).
 Protocol: fair weekly, seed 0, obs=166, T=168, GiveSafe fallback **off**, `forecast.mode=perfect`.  
 **Parameter profile:** `official-2024-ets-sd-grid-v1` (π=97.49, β=0.8049, η_g=0.6191). See `docs/parameter_evidence.md`.
 
-Paper identity: **FS-HSAC v2** (`src/training/fs_hsac/`). See `docs/paper_outline_and_figures.md`, `docs/pamdp_formalization.md`, `docs/fs_hsac_results_gate.md`, `docs/fs_hsac_ablation_matrix.md`.
+Paper identity: **FS-HSAC-support** vs in-house **sac_param**. See `docs/paper_outline_and_figures.md`, `docs/pamdp_formalization.md`, `docs/fs_hsac_results_gate.md`, `docs/fs_hsac_ablation_matrix.md`. Results gate remains **false**.
 
-## FS-HSAC mainline (remote `172.16.1.80`)
+## Live pair (paper mainline)
 
-| season | FS-HSAC (`fs_hsac_s0`) | FS-HSAC-support |
-|--------|------------------------|-----------------|
-| winter | restarted (official profile) | restarted |
-| transition | restarted (+ support smoke) | restarted |
-| summer | restarted | restarted |
+| season | FS-HSAC-support (`fs_hsac_support_s0`) | fixed-band Hybrid SAC (`sac_param_s0`) |
+|--------|----------------------------------------|----------------------------------------|
+| winter | pending | pending / do not mix legacy carbon book |
+| transition | pending | pending |
+| summer | pending | pending |
 
-Entry: `python scripts/train_seasonal.py --method fs_hsac --season <season> --seed 0`.  
-Support-only ablation: `FS_HSAC_NO_FEAS=1`.  
-Queue: `logs/fair_queue_fs_hsac.json` / `logs/start_fair_queue_fs_hsac.bat`.  
-Reset helper: `logs/_reset_official_profile_remote.py`.
+Entry: `python scripts/train_seasonal.py --method fs_hsac --support --season <season> --seed 0`  
+(or `FS_HSAC_NO_FEAS=1`) versus `--method sac`. Soft shell OFF.  
+Full residual FS-HSAC (`--method fs_hsac` without `--support`) is appendix only.  
+Queue: `logs/fair_queue_fs_hsac.json` / `logs/start_fair_queue_fs_hsac.bat`.
 
 Unit gates: `python logs/_smoke_fs_hsac.py` → **ALL_SMOKE_OK** (18 tests).
 
-## Fixed-band Hybrid SAC ablation
-
-| season | hybrid SAC (`sac_param_s0`) | hybrid TD3 (`td3_param_s0`) |
-|--------|-----------------------------|-----------------------------|
-| all | **stopped** (legacy carbon book); re-queue only after official profile sync if needed for paper ablation | same |
-
-Do not mix legacy π=80 / η_g=0.5703 / β=0.82 checkpoints into the main table.
+Do not mix legacy π=80 / η_g=0.5703 / β=0.82 checkpoints into the live pair. `sac_param` must use the official-2024 book when it is re-queued.
 
 ## Classical baselines
 

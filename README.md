@@ -1,14 +1,13 @@
 # 风光火储综合能源系统 · FMU + RL 优化 Demo
 
-文档更新：2026-08-10 20:45 (+08:00)
+文档更新：2026-08-21
 
-基于 **Modelica/FMU 物理仿真** 与 **HMSD/GHTD3 + Hybrid 基线** 的电力系统调度强化学习示例仓库。  
-FMU 负责火电、电池、CAES（压缩空气储能）与风光荷的一小时步物理演化；Python 侧负责动作空间、动态可行域、GiveSafe 安全过滤与经济奖励。
+基于 **Modelica/FMU 物理仿真** 的厂级风光–火电–BESS–绝热 CAES 周调度仓库。电是唯一出售载体。论文 live 方法是 **FS-HSAC-support**：Hybrid SAC 的同小时支撑一致改写（采样与 $\log\pi$ 共用 $\mathcal A(s)=\mathcal K(s)\times\mathcal M_k(s)$），**不是** 新的 actor–critic 家族，**不是** HMSD/GHTD3/库存 HRL。对照是院内固定带 Hybrid SAC（`--method sac`，潜变量密度再 clamp）。完整残余 $C_\psi$ FS-HSAC 仅附录。GiveSafe 采用；soft_shell OFF。结果门仍为 false，不写优越性。
 
-> 物理动作三元组：`u_tp`, `u_battery`, `u_caes`。CAES 合法集仍是非凸三段（放电 / 待机 / 充电）；策略直接输出连续 `u_caes`，由 `src/actions/caes_u.py` 做合法投影，**mode 仅派生**（锁/最短运行/日志），**不再有独立 mode/magnitude 动作维**。  
-> 主线：HMSD/GHTD3（`execution_mode: goal_conditioned`，2D SoC goal，`low_reward: ext`）。基线：Hybrid-TD3 / Hybrid-SAC。**无 Hybrid-PPO、无 hybrid residual teacher**。入口见 `src/training/ghtd3/`、`hybrid_td3/`、`hybrid_sac/`。
+> 物理动作三元组：`u_tp`, `u_battery`, `u_caes`。CAES 合法集仍是非凸三段（放电 / 待机 / 充电）。论文策略用混合 `(mode, magnitude)`，支撑为模式掩码 × 库存区间盒，**不是** 电厂/FMU 可行性。  
+> 论文入口：`scripts/train_seasonal.py --method fs_hsac --support`（或 `FS_HSAC_NO_FEAS=1`）vs `--method sac`。HMSD/GHTD3 与 Hybrid-TD3 仍在代码树中，但不是论文身份。
 
-文档索引与 qmd 对齐流程：[docs/README.md](docs/README.md)。
+文档索引：[docs/README.md](docs/README.md)。口径：[docs/paper_outline_and_figures.md](docs/paper_outline_and_figures.md)、[docs/ae_contributions_zh.md](docs/ae_contributions_zh.md)。
 
 ---
 
@@ -17,7 +16,7 @@ FMU 负责火电、电池、CAES（压缩空气储能）与风光荷的一小时
 - **物理层**：FMI 3.0 Co-Simulation（`fmpy`），固定步长默认 3600 s
 - **环境**：Gymnasium，`PowerSystemEnv`，Dict 物理动作 + 可选 24 h 日前 forecast 观测
 - **安全**：GiveSafe（一级 FeasibilityOracle + 可选 Shadow FMU），禁止规则 fallback
-- **训练主线**：HMSD/GHTD3（连续 `u_caes` + 2D 目标条件层次 TD3）；**基线**：Hybrid-TD3 / Hybrid-SAC
+- **论文主线**：FS-HSAC-support（`--method fs_hsac --support`）；**对照**：固定带 Hybrid SAC（`--method sac`）；完整 FS-HSAC 与 HMSD/TD3 仍可跑，但不是 live claim
 - **报告**：训练后自动生成 `report/report.md`（收益元、动作摘要、对比图）
 - **规则基线**：高火电 + 储能 IDLE 与随机可行采样
 
@@ -38,7 +37,7 @@ demo_optimization/
 │   ├── fmu/                   # FMI 会话、校验、变量注册
 │   ├── replay/                # Physical + GiveSafe 分区 buffer
 │   ├── safety/                # GiveSafe 控制器与 Shadow FMU
-│   └── training/              # ghtd3 (HMSD)、hybrid_td3、hybrid_sac、评估报告
+│   └── training/              # fs_hsac（论文）、hybrid_sac 对照、hybrid_td3 / ghtd3 仍保留
 ├── tests/                     # pytest
 ├── requirements.txt
 └── README.md
@@ -120,21 +119,24 @@ python scripts/rollout_compare.py --scheme both --hours 8760
 
 轨迹与摘要写入 `runs/compare/`。
 
-### 6. GiveSafe 训练（HMSD / Hybrid-TD3 / Hybrid-SAC）
+### 6. GiveSafe 训练（论文矩阵）
 
-主线与基线均走物理动作三元组 + GiveSafe。CLI 常用参数：`--mode smoke|short|formal`、`--steps`、`--seed`、`--run-dir`、`--no-shadow`、`--annual-eval`。
+论文主线与对照均走物理动作三元组 + GiveSafe，soft_shell OFF。
 
 ```bash
-# 主线 HMSD / GHTD3（连续 u_caes；公平季节协议见 docs/cui_seasonal_min_protocol.md）
-python scripts/train_ghtd3.py --mode smoke
-python scripts/train_seasonal.py --method hmsd --season winter --episodes 200 --seed 0
-python scripts/train_seasonal.py --method td3  --season winter --episodes 200 --seed 0
+# 论文 live：FS-HSAC-support（无残余 C_ψ）
+python scripts/train_seasonal.py --method fs_hsac --support --season winter --episodes 200 --seed 0
+# 等价：FS_HSAC_NO_FEAS=1 python scripts/train_seasonal.py --method fs_hsac --season winter --seed 0
 
-# 基线 Hybrid-TD3 / Hybrid-SAC（无 PPO）
-python scripts/train_hybrid_td3.py --mode smoke
+# 院内对照：固定带 Hybrid SAC（parameterized_caes=True）
+python scripts/train_seasonal.py --method sac --season winter --episodes 200 --seed 0
+
+# 附录变体：完整残余可行性 FS-HSAC（默认 --method fs_hsac，不带 --support）
+python scripts/train_seasonal.py --method fs_hsac --season winter --episodes 200 --seed 0
+
+# 仍可用、但不是论文身份
+python scripts/train_ghtd3.py --mode smoke
 python scripts/train_hybrid_sac.py --mode smoke
-python scripts/train_hybrid_td3.py --mode short --seed 0
-python scripts/train_hybrid_sac.py --mode formal --annual-eval
 ```
 
 训练结束后默认阅读入口：
@@ -163,7 +165,7 @@ pytest tests/ -q
 
 | 文件 | 作用 |
 |------|------|
-| [`src/config/ghtd3_config.yaml`](src/config/ghtd3_config.yaml) | HMSD 主线：`goal_conditioned`、2D goal、`low_reward: ext`、HER-mix |
+| [`src/config/ghtd3_config.yaml`](src/config/ghtd3_config.yaml) | HMSD 栈（非论文身份）：`goal_conditioned`、2D goal、`low_reward: ext` |
 | [`src/config/ghtd3_config_seasonal_min.yaml`](src/config/ghtd3_config_seasonal_min.yaml) | 季节公平训练用（与主线同栈） |
 | [`src/config/legacy/`](src/config/legacy/) | 历史 TEA / residual / 消融配置归档（非主线） |
 | [`src/config/env_config.yaml`](src/config/env_config.yaml) | FMU 路径、步长、episode 长度、动作/观测清单、forecast CSV |
@@ -206,18 +208,16 @@ pytest tests/ -q
 1. **FMU 是真值**：风光荷边界由模型内嵌时序驱动；`data/*.csv` 只扩展策略观测（完美日前），不是替代物理源。
 2. **动作合法化**：`caes_u.project_u_caes` 把连续标量落到合法三段；越界/Oracle 拒绝由 GiveSafe 重采样或失败，**无规则 fallback**。
 3. **奖励三条路径**：物理经济步 / GiveSafe 拒绝自环 / 环境硬失败（详见奖励文档）。
-4. **HMSD 分层**：高层每 `subgoal_interval`（默认 8）发 2D SoC goal；底层 goal-conditioned 出物理三元组；公平对比时底层用 `r_ext`（与 flat TD3 同目标）。
+4. **论文策略**：FS-HSAC-support 在 $\mathcal A(s)$ 上采样并计算 $\log\pi$；GiveSafe 是采用的执行筛，不是贡献。HMSD 分层仍在代码里，但不是论文身份。
 
 ```mermaid
 flowchart LR
-  High[High-level Actor goal] --> Low[Low-level Actor]
-  Low --> GS[GiveSafe / Oracle]
+  Actor[FS-HSAC-support on A(s)] --> GS[GiveSafe / Oracle]
   GS -->|safe| FMU[FMU Session]
-  GS -->|reject| GSBuf[GiveSafe Replay]
+  GS -->|reject| Reject[reject rate; no Bellman self-loop]
   FMU --> Env[PowerSystemEnv]
-  Env -->|economic r_ext| PhysBuf[Physical Replay]
-  PhysBuf --> Upd[HMSD / Hybrid TD3 Update]
-  GSBuf --> Upd
+  Env -->|r_ext| PhysBuf[Bellman Replay]
+  PhysBuf --> Upd[Hybrid SAC update]
 ```
 
 ---

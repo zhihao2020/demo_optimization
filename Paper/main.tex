@@ -27,21 +27,20 @@
 \def\floatpagepagefraction{1}
 \def\textpagefraction{.001}
 
-\shorttitle{Feasible-support hybrid SAC for CAES plant dispatch}
-\title[mode=title]{Plant-level weekly dispatch of a thermal--battery--CAES system with state-dependent multi-mode commands: a feasible-support hybrid soft actor--critic approach on a high-fidelity Modelica twin}
+\shorttitle{Support-consistent hybrid SAC for CAES plant dispatch}
+\title[mode=title]{Same-hour support-consistent hybrid SAC for weekly wind--PV--thermal--BESS--CAES dispatch}
 
 \begin{abstract}
-Weekly price-taker dispatch of a thermal--battery--compressed-air (CAES) plant couples Shandong time-of-use (TOU) cash with a China National ETS carbon charge, spill/unserved penalties and battery wear. The CAES electric command lives in a disconnected device envelope that further shrinks with mode locks and inventory margins, so the admissible hybrid action is a \emph{state-dependent support} \(\mathcal{A}(s)\): admissible modes \(\mathcal{K}(s)\) and mode-conditioned magnitude intervals \(\mathcal{M}_k(s)\). Convex programmes typically relax that support; continuous DRL on a single box channel is a poor match to multi-mode plant commands. This paper states the plant on a MWORKS Sysplorer Modelica model exported as an FMI functional mock-up unit (FMU)---using FMI as an exchange standard for closed-loop verification, not as a claimed novelty---and proposes a \emph{feasible-support hybrid soft actor--critic} (FS-HSAC): a same-timescale hybrid policy that issues thermal load rate, battery power and a CAES pair $(\mathrm{mode},\mathrm{magnitude})$ with densities defined on \(\mathcal{M}_k(s)\), exact mode enumeration and dual temperatures. A residual feasibility classifier and an adopted GiveSafe shield handle residual twin constraints. Projected continuous SAC/TD3 and a fixed-band hybrid SAC remain ablations. Full-week economics are reported only after a shared results gate; the claim is support-consistent hybrid learning on the twin, not unconditional cash dominance over MILP or hierarchical RL.
+Weekly price-taker dispatch of a wind--PV--thermal--BESS--adiabatic CAES plant sells electricity as the only carrier. Shandong time-of-use (TOU) cash, a China National ETS carbon charge, spill/unserved penalties and battery wear are the economic setting; the plant is stated on a MWORKS Sysplorer Modelica model exported as an FMI functional mock-up unit (FMU). Those items, and the disconnected CAES device envelope, are setting---not contributions. The live method is FS-HSAC: a support-consistent rewrite of Hybrid SAC, not a new actor--critic family and not inventory hierarchical RL. One contribution is claimed: a same-hour hybrid policy ties sampling and $\log\pi$ to one state-dependent support $\mathcal{A}(s)=\mathcal{K}(s)\times\mathcal{M}_k(s)$, a mode mask times an inventory interval box. Autoconsistency means only that sample and $\log\pi$ use that same $\mathcal{A}(s)$; $\mathcal{A}(s)$ is not plant or FMU feasibility (no min-run, SoC veto or FMU residual). The contrast is in-house fixed-band Hybrid SAC (latent density on a static envelope, then clamp). GiveSafe is adopted. Residual twin-feasibility $C_{\psi}$ is an appendix variant. Training maximises $\mathbb{E}\sum_t\gamma^t r_t$; a completed week is scored by the $168$~h $J^{\mathrm{gen}}$. Results are withheld while the shared results gate remains closed; no superiority is claimed.
 \end{abstract}
 
 \begin{highlights}
-\item Sysplorer FMU thermal--battery--CAES plant under Shandong TOU and National ETS, with multi-mode CAES commands written as operating constraints rather than a ``discovery''.
-\item State-dependent hybrid action support $\mathcal{A}(s)$: admissible modes $\mathcal{K}(s)$ and dynamic magnitude intervals $\mathcal{M}_k(s)$.
-\item FS-HSAC: per-mode magnitude heads with Jacobian-corrected densities on $\mathcal{M}_k(s)$, exact mode enumeration, dual temperatures, residual feasibility learning and adopted GiveSafe.
+\item Same-hour Hybrid SAC ties sampling and $\log\pi$ to one support $\mathcal{A}(s)=\mathcal{K}(s)\times\mathcal{M}_k(s)$.
+\item Contrast is in-house fixed-band Hybrid SAC (latent density then clamp).
 \end{highlights}
 
 \begin{keywords}
-Multi-energy system \sep hybrid-action reinforcement learning \sep soft actor--critic \sep feasible action support \sep comprehensive cost \sep carbon pricing \sep time-of-use tariff \sep Modelica \sep FMU \sep CAES
+hybrid-action reinforcement learning \sep soft actor--critic \sep feasible action support \sep plant dispatch \sep comprehensive cost \sep time-of-use tariff \sep CAES \sep FMU
 \end{keywords}
 
 \maketitle
@@ -97,23 +96,24 @@ Multi-energy system \sep hybrid-action reinforcement learning \sep soft actor--c
     $M(s)$ & Boolean mode mask from $\mathcal{K}(s)$ &
     $\pi_{\theta}=\pi_d\pi_c$ & hybrid actor (discrete $\times$ continuous on $\mathcal{M}_k$) \\
     $\alpha_d,\alpha_c$ & discrete / continuous entropy temperatures &
-    $C_{\psi}$ & residual twin feasibility classifier \\
-    $r^{\mathrm{ext}}$ & extrinsic plant reward from $J^{\mathrm{gen}}$ &
-    $\Pi_{\mathcal{F}}$ & GiveSafe acceptance onto $\mathcal{F}(s)$ \\
+    $C_{\psi}$ & residual twin-feasibility classifier (appendix variant) \\
+    $r^{\mathrm{ext}}$ & extrinsic plant reward used in $\mathbb{E}\sum\gamma^t r_t$ &
+    $\Pi_{\mathcal{F}}$ & GiveSafe acceptance onto $\mathcal{F}(s)$ (adopted) \\
     $\gamma$ & discount factor &
     $\mathcal{D}_{\mathrm{B}},\mathcal{D}_{\mathrm{F}}$ & Bellman replay / feasibility replay \\
     \midrule
     \multicolumn{4}{@{}l}{\textit{Abbreviations}} \\
     \midrule
-    FS-HSAC & feasible-support hybrid soft actor--critic &
-    SAC & soft actor--critic (ablations: projected / fixed-band) \\
-    TD3 & twin delayed DDPG (projected / hybrid ablation) \\
-    PSO & particle swarm optimisation &
-    TOU & time-of-use \\
-    CAES & compressed-air energy storage &
-    FMU & functional mock-up unit (FMI) \\
-    ETS & emissions trading scheme &
-    GHTD3 & goal-conditioned hierarchical TD3 (related) \\
+    FS-HSAC & support-consistent Hybrid SAC rewrite (live: support-only) &
+    SAC & in-house fixed-band Hybrid SAC (\texttt{sac\_param}) \\
+    TD3 & twin delayed DDPG (related / archive) &
+    PSO & particle swarm optimisation \\
+    TOU & time-of-use (setting) &
+    CAES & compressed-air energy storage \\
+    FMU & functional mock-up unit (FMI; setting) &
+    ETS & emissions trading scheme (setting) \\
+    GHTD3 & $c$-step inventory-goal HRL (related work only) &
+    OCTD3 & option SMDP + initiation (related work only) \\
     \bottomrule
   \end{tabularx}
 \end{mdframed}
@@ -125,9 +125,11 @@ Multi-energy system \sep hybrid-action reinforcement learning \sep soft actor--c
 \label{sec:introduction}
 % =====================================================================
 
-Deep decarbonisation and China's national carbon market couple electricity markets with abatement costs at multi-energy plants~\cite{zhou2023iesdrl,yang2024planning,icap2025chinaets}. Provincial time-of-use (TOU) tariffs create peak--valley incentives~\cite{ndrc2021tou,shandong2023tou}, while an emissions trading scheme (ETS) attaches a monetary charge to thermal output and grid imports. This paper studies \emph{plant-level price-taker operation} of a thermal--battery--CAES facility: maximise a \emph{comprehensive monetary objective}---weekly net cash flow net of ETS-priced carbon, curtailment/unserved penalties, battery cycle cost, CAES startup cost and a soft interchange-contract charge---with soft week-end inventory shaping rather than a hard SoC veto, and rather than ISO market clearing~\cite{emmanuel2020market,pei2024pricetaker}. Hybrid continuous--discrete actions, CAES mode locks and thermal ramps render unconstrained plant interaction operationally unsafe and computationally demanding.
+Deep decarbonisation and China's national carbon market couple electricity markets with abatement costs at generating plants~\cite{zhou2023iesdrl,yang2024planning,icap2025chinaets}. Provincial time-of-use (TOU) tariffs create peak--valley incentives~\cite{ndrc2021tou,shandong2023tou}, while an emissions trading scheme (ETS) attaches a monetary charge to thermal output and grid imports. This paper studies \emph{plant-level price-taker operation} of a wind--PV--thermal--BESS--adiabatic CAES facility: electricity is the only sold carrier. Weekly net cash, ETS-priced carbon, curtailment/unserved penalties, battery cycle cost, CAES startup cost and a soft interchange-contract charge form the economic book. Soft week-end inventory shaping is a bonus, not a hard SoC veto; the plant is not an ISO market-clearing agent~\cite{emmanuel2020market,pei2024pricetaker}. FMI co-simulation, TOU/ETS prices and the disconnected CAES envelope $u_{\mathrm{caes}}\in[-1,-0.33]\cup\{0\}\cup[0.86,1]$ are the setting.
 
-Model-based programmes remain useful baselines but typically require convexification of CAES thermodynamics or face restrictive budgets on hybrid spaces~\cite{cui2025ghtd3}. Deep reinforcement learning (DRL)~\cite{sutton2018rl,fujimoto2018td3,haarnoja2018sac} learns closed-loop policies by interaction. In multi-energy DRL studies the training environment is often an algebraic or otherwise simplified plant model; closed-loop evaluation on an FMI-exported multi-physics Modelica model of multi-tank CAES thermo-gas coupling remains comparatively less common. Hierarchical goal-conditioned controllers such as GHTD3~\cite{cui2025ghtd3} and option-style OCTD3 address multi-timescale inventory as the method identity; option initiation sets can restrict when a mode may start, but they do not by themselves provide a same-hour maximum-entropy density over a small discrete mode set and its mode-conditioned magnitude intervals. On the present Sysplorer FMU the CAES command is disconnected and further restricted by state, so we ask whether the policy is defined on the state-dependent support
+Related schedulers fall into three classes. (i)~\textbf{Convex or heuristic programmes} relax hybrid CAES thermodynamics or search a low-dimensional open-loop parameterisation~\cite{cui2025ghtd3,pei2024pricetaker}. (ii)~\textbf{Box or projected DRL} places a density on a single continuous box and clamps or projects afterwards~\cite{sutton2018rl,fujimoto2018td3,haarnoja2018sac,zhou2023iesdrl}. Constrained RL and safe exploration add shields or penalties but still do not write the support into the density~\cite{garcia2015safe,sun2024constrained}. (iii)~\textbf{Option or inventory hierarchical RL:} OCTD3 is an SMDP with an initiation set; GHTD3 issues $c$-step inventory goals~\cite{cui2025ghtd3}. Those methods address multi-timescale inventory; they are not the identity of this paper.
+
+The remaining gap is narrower. In-house fixed-band Hybrid SAC samples from a latent density on the static device envelope and clamps. A same-hour hybrid policy can instead tie both the sample and $\log\pi$ to one state-dependent support
 \begin{equation*}
 \mathcal{A}(s)
 =
@@ -136,39 +138,34 @@ Model-based programmes remain useful baselines but typically require convexifica
 \bigcup_{k\in\mathcal{K}(s)}
 \bigl(\{k\}\times\mathcal{M}_k(s)\bigr),
 \end{equation*}
-where $\mathcal{K}(s)$ is the set of currently admissible modes and $\mathcal{M}_k(s)$ the allowable magnitude interval for mode~$k$~\cite{garcia2015safe,sun2024constrained}. We therefore develop a \emph{feasible-support hybrid soft actor--critic} (FS-HSAC): a same-timescale hybrid policy with a discrete mode head and continuous magnitude heads on $\mathcal{M}_k(s)$. GiveSafe is used as the final execution screen, not as a claimed algorithmic novelty.
+where $\mathcal{K}(s)$ is a mode mask and $\mathcal{M}_k(s)$ an inventory interval box. Autoconsistency means only that sample and $\log\pi$ use that same $\mathcal{A}(s)$. The set is \emph{not} plant or FMU feasibility: it does not encode min-run, SoC veto or FMU residual. GiveSafe is the adopted execution screen~\cite{garcia2015safe,sun2024constrained}.
 
-Three gaps remain. (1)~\textbf{Model and verification scope.} Weekly thermal--battery--CAES operation under Shandong TOU and National ETS pricing, with device envelope $u_{\mathrm{caes}}\in[-1,-0.33]\cup\{0\}\cup[0.86,1]$, mode locks and inventory margins, verified in closed loop on an FMI-exported Sysplorer twin (FMI as exchange standard). (2)~\textbf{State-dependent hybrid support.} The scheduling object requires a unified support $\mathcal{A}(s)$ with $\mathcal{K}(s)$ and $\mathcal{M}_k(s)$ written into the policy density, beyond box continuous actions or inventory-goal hierarchies alone. (3)~\textbf{Same-timescale hybrid solver.} With three modes decided jointly with magnitudes every hour, a maximum-entropy hybrid SAC that enumerates modes exactly is a direct design; we do not claim that hierarchical RL cannot address the same plant.
+FS-HSAC is that rewrite of Hybrid SAC---not a new actor--critic family, and not HMSD/GHTD3. The discrete sum over $\mathcal{K}(s)$ may be exact; we do not write an exact hybrid entropy. Training maximises $\mathbb{E}\sum_t\gamma^t r_t$. Evaluation of a completed week reports the $168$~h $J^{\mathrm{gen}}$ (equivalently $CC=-J^{\mathrm{gen}}$). We do not train by $\min J^{\mathrm{gen}}$.
 
-Table~\ref{tab:lit} positions related work.
+Table~\ref{tab:lit} positions related work by timescale, whether the density contains the support, the main contrast, and what each study did not compare. FMI/safety checkbox tables are omitted: FMI and GiveSafe are setting and an adopted shield.
 
 \begin{table}[!htbp]
 \centering
-\caption{Comparison of related scheduling studies (selected).}
+\caption{Related schedulers by timescale and whether the policy density contains the hybrid support. Density-contains-support is the live distinction; FMI and safety shields are not scored here.}
 \label{tab:lit}
 \scriptsize
-\begin{tabular}{@{}p{2.0cm}cccccp{1.6cm}@{}}
+\begin{tabular}{@{}p{2.2cm}p{2.4cm}p{2.0cm}p{3.2cm}p{3.0cm}@{}}
 \toprule
-Study & Hybrid act. & Safety & High-fid.\ twin & State supp. & Market & Method \\
+Study & Timescale & Density contains support & Main contrast & Did not compare \\
 \midrule
-Zhou et al.~\cite{zhou2023iesdrl} & -- & -- & -- & -- & tariff / cost & flat DRL \\
-Sun et al.~\cite{sun2024constrained} & -- & $\checkmark$ & -- & -- & multi-energy & constr.\ RL \\
-Cui et al.~\cite{cui2025ghtd3} & -- & -- & -- & -- & TOU / cost & GHTD3 \\
-Pei et al.~\cite{pei2024pricetaker} & -- & -- & -- & -- & spot PT & optimisation \\
-\textbf{This work} & $\checkmark$ & $\checkmark$ (adopt) & $\checkmark$ (FMU) & $\checkmark$ & TOU PT + ETS & FS-HSAC \\
+Convex / heuristic programmes~\cite{pei2024pricetaker,cui2025ghtd3} & open-loop / rolling horizon & no (relax or search) & surrogate or low-dimensional search vs closed-loop hybrid density & same-hour $\mathcal{A}(s)$-tied $\log\pi$ \\
+Box / projected DRL~\cite{zhou2023iesdrl,haarnoja2018sac} & same hour & no (box then clamp) & continuous box vs hybrid support & mode-mask $\times$ interval density \\
+Constrained RL / safe exploration~\cite{sun2024constrained,garcia2015safe} & same hour & no & shield or penalty after a box policy & density written on $\mathcal{A}(s)$ \\
+OCTD3 (option SMDP + initiation) & option duration & no & multi-timescale initiation vs same-hour hybrid heads & MILP; do not read as RL $>$ exact opt.\ \\
+GHTD3~\cite{cui2025ghtd3} & $c$-step inventory goals & no & inventory HRL vs same-hour support; convex QP often records the lowest scalar $CC$ because the surrogate is low-dimensional, not because HRL is dominated in every KPI & same-hour $\mathcal{A}(s)$-tied Hybrid SAC \\
+\textbf{This work} & same hour & yes & in-house fixed-band Hybrid SAC (latent then clamp) & residual $C_{\psi}$ is appendix; no superiority claimed \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The contributions follow object $\rightarrow$ formalisation $\rightarrow$ solver $\rightarrow$ verification.
-\begin{enumerate}
-\item \textbf{Object (C1).} A thermal--battery--CAES Sysplorer Modelica plant with multi-mode CAES commands~\eqref{eq:caes-legal}, mode locks and gas--thermal DAE dynamics, exported as an FMI FMU for closed-loop interaction. Weekly $J^{\mathrm{gen}}$ couples TOU cash, ETS carbon, spill/unserved energy and battery wear; week-end inventory enters only as a soft terminal bonus in~$r^{\mathrm{ext}}$.
-\item \textbf{Formalisation (C2).} Dispatch is cast as a hybrid MDP with state-dependent support $\mathcal{A}(s)$ built from admissible modes $\mathcal{K}(s)$ and mode-conditioned intervals $\mathcal{M}_k(s)$, so that the policy density is defined on the same support the twin can accept.
-\item \textbf{FS-HSAC solver (C3).} A same-timescale hybrid SAC with per-mode magnitude heads and Jacobian-corrected maps onto $\mathcal{M}_k(s)$, exact mode enumeration, dual temperatures $\alpha_d/\alpha_c$, a hybrid critic on $(u_{\mathrm{tp}},u_{\mathrm{bat}},\mathrm{onehot}(k),\mu)$, and a residual feasibility classifier $C_{\psi}$. GiveSafe is adopted; projected continuous SAC/TD3 and fixed-band hybrid SAC are ablations (Section~\ref{sec:ablation}). We do not claim superiority over multi-timescale HRL as a general principle.
-\item \textbf{Verification (C4).} A fair weekly protocol across winter / transition / summer windows, with cost-component tables and sensitivity on carbon price and feasibility-margin scaling once the shared results gate passes.
-\end{enumerate}
+The paper has \emph{one} contribution: a same-hour Hybrid SAC that ties sampling and $\log\pi$ to $\mathcal{A}(s)=\mathcal{K}(s)\times\mathcal{M}_k(s)$. The contrast is the in-house fixed-band Hybrid SAC. FMI, TOU, ETS, thermo-gas coupling and the disconnected CAES envelope stay in the setting. Option/inventory HRL is related work, not a contribution. Residual $C_{\psi}$ is appendix-only.
 
-Section~\ref{sec:system} describes the plant and TOU setting. Section~\ref{sec:problem} formulates physics, the comprehensive objective and the state-dependent hybrid MDP. Section~\ref{sec:method} presents FS-HSAC. Section~\ref{sec:setup} states the fair weekly protocol. Section~\ref{sec:results} reports economics after the results gate. Section~\ref{sec:conclusion} concludes.
+Section~\ref{sec:system} describes the plant and market setting. Section~\ref{sec:problem} formulates physics, the $168$~h $J^{\mathrm{gen}}$ score and the hybrid MDP. Section~\ref{sec:method} presents support-consistent Hybrid SAC. Section~\ref{sec:setup} states the fair weekly protocol. Section~\ref{sec:results} leaves economics blank while the results gate is closed. Section~\ref{sec:conclusion} concludes.
 
 % =====================================================================
 \section{System description}
@@ -177,14 +174,14 @@ Section~\ref{sec:system} describes the plant and TOU setting. Section~\ref{sec:p
 
 \subsection{Plant topology and modelling workflow}
 
-Figure~\ref{fig:topology} summarises the multi-energy plant. The supply layer comprises wind, photovoltaic (PV) generation and a grid interface under TOU buy/sell prices. The conversion layer centres on a thermal unit commanded by a continuous load rate $u_{\mathrm{tp}}$ and a CAES train commanded by discrete mode and continuous magnitude. The storage layer comprises a battery with continuous power command $u_{\mathrm{bat}}$ and CAES gas and thermal inventories (gas tank, hot and cold tanks). The demand layer balances electric load and grid exchange.
+Figure~\ref{fig:topology} summarises the plant. The supply layer comprises wind, photovoltaic (PV) generation and a grid interface under TOU buy/sell prices. The conversion layer centres on a thermal unit commanded by a continuous load rate $u_{\mathrm{tp}}$ and a CAES train commanded by discrete mode and continuous magnitude. The storage layer comprises a battery with continuous power command $u_{\mathrm{bat}}$ and CAES gas and thermal inventories (gas tank, hot and cold tanks). The demand layer balances electric load and grid exchange. Electricity is the only sold carrier; thermo-gas coupling is plant physics in the setting, not a sold product and not a contribution.
 
-Plant dynamics follow first-principles multi-physics: thermal ramping and fuel use; electrochemical battery SoC with round-trip efficiency; multi-tank CAES gas storage with thermo-mechanical coupling and mode locks; renewable availability; and nodal power balance with curtailment and unserved residual. The complete Modelica model is constructed and parameterised in \textbf{MWORKS Sysplorer}, then exported as an FMI-compliant FMU. Closed-loop optimisers and learning agents interact with this FMU at a communication interval of one hour, reading plant states and writing hybrid set-points. Exogenous TOU prices and resource profiles provide market and boundary conditions without replacing the internal differential--algebraic dynamics.
+Plant dynamics follow first-principles models already present in the twin: thermal ramping and fuel use; electrochemical battery SoC with round-trip efficiency; multi-tank CAES gas storage with thermo-mechanical coupling and mode locks; renewable availability; and nodal power balance with curtailment and unserved residual. The complete Modelica model is constructed and parameterised in \textbf{MWORKS Sysplorer}, then exported as an FMI-compliant FMU. Closed-loop optimisers and learning agents interact with this FMU at a communication interval of one hour. FMI, TOU prices and resource profiles are setting.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\textwidth]{fig_topology}
-\caption{Topology of the thermal--battery--CAES multi-energy plant. Device and network physics are modelled in MWORKS Sysplorer (Modelica) and exported as an FMI FMU for closed-loop dispatch.}
+\caption{Topology of the wind--PV--thermal--BESS--adiabatic CAES plant. Electricity is the only sold carrier. Device physics are modelled in MWORKS Sysplorer (Modelica) and exported as an FMI FMU (setting).}
 \label{fig:topology}
 \end{figure}
 \FloatBarrier
@@ -239,7 +236,7 @@ Episode length \(T\) & 168~h & Weekly MDP; calendar only rotates week starts \\
 \label{sec:problem}
 % =====================================================================
 
-This section formulates the multi-energy plant physics, operating constraints and market objective that define the \emph{weekly} scheduling problem (\(T=168\)~h). Continuous-time differential--algebraic equations of the plant (thermal unit, battery, multi-tank CAES, renewables and grid interface) are integrated in the Sysplorer-exported FMU with communication interval $\tau_s=1$~h; the relations below are the dispatch-level models realised by that twin and used by optimisers and learning agents. The 8760~h plant calendar only rotates weekly episode starts; it is not an annual MDP. We adopt the following sign convention throughout: renewable and thermal generation are non-negative when injecting power; battery and CAES charge is positive and discharge is negative; grid import is positive. Component sets are
+This section formulates the plant physics, operating constraints and market score that define the \emph{weekly} scheduling problem (\(T=168\)~h). Electricity is the only sold carrier. Continuous-time differential--algebraic equations of the plant (thermal unit, battery, multi-tank CAES, renewables and grid interface) are integrated in the Sysplorer-exported FMU with communication interval $\tau_s=1$~h; the relations below are the dispatch-level models realised by that twin and used by optimisers and learning agents. The 8760~h plant calendar only rotates weekly episode starts; it is not an annual MDP. We adopt the following sign convention throughout: renewable and thermal generation are non-negative when injecting power; battery and CAES charge is positive and discharge is negative; grid import is positive. Component sets are
 \begin{equation}
 \begin{aligned}
 I_1&=\{\mathrm{w},\mathrm{pv}\},\quad
@@ -512,7 +509,7 @@ C_t^{\mathrm{grid}}
 \nu_{\mathrm{grid}}\max\bigl(0,\,|P_t^{\mathrm{grid}}|-P_{\lim}\bigr)\Delta t,
 \label{eq:grid-contract}
 \end{equation}
-with scenario $\nu_{\mathrm{grid}}=600$~CNY/MWh (not a statutory fee; the FMU hard interchange remains $\pm500$~MW). The comprehensive monetary objective is
+with scenario $\nu_{\mathrm{grid}}=600$~CNY/MWh (not a statutory fee; the FMU hard interchange remains $\pm500$~MW). The comprehensive monetary score of a completed week is
 \begin{equation}
 \Delta J_t^{\mathrm{gen}}
 =
@@ -528,13 +525,10 @@ C_t^{\mathrm{su}}
 -
 C_t^{\mathrm{grid}},
 \qquad
-\max_{\{a_t\}}\; J^{\mathrm{gen}} = \sum_{t=0}^{T-1} \Delta J_t^{\mathrm{gen}}
-\quad\text{s.t.}\quad
-\eqref{eq:pv}\text{--}\eqref{eq:grid},\
-a_t\in\mathcal{F}(s_t).
+J^{\mathrm{gen}} = \sum_{t=0}^{T-1} \Delta J_t^{\mathrm{gen}}.
 \label{eq:J}
 \end{equation}
-Primary economic ranking uses the full-week comprehensive cost $CC=-J^{\mathrm{gen}}$ (equivalently maximising $J^{\mathrm{gen}}$). Hour-scale hybrid actions thus couple to week-scale inventory motion, carbon exposure, renewable spill, storage wear, CAES startups and contracted interchange. Policies are ranked by calibrated episode reward under~\eqref{eq:J} (Section~\ref{sec:reward});~\eqref{eq:soc} is a soft bonus diagnostic only.
+A finished $168$~h week is ranked by $J^{\mathrm{gen}}$ or $CC=-J^{\mathrm{gen}}$. The learning problem is not $\min J^{\mathrm{gen}}$: the actor maximises $\mathbb{E}\sum_t\gamma^t r_t$ with $r_t$ built from the same cash book (Section~\ref{sec:reward}). Hour-scale hybrid actions couple to week-scale inventory motion, carbon exposure, renewable spill, storage wear, CAES startups and contracted interchange. Equation~\eqref{eq:soc} is a soft bonus diagnostic only.
 
 \subsection{State-dependent hybrid-action MDP}
 \label{sec:pamdp}
@@ -573,7 +567,7 @@ with support
 \bigl(\{k\}\times\mathcal{M}_k(s)\bigr).
 \label{eq:support}
 \end{equation}
-Here $\mathcal{K}(s)\subseteq\{\mathrm{dis},\mathrm{idle},\mathrm{chg}\}$ is the admissible mode set from mode locks and inventory margins, and $\mathcal{M}_k(s)=[\underline{u}_k(s),\overline{u}_k(s)]$ is the dynamic magnitude interval for mode~$k$ returned by the feasibility oracle (twin physics plus engineered margins; sensitivity in Section~\ref{sec:results} separates the two). Idle is a point mass (no continuous magnitude). The physical FMU command is the continuous triple
+Here $\mathcal{K}(s)\subseteq\{\mathrm{dis},\mathrm{idle},\mathrm{chg}\}$ is a mode mask and $\mathcal{M}_k(s)=[\underline{u}_k(s),\overline{u}_k(s)]$ is an inventory interval box for mode~$k$. Autoconsistency requires only that sample and $\log\pi$ use this $\mathcal{A}(s)$. The box is \emph{not} plant or FMU feasibility: min-run, SoC veto and FMU residual are outside $\mathcal{A}(s)$ and remain with GiveSafe or the twin. Idle is a point mass (no continuous magnitude). The physical FMU command is the continuous triple
 \begin{equation}
 a_t = \bigl(u_{\mathrm{tp},t},\, u_{\mathrm{bat},t},\, u_{\mathrm{caes},t}\bigr),
 \label{eq:action}
@@ -629,26 +623,26 @@ r_t^{\mathrm{ext}}
 = r_t^{\mathrm{econ}}+r_t^{\mathrm{shape}}+r_t^{\mathrm{term}}.
 \label{eq:rext}
 \end{equation}
-Classical programmes must convexify~\eqref{eq:caes-legal} and the CAES thermo-mechanical coupling; FS-HSAC (Section~\ref{sec:method}) optimises~\eqref{eq:J} by closed-loop interaction with the plant twin under support~\eqref{eq:support}.
+Classical programmes must convexify~\eqref{eq:caes-legal} and the CAES thermo-mechanical coupling. FS-HSAC (Section~\ref{sec:method}) maximises $\mathbb{E}\sum_t\gamma^t r_t^{\mathrm{ext}}$ by closed-loop interaction under support~\eqref{eq:support}. A completed week is then scored by the $168$~h $J^{\mathrm{gen}}$ in~\eqref{eq:J}.
 
 % =====================================================================
 \section{Solution methodology}
 \label{sec:method}
 % =====================================================================
 
-The solver is a same-timescale \emph{feasible-support} hybrid soft actor--critic~\cite{haarnoja2018sac}: one plant reward, one state-dependent support, one adopted GiveSafe screen. Mode and magnitude are decided jointly at every one-hour step; with only three CAES modes the soft value can be enumerated exactly. The research question is therefore the current hybrid support $\mathcal{A}(s)$, not a slow inventory sub-goal layer. FS-HSAC is already a two-headed hybrid policy (discrete mode head plus continuous magnitude heads), but it is \emph{not} a multi-timescale hierarchical RL controller in which a high level commits every $c$ hours. When independent slow inventory targets, start-up costs or long-duration options dominate, hierarchical or option methods remain reasonable alternatives; we do not claim that FS-HSAC is universally preferable to them. Figure~\ref{fig:algorithm} summarises the loop; Figure~\ref{fig:action-rep} contrasts projection, fixed-band hybrid decoding and support-consistent decoding.
+The live solver is a same-hour \emph{support-consistent} rewrite of Hybrid SAC~\cite{haarnoja2018sac}: sampling and $\log\pi$ share $\mathcal{A}(s)=\mathcal{K}(s)\times\mathcal{M}_k(s)$. It is not a new actor--critic family and not inventory HRL. Mode and magnitude are decided jointly at every one-hour step. The discrete sum over $\mathcal{K}(s)$ may be exact; we do not write an exact hybrid entropy. The research question is that same-hour support versus latent-then-clamp, not a slow inventory sub-goal layer. Residual twin-feasibility $C_{\psi}$ is deferred to Appendix~\ref{app:residual-feas}. GiveSafe is adopted. Figure~\ref{fig:algorithm} summarises the loop; Figure~\ref{fig:action-rep} contrasts projection, fixed-band hybrid decoding and support-consistent decoding.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\textwidth]{fig_algorithm}
-\caption{FS-HSAC closed loop. The actor issues thermal load rate, battery power and CAES $(\mathrm{mode},\mathrm{magnitude})$ on $\mathcal{A}(s)$ at the same hourly timescale; GiveSafe accepts or rejects before the Sysplorer FMU advances one hour; accepted steps enter the Bellman replay $\mathcal{D}_{\mathrm{B}}$, while rejections train only the residual classifier $C_{\psi}$.}
+\caption{Support-consistent Hybrid SAC closed loop. The actor issues thermal load rate, battery power and CAES $(\mathrm{mode},\mathrm{magnitude})$ on $\mathcal{A}(s)$ at the same hourly timescale; sample and $\log\pi$ use that support; GiveSafe accepts or rejects before the Sysplorer FMU advances one hour. Residual $C_{\psi}$ is not in the live loop (Appendix~\ref{app:residual-feas}).}
 \label{fig:algorithm}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.95\textwidth]{fig_action_rep}
-\caption{Action representation. Left: continuous projection onto~\eqref{eq:caes-legal} can mute charge/discharge into idle. Centre: fixed-band hybrid decoding places magnitude on the static device envelope and clamps after sampling. Right: FS-HSAC maps magnitude through the current interval $\mathcal{M}_k(s)$ with a Jacobian-corrected density.}
+\caption{Action representation. Left: continuous projection onto~\eqref{eq:caes-legal} can mute charge/discharge into idle. Centre: in-house fixed-band Hybrid SAC places a latent density on the static device envelope and clamps after sampling. Right: support-consistent Hybrid SAC maps magnitude through the current interval $\mathcal{M}_k(s)$; sample and $\log\pi$ share that box.}
 \label{fig:action-rep}
 \end{figure}
 \FloatBarrier
@@ -672,7 +666,7 @@ Thermal and battery heads use state-dependent Gaussian latents mapped by a sigmo
 \quad\text{(illegal modes set to $-\infty$)},
 \label{eq:mask}
 \end{equation}
-yielding a categorical $\pi_d$. For active charge/discharge modes, a Gaussian latent is mapped by sigmoid then affine transform into $\mathcal{M}_k(s)$; the log-density adds both sigmoid and interval Jacobians. Idle contributes no continuous magnitude entropy. Soft actor and critic objectives \emph{enumerate} the three modes exactly (no Gumbel soft-value approximation),
+yielding a categorical $\pi_d$. For active charge/discharge modes, a Gaussian latent is mapped by sigmoid then affine transform into $\mathcal{M}_k(s)$; the log-density adds both sigmoid and interval Jacobians. Idle contributes no continuous magnitude entropy. Actor and critic objectives use a discrete sum over $\mathcal{K}(s)$ (no Gumbel approximation). That sum may be exact because $|\mathcal{K}(s)|\le 3$; it is not an exact hybrid entropy,
 \begin{equation}
 \begin{aligned}
 J(\theta)
@@ -692,55 +686,48 @@ Q_{\psi}(s,k,\mu)
 \end{equation}
 with dual temperatures $\alpha_d,\alpha_c$ targeting discrete entropy $-\log|\mathcal{K}(s)|$ and continuous entropy scaled by the number of active continuous channels. Twin critics $Q_{\psi_1},Q_{\psi_2}$ take the hybrid argument $(s,u_{\mathrm{tp}},u_{\mathrm{bat}},\mathrm{onehot}(k),\mu)$ rather than a collapsed scalar $u_{\mathrm{caes}}$.
 
-\subsection{Split replay and residual feasibility}
+\subsection{Adopted GiveSafe screen}
 \label{sec:givesafe}
 
-Before every FMU step the controller attempts up to $N_{\mathrm{try}}=64$ samples from $\pi_{\theta}$. A candidate is accepted only if it lies in $\mathcal{F}(s)$. Accepted physical transitions $(s,a,r^{\mathrm{ext}},s')$ enter the Bellman buffer $\mathcal{D}_{\mathrm{B}}$. Rejected proposals never advance the twin and are written only to a feasibility buffer $\mathcal{D}_{\mathrm{F}}$ that trains a residual classifier
-\begin{equation}
-C_{\psi}(s,a)=\sigma\bigl(f_{\psi}(s,u_{\mathrm{tp}},u_{\mathrm{bat}},\mathrm{onehot}(k),\mu)\bigr)
-\approx
-\mathbb{P}(\mathrm{accept}\mid s,a).
-\label{eq:cpsi}
-\end{equation}
-Analytic constraints already encoded in $\mathcal{A}(s)$ are not re-learned; $C_{\psi}$ targets residual twin failures. The actor may include a risk penalty $\beta[-\log C_{\psi}(s,a)]$ once unsafe labels exist. With fallback \emph{off}, exhaustion raises \texttt{NoSafeActionFoundError} and the episode is recorded as \texttt{eval\_failed}. GiveSafe follows prior safe-interaction practice~\cite{garcia2015safe,sun2024constrained}; we do not claim a new shield.
+Before every FMU step the controller attempts up to $N_{\mathrm{try}}=64$ samples from $\pi_{\theta}$. A candidate is accepted only if it lies in $\mathcal{F}(s)$. Accepted physical transitions $(s,a,r^{\mathrm{ext}},s')$ enter the Bellman buffer $\mathcal{D}_{\mathrm{B}}$. Rejected proposals never advance the twin. With fallback \emph{off} and soft shell \emph{off}, exhaustion raises \texttt{NoSafeActionFoundError} and the episode is recorded as \texttt{eval\_failed}. GiveSafe follows prior safe-interaction practice~\cite{garcia2015safe,sun2024constrained}; we do not claim a new shield. Residual twin-feasibility $C_{\psi}$ is an appendix variant (Appendix~\ref{app:residual-feas}), not part of the live claim.
 
-\subsection{Ablations and classical baselines}
+\subsection{Live contrast and optional baselines}
 \label{sec:ablation}
 
-Three learning controls isolate the support design. (i)~\textbf{Projected continuous SAC/TD3:} a single CAES latent $z$ is mapped by
+The live contrast is in-house \textbf{fixed-band Hybrid SAC} (\texttt{sac\_param}, \texttt{--method sac}, \texttt{parameterized\_caes=True}): mode masking as in~\eqref{eq:mask} but a latent density on the static device envelope~\eqref{eq:caes-legal}, then clamp. The paper mainline is \textbf{FS-HSAC-support} (\texttt{fs\_hsac\_support}: \texttt{--method fs\_hsac --support} or \texttt{FS\_HSAC\_NO\_FEAS=1}), the same-hour support-consistent rewrite without $C_{\psi}$. Full residual-feasibility FS-HSAC is appendix only. Projected continuous SAC/TD3 remains an optional archive control,
 \begin{equation}
 u_{\mathrm{caes}}
 =
 \Pi_{\mathrm{bands}}\bigl(\tanh(z)\bigr),
 \label{eq:project}
 \end{equation}
-where $\Pi_{\mathrm{bands}}$ clamps into the nearest charge/discharge band or to idle~$0$ when $\tanh(z)$ falls in the open gap. (ii)~\textbf{Fixed-band hybrid SAC:} mode masking as in~\eqref{eq:mask} but magnitude decoded onto the static device envelope~\eqref{eq:caes-legal}, with clamp only at evaluation; rejections may be mixed into a single replay (ablation stack). (iii)~\textbf{FS-HSAC-support:} FS-HSAC without the $C_{\psi}$ actor penalty. Classical baselines are six-parameter peak--valley PSO (open-loop week search on the FMU), rolling linprog on an eight-hour linear surrogate, and a rolling MILP with energy linearisation whose modelling omissions are stated in the case-study setup.
+where $\Pi_{\mathrm{bands}}$ clamps into the nearest charge/discharge band or to idle~$0$ when $\tanh(z)$ falls in the open gap. Classical programmes (PSO, rolling linprog, rolling MILP) may appear as setting diagnostics after the results gate; they are not used here to claim superiority.
 
 \begin{algorithm}[!htbp]
-\caption{FS-HSAC with dynamic support, split replay and GiveSafe}
+\caption{Support-consistent Hybrid SAC (live: FS-HSAC-support) with GiveSafe}
 \label{alg:hsac}
 \begin{algorithmic}[1]
-\Require Actor $\pi_{\theta}$, twin critics, buffers $\mathcal{D}_{\mathrm{B}},\mathcal{D}_{\mathrm{F}}$, classifier $C_{\psi}$, GiveSafe with fallback off
+\Require Actor $\pi_{\theta}$, twin critics, Bellman buffer $\mathcal{D}_{\mathrm{B}}$, GiveSafe with fallback and soft shell off
 \For{episode $=1,2,\ldots,E_{\max}$}
   \State Reset plant twin on a training-week start; $s\leftarrow s_0$
   \For{$t=0$ to $T-1$}
-    \State Build $\mathcal{K}(s),\mathcal{M}_k(s)$; sample $a^{\mathrm{hyb}}\sim\pi_{\theta}(\cdot\mid s)$; decode via~\eqref{eq:decode}
+    \State Build $\mathcal{A}(s)=\mathcal{K}(s)\times\mathcal{M}_k(s)$; sample $a^{\mathrm{hyb}}\sim\pi_{\theta}(\cdot\mid s)$ on that support; evaluate $\log\pi$ on the same support; decode via~\eqref{eq:decode}
     \State $a^{\star}\leftarrow$ GiveSafe($s,a$; up to $N_{\mathrm{try}}$ resamples)
     \If{no legal $a^{\star}$}
-      \State store rejection in $\mathcal{D}_{\mathrm{F}}$; update $C_{\psi}$; \textbf{break} (eval: \texttt{eval\_failed})
+      \State \textbf{break} (eval: \texttt{eval\_failed})
     \EndIf
     \State Step FMU with $a^{\star}$; observe $s'$, $r^{\mathrm{ext}}$; store in $\mathcal{D}_{\mathrm{B}}$
-    \State Update critics / actor by soft Bellman and~\eqref{eq:sac-j}; adjust $\alpha_d,\alpha_c$; optional $-\log C_{\psi}$ penalty
+    \State Update critics / actor by soft Bellman and the discrete sum~\eqref{eq:sac-j}; adjust $\alpha_d,\alpha_c$
     \State $s\leftarrow s'$
   \EndFor
 \EndFor
-\Ensure Learned feasible-support policy $\pi_{\theta}$
+\Ensure Learned support-consistent hybrid policy $\pi_{\theta}$
 \end{algorithmic}
 \end{algorithm}
 
 \begin{table}[!htbp]
 \centering
-\caption{Main FS-HSAC hyperparameters (fair stack).}
+\caption{Live FS-HSAC-support hyperparameters (fair stack). Residual $\beta$ is appendix-only.}
 \label{tab:hyper}
 \scriptsize
 \begin{tabular}{@{}llll@{}}
@@ -749,13 +736,14 @@ Symbol / name & Value & Symbol / name & Value \\
 \midrule
 $\gamma$ & 0.99 & target $\tau$ & $5\times10^{-3}$ \\
 actor / critic lr & $3\times10^{-4}$ & batch size & 256 \\
-Bellman / feas.\ buffers & $1\times10^{6}$ each & GiveSafe tries & 64 \\
+Bellman buffer & $1\times10^{6}$ & GiveSafe tries & 64 \\
 $\alpha_d,\alpha_c$ & automatic & target $H_c$ & $-3$ (active cont.) \\
-feasibility $\beta$ & $0.1$ (when enabled) & algorithm tag & \texttt{fs\_hsac\_v2} \\
+$C_{\psi}$ / $\beta$ & off (live) & algorithm tag & \texttt{fs\_hsac\_v2} + \texttt{NO\_FEAS} \\
 $C_{\mathrm{ref}}$ & $1.565\times10^{5}$ CNY & soft-bonus $\varepsilon$ & 0.06 \\
 terminal $B$ / fail pen. & 15 / 0 & episode length $T$ & 168 h \\
 reported seed & $0$ & training episodes $E_{\max}$ & $5\times10^{3}$ \\
 observation dim & 166 & hybrid act.\ $(u_{\mathrm{tp}},u_{\mathrm{bat}},k,\mu)$ & --- \\
+soft shell & off & GiveSafe fallback & off \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -766,20 +754,20 @@ observation dim & 166 & hybrid act.\ $(u_{\mathrm{tp}},u_{\mathrm{bat}},k,\mu)$ 
 \label{sec:setup}
 % =====================================================================
 
-The numerical study is a fair \emph{weekly} protocol on the same Sysplorer FMU, TOU table and resource files. Each episode lasts \(T=168\)~h. The 8760~h calendar only supplies rotating week-start times; energy inventories are re-initialised at each reset. Continuous-year carry is an appendix protocol only and is \emph{not} used to claim annual RL superiority. Three seasons follow common hierarchical multi-energy windowing~\cite{cui2025ghtd3}: winter trains on weeks \(0\)--\(4\) and evaluates week~\(5\); transition trains on weeks \(13\)--\(17\) and evaluates week~\(18\); summer trains on weeks \(26\)--\(30\) and evaluates week~\(31\). All learning agents use seed~\(0\) and \(E_{\max}=5\times10^{3}\) episodes (\(\approx 8.4\times10^{5}\) valid steps). Hyperparameters are Table~\ref{tab:hyper}.
+The numerical study is a fair \emph{weekly} protocol on the same Sysplorer FMU, TOU table and resource files. Each episode lasts \(T=168\)~h. The 8760~h calendar only supplies rotating week-start times; energy inventories are re-initialised at each reset. Continuous-year carry is an appendix protocol only and is \emph{not} used to claim annual RL superiority. Three seasons follow the same week windows used in the GHTD3 setting~\cite{cui2025ghtd3} (setting, not a hierarchical-method claim): winter trains on weeks \(0\)--\(4\) and evaluates week~\(5\); transition trains on weeks \(13\)--\(17\) and evaluates week~\(18\); summer trains on weeks \(26\)--\(30\) and evaluates week~\(31\). Learning agents use seed~\(0\) and \(E_{\max}=5\times10^{3}\) episodes (\(\approx 8.4\times10^{5}\) valid steps). Hyperparameters are Table~\ref{tab:hyper}. Electricity-only sale, FMI, TOU and ETS stay in this setup paragraph, not in Highlights.
 
 \paragraph{Methods.}
-The mainline is \textbf{FS-HSAC}; ablations are \textbf{projected continuous SAC/TD3}, \textbf{fixed-band hybrid SAC}, and \textbf{FS-HSAC-support} (no $C_{\psi}$ penalty). Classical controls are six-parameter peak--valley \textbf{PSO}, rolling \textbf{linprog}, and rolling \textbf{MILP}. GiveSafe stays on for every learning agent; fallback is \emph{off}. Held-out evaluation uses the same rule for every method. Rows that are still missing after the results gate are left blank and are not filled from older observation-dimension archives.
+The live contrast is \textbf{FS-HSAC-support} versus in-house \textbf{fixed-band Hybrid SAC} (\texttt{sac\_param}). Commands: \texttt{python scripts/train\_seasonal.py --method fs\_hsac --support} (or \texttt{FS\_HSAC\_NO\_FEAS=1}) versus \texttt{--method sac} (\texttt{parameterized\_caes=True}). GiveSafe is on for both; fallback and soft shell are \emph{off}. Full residual-feasibility FS-HSAC is appendix only. Projected continuous SAC/TD3 and classical programmes are optional later controls; they do not replace the live pair. Rows that are still missing while \texttt{docs/fs\_hsac\_results\_gate.md} records \texttt{gate\_passed: false} stay blank. Older archive numbers, including a held-out winter PSO versus linprog cash pair, are not claims of this paper.
 
 \paragraph{Metrics.}
-Primary ranking uses the full-week comprehensive monetary objective~\eqref{eq:J}: report $J^{\mathrm{gen}}$ and $CC=-J^{\mathrm{gen}}$ only when $\texttt{valid\_steps}=168$. Cost breakdown columns expose cash, carbon, $C^{CUT}$, degradation, CAES startup and soft grid-contract charges (fields in \texttt{train\_result.json}/\texttt{kpi}). Independent physical KPIs are reported in parallel and never replace $CC$ as the economic ranking key:
+When a full week exists, report GiveSafe reject rate, $\texttt{valid\_steps}=168$, and comprehensive cost $CC=-J^{\mathrm{gen}}$ (equivalently $J^{\mathrm{gen}}$). Cost breakdown columns may expose cash, carbon, $C^{CUT}$, degradation, CAES startup and soft grid-contract charges (fields in \texttt{train\_result.json}/\texttt{kpi}). Independent physical KPIs are reported in parallel and never replace $CC$ as the economic ranking key:
 \begin{itemize}
   \item \emph{Renewable uptake:} curtailment MWh, rate $E^{\mathrm{curt}}/E^{\mathrm{RES,avail}}$, utilisation.
   \item \emph{Flexibility / grid friendliness:} contract excess MWh and violation hours, $|P^{\mathrm{grid}}|_{\max}$, peak--valley and ramp of interchange (1~h resolution; no claim of sub-hourly response).
   \item \emph{Reliability / executability:} unserved MWh, valid steps, FMU failures, GiveSafe rejects, terminal inventory diagnostics.
   \item \emph{Online compute:} mean/p95/max decision time; for rolling MILP/linprog also timeout and fail counts.
 \end{itemize}
-Hours survived and \texttt{eval\_failed} remain a separate executability table (Table~\ref{tab:run}); truncated sums are never compared with full weeks. Battery/gas SoC trajectories are qualitative; the week-end indicator~\eqref{eq:term} is a soft bonus, not a ranking KPI. Declaration rule: lowest $CC$ is ``economically best''; better curtailment or fewer contract excesses is stated only on that axis; ``overall better'' is reserved for weak Pareto dominance on $CC$, curtailment and reliability together.
+Hours survived and \texttt{eval\_failed} remain a separate executability table (Table~\ref{tab:run}); truncated sums are never compared with full weeks. Battery/gas SoC trajectories are qualitative; the week-end indicator~\eqref{eq:term} is a soft bonus, not a ranking KPI. No numeric superiority is written while the results gate is closed. After the gate, lowest $CC$ is ``economically lowest on that week''; better curtailment or fewer contract excesses is stated only on that axis.
 
 % =====================================================================
 \section{Simulation results}
@@ -788,54 +776,50 @@ Hours survived and \texttt{eval\_failed} remain a separate executability table (
 
 \subsection{Executability under the hard filter}
 
-\emph{Provisional note.} Tables in this section still quote the pre--FS-HSAC \texttt{seasonal\_v1} seed-$0$ archive (projected TD3 / fixed-band hybrid SAC / PSO / linprog). They will be replaced by FS-HSAC rows once \texttt{docs/fs\_hsac\_results\_gate.md} passes; blank FS-HSAC cells are intentional.
+\emph{Results gate.} \texttt{docs/fs\_hsac\_results\_gate.md} records \texttt{gate\_passed: false}. Tables in this section are empty templates for the live pair \texttt{fs\_hsac\_support} versus \texttt{sac\_param}. They are not filled from older archives. A held-out winter PSO versus linprog cash pair that appeared in a previous draft is withdrawn: it was a held-out fit, not a claim of this paper.
 
-Table~\ref{tab:run} reports executability under GiveSafe with fallback off. Projected continuous TD3 aborts at 13/5/76~h across winter/transition/summer. The archived fixed-band hybrid SAC records \texttt{eval\_failed} on winter and transition held-out weeks; summer is missing. PSO finishes winter (168~h) but truncates transition (143~h) and summer (117~h). Rolling linprog finishes all three seasons on the FMU first-step execution protocol. These facts are executability, not cash.
+Table~\ref{tab:run} will report executability under GiveSafe with fallback and soft shell off. Hours are valid FMU steps. A row enters Table~\ref{tab:econ} only when $\texttt{valid\_steps}=168$.
 
 \begin{table}[!htbp]
 \centering
-\caption{Executability on the held-out week (seed~$0$, \texttt{seasonal\_v1}, GiveSafe fallback off). Hours are valid FMU steps. FS-HSAC rows are reserved for the post-gate archive; ``hybrid SAC'' below denotes the fixed-band ablation.}
+\caption{Executability on the held-out week (seed~$0$, GiveSafe fallback off, soft shell off). Reserved for \texttt{fs\_hsac\_support} vs \texttt{sac\_param}. Blank cells are intentional.}
 \label{tab:run}
 \scriptsize
-\begin{tabular}{lllr}
+\begin{tabular}{llll}
 \toprule
-Season & Method & Status & Hours \\
+Season & Method & Status & Hours / reject rate \\
 \midrule
-Winter & hybrid SAC & eval\_failed & --- \\
-Winter & proj.\ TD3 & completed & 13 \\
-Winter & PSO & completed & 168 \\
-Winter & linprog & completed & 168 \\
-Transition & hybrid SAC & eval\_failed & --- \\
-Transition & proj.\ TD3 & completed & 5 \\
-Transition & PSO & completed & 143 \\
-Transition & linprog & completed & 168 \\
-Summer & hybrid SAC & missing & --- \\
-Summer & proj.\ TD3 & completed & 76 \\
-Summer & PSO & completed & 117 \\
-Summer & linprog & completed & 168 \\
+Winter & \texttt{fs\_hsac\_support} & --- & --- \\
+Winter & \texttt{sac\_param} & --- & --- \\
+Transition & \texttt{fs\_hsac\_support} & --- & --- \\
+Transition & \texttt{sac\_param} & --- & --- \\
+Summer & \texttt{fs\_hsac\_support} & --- & --- \\
+Summer & \texttt{sac\_param} & --- & --- \\
 \bottomrule
 \end{tabular}\\[2pt]
-{\footnotesize SAC \texttt{eval\_failed}: \texttt{NoSafeActionFoundError} after 64 GiveSafe attempts. Hours $<168$: env terminated on forbidden/invalid command.}
+{\footnotesize No numeric superiority is claimed. Truncated weeks stay in this table only.}
 \end{table}
 \FloatBarrier
 
 \subsection{Same-horizon economics}
 
-\(R\) and \(J^{\mathrm{gen}}\) accumulate by the hour. Ranking a truncated sum against a 168~h sum would treat survival time as cash. Table~\ref{tab:econ} therefore keeps only \(\texttt{valid\_steps}=168\) and ranks by comprehensive cost $CC=-J^{\mathrm{gen}}$ (equivalently $J^{\mathrm{gen}}$). On the present pre-gate archive the closed-loop learning methods do not yet contribute a full-week FS-HSAC cell; fixed-band hybrid SAC likewise has no full-week cell. Winter economics are therefore PSO versus linprog (both 168~h): PSO \(R=102.7\), \(J^{\mathrm{gen}}=14.36\times10^{6}$~CNY versus linprog \(R=60.0\), \(J^{\mathrm{gen}}=10.19\times10^{6}$~CNY. Transition and summer economic columns contain linprog only among completed main-matrix methods. Incomplete DRL/PSO weeks do not enter Table~\ref{tab:econ}.
+\(R\) and \(J^{\mathrm{gen}}\) accumulate by the hour. Ranking a truncated sum against a 168~h sum would treat survival time as cash. Table~\ref{tab:econ} therefore keeps only \(\texttt{valid\_steps}=168\) and will report comprehensive cost $CC=-J^{\mathrm{gen}}$ (equivalently $J^{\mathrm{gen}}$) together with reject rate. Cells stay blank until the results gate.
 
 \begin{table}[!htbp]
 \centering
-\caption{Full-week economics (seed~$0$, \texttt{seasonal\_v1}). Only \(\texttt{valid\_steps}=168\). Primary column $J^{\mathrm{gen}}$ ($10^{6}$~CNY) is the comprehensive objective~\eqref{eq:J}; $E^{\mathrm{th}}$ and battery throughput in MWh. Soft week-end inventory bonus is inside $R$, not a separate column.}
+\caption{Full-week economics template (seed~$0$). Only \(\texttt{valid\_steps}=168\). Live pair: \texttt{fs\_hsac\_support} vs \texttt{sac\_param}. No numbers are filled while the results gate is closed.}
 \label{tab:econ}
 \scriptsize
-\begin{tabular}{llrrrr}
+\begin{tabular}{llrrr}
 \toprule
-Season & Method & $R$ & $J^{\mathrm{gen}}$ & $E^{\mathrm{th}}$ & Bat.\ thr. \\
+Season & Method & Reject rate & $J^{\mathrm{gen}}$ / $CC$ & Notes \\
 \midrule
-Winter & PSO & 102.7 & 14.36 & 14174 & 347 \\
-Winter & linprog & 60.0 & 10.19 & 20818 & 5238 \\
-Transition & linprog & 13.2 & 2.66 & 21615 & 4288 \\
-Summer & linprog & 11.6 & 3.26 & 20745 & 3791 \\
+Winter & \texttt{fs\_hsac\_support} & --- & --- & --- \\
+Winter & \texttt{sac\_param} & --- & --- & --- \\
+Transition & \texttt{fs\_hsac\_support} & --- & --- & --- \\
+Transition & \texttt{sac\_param} & --- & --- & --- \\
+Summer & \texttt{fs\_hsac\_support} & --- & --- & --- \\
+Summer & \texttt{sac\_param} & --- & --- & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -844,72 +828,74 @@ Summer & linprog & 11.6 & 3.26 & 20745 & 3791 \\
 \subsection{Renewable uptake, flexibility and reliability}
 \label{sec:kpi-physics}
 
-After the results gate, companion tables report curtailment MWh/rate, contract excess and violation hours, interchange peak--valley/ramp, unserved energy, and decision-time statistics for the same full-week rows as Table~\ref{tab:econ}. These axes do not override $CC$: a method with lower curtailment but higher $CC$ is described as a Pareto trade-off induced by prices and constraints, not as ``smarter'' than a solver. Mechanism ablation (full thermal--BESS--CAES versus lock-CAES under identical forecast and~\eqref{eq:J}) attributes $\Delta CC$, $\Delta E^{\mathrm{curt}}$ and interchange changes to device complementarity rather than to a single synthetic synergy index.
+After the results gate, companion tables may report curtailment MWh/rate, contract excess and violation hours, interchange peak--valley/ramp, unserved energy, and decision-time statistics for the same full-week rows as Table~\ref{tab:econ}. These axes do not override $CC$. No device-complementarity or multi-energy synergy index is claimed as a contribution.
 
 \subsection{Sensitivity and Pareto language}
 \label{sec:sensitivity-rules}
 
-Sensitivity axes include carbon price, feasibility-margin scale, CAES capacity, curtailment price $\nu_{\mathrm{curt}}$ and contract price $\nu_{\mathrm{grid}}$ (protocol in the sensitivity notes). If MILP records lower $CC$ but higher curtailment, the text reports the price-driven trade-off and verifies it on the curtailment/contract sweeps; it does not reinterpret that gap as an RL forecast advantage. The main matrix shares perfect forecast across methods.
+Sensitivity axes include carbon price, feasibility-margin scale, CAES capacity, curtailment price $\nu_{\mathrm{curt}}$ and contract price $\nu_{\mathrm{grid}}$ (protocol in the sensitivity notes). If a later classical row records lower $CC$ but higher curtailment, the text will report the price-driven trade-off; it will not reinterpret that gap as an RL forecast advantage. The main matrix shares perfect forecast across methods. No sensitivity numbers are filled here.
 \subsection{Scheduling traces and surrogate gap}
 
-Closed-loop power-balance plots show only evaluations that completed \(T=168\)~h. Truncated rollouts and SAC \texttt{eval\_failed} stay in Table~\ref{tab:run}. On the present main matrix the full-week electric stackplot available for discussion is rolling linprog (Fig.~\ref{fig:bal-t} shows the transition week). Fig.~\ref{fig:soc-mat} plots battery and CAES gas SoC on full-horizon weeks. Training curves for archived TD3/SAC runs mix exploration noise and rotating weeks; they are not held-out scores (Fig.~\ref{fig:training}).
+Closed-loop power-balance plots will show only evaluations that completed \(T=168\)~h. Truncated rollouts stay in Table~\ref{tab:run}. Figures~\ref{fig:training}--\ref{fig:soc-mat} remain plant/protocol illustrations; they are not ranked method comparisons and are not used to claim superiority.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\textwidth]{fig_training}
-\caption{Training curves for archived seasonal runs (seed~$0$). Full-week held-out scores are Table~\ref{tab:econ}; hours survived are Table~\ref{tab:run}.}
+\caption{Training-curve panel reserved for the live pair after the results gate. Archived curves are not held-out scores.}
 \label{fig:training}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\textwidth]{fig_balance_transition}
-\caption{Transition held-out week electric power balance (seed~$0$), full \(168\)~h closed-loop traces for main-matrix linprog.}
+\caption{Illustrative transition-week electric power balance on the plant twin (setting). Not a method ranking.}
 \label{fig:bal-t}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\textwidth]{fig_soc_seasons}
-\caption{Battery and CAES gas SoC on full \(168\)~h held-out weeks (seed~$0$); qualitative inventory behaviour, not a ranking KPI.}
+\caption{Illustrative battery and CAES gas SoC on a full \(168\)~h week; qualitative inventory behaviour, not a ranking KPI.}
 \label{fig:soc-mat}
 \end{figure}
 \FloatBarrier
 
 \begin{table}[!htbp]
 \centering
-\caption{Same-horizon mechanism split (seed~$0$, \texttt{seasonal\_v1}, \(168\)~h only). \(J^{\mathrm{gen}}\), carbon and cycle wear in $10^{6}$~CNY; thermal / battery in MWh.}
+\caption{Same-horizon cost-split template (seed~$0$, \(168\)~h only). Reserved for the live pair. No archive numbers.}
 \label{tab:mech}
 \scriptsize
 \begin{tabular}{llrrrrr}
 \toprule
-Season & Method & $J^{\mathrm{gen}}$ & Carbon & Wear & $E^{\mathrm{th}}$ & Bat.\ thr. \\
+Season & Method & $J^{\mathrm{gen}}$ / $CC$ & Carbon & Wear & $E^{\mathrm{th}}$ & Bat.\ thr. \\
 \midrule
-Winter & PSO & 14.36 & --- & --- & 14174 & 347 \\
-Winter & linprog & 10.19 & 0.088 & 0.001 & 20818 & 5238 \\
-Transition & linprog & 2.66 & 0.415 & 0.001 & 21615 & 4288 \\
-Summer & linprog & 3.26 & 0.290 & 0.000 & 20745 & 3791 \\
+Winter & \texttt{fs\_hsac\_support} & --- & --- & --- & --- & --- \\
+Winter & \texttt{sac\_param} & --- & --- & --- & --- & --- \\
+Transition & \texttt{fs\_hsac\_support} & --- & --- & --- & --- & --- \\
+Transition & \texttt{sac\_param} & --- & --- & --- & --- & --- \\
+Summer & \texttt{fs\_hsac\_support} & --- & --- & --- & --- & --- \\
+Summer & \texttt{sac\_param} & --- & --- & --- & --- & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
 \FloatBarrier
 
-\paragraph{Why PSO and rolling linprog are not FS-HSAC.}
-PSO tunes a six-dimensional peak--valley heuristic scored by full FMU weeks with open-loop parameters; linprog rolls an eight-hour linear surrogate. Winter PSO outscores linprog on the same 168~h cell; that contrast is classical search versus convex surrogate, not evidence that FS-HSAC already wins cash. Incomplete weeks are not used to extend claims. The baselines remain diagnostics of the plant object, not global bounds on the FMU.
+\paragraph{What is not claimed.}
+Classical programmes, if added later, diagnose the plant object. They are not used to claim that FS-HSAC already wins cash. A previous winter PSO versus linprog $J^{\mathrm{gen}}$ pair is withdrawn. Incomplete weeks are not ranked.
 
 \subsection{Discussion}
 \label{sec:support}
 
-Tables~\ref{tab:econ}--\ref{tab:run} remain a single-seed pre--FS-HSAC snapshot (obs~$=166$). Economics are same-horizon only. Executability is separate: projected TD3 aborts early; fixed-band hybrid SAC has not closed a held-out week on this seed under GiveSafe without fallback. FS-HSAC seasonal numbers are withheld until the results gate. Continuous-year cold-tank viability and intensity carbon books stay in Appendix~\ref{app:annual-carbon}; they do \emph{not} support an ``8760~h safe and best economics'' claim for RL.
+Tables~\ref{tab:econ}--\ref{tab:run} are empty because the results gate is closed. The live contrast remains support-consistent Hybrid SAC versus in-house fixed-band Hybrid SAC. Residual $C_{\psi}$ stays in Appendix~\ref{app:residual-feas}. Continuous-year cold-tank viability and intensity carbon books stay in Appendix~\ref{app:annual-carbon}; they do \emph{not} support an ``8760~h safe and best economics'' claim.
 
-Limitations: one seed pending multi-seed FS-HSAC runs; dynamic magnitude intervals mix twin physics with oracle margins; weekly-reset protocol for the main text; $C_{\psi}$ is used as a risk penalty rather than a second hard gate in front of GiveSafe.
+Limitations: one planned seed until multi-seed runs exist; $\mathcal{A}(s)$ is a mode mask $\times$ inventory interval box, not plant/FMU feasibility; weekly-reset protocol for the main text; GiveSafe is adopted.
 
 % =====================================================================
 \section{Conclusion}
 \label{sec:conclusion}
 % =====================================================================
 
-Weekly thermal--battery--CAES dispatch under TOU prices and a National ETS carbon price is a comprehensive monetary problem whose hybrid actions live on a state-dependent support $\mathcal{A}(s)$. This paper formalises that support---admissible modes $\mathcal{K}(s)$ and mode-conditioned intervals $\mathcal{M}_k(s)$---and proposes FS-HSAC, a same-timescale hybrid policy with exact mode enumeration, dual temperatures, residual feasibility learning and an adopted GiveSafe shield on an FMI-exported Sysplorer twin. On the provisional pre-gate archive, same-horizon winter economics favour PSO over rolling linprog among completed methods; projected continuous TD3 aborts early and fixed-band hybrid SAC can fail to find a legal action without fallback---executability facts, not truncated-sum cash. Full-week FS-HSAC economics will replace the placeholder tables after the shared results gate. The contribution is the plant object, the support formalisation and the FS-HSAC solver---not a claim that FMI itself is novel, that hierarchical RL is inapplicable, or that RL unconditionally dominates MILP.
+Weekly wind--PV--thermal--BESS--adiabatic CAES dispatch is a price-taker setting in which electricity is the only sold carrier. The live method is FS-HSAC: a same-hour support-consistent rewrite of Hybrid SAC. Sampling and $\log\pi$ share $\mathcal{A}(s)=\mathcal{K}(s)\times\mathcal{M}_k(s)$, a mode mask times an inventory interval box---not plant or FMU feasibility. The contrast is in-house fixed-band Hybrid SAC (latent density then clamp). Training maximises $\mathbb{E}\sum_t\gamma^t r_t$; evaluation of a completed week reports $168$~h $J^{\mathrm{gen}}$. Residual $C_{\psi}$, FMI, TOU/ETS and option/inventory HRL are not the contribution. Results remain blank while the shared results gate is closed; no superiority is claimed.
 
 \section*{Acknowledgments}
 
@@ -921,6 +907,19 @@ Plant model parameters, TOU reconstruction data and evaluation protocols are ava
 
 % =====================================================================
 \appendix
+\section{Residual twin-feasibility FS-HSAC (not the live claim)}
+\label{app:residual-feas}
+% =====================================================================
+
+Full residual-feasibility FS-HSAC (\texttt{--method fs\_hsac} without \texttt{--support}) adds a classifier
+\begin{equation}
+C_{\psi}(s,a)=\sigma\bigl(f_{\psi}(s,u_{\mathrm{tp}},u_{\mathrm{bat}},\mathrm{onehot}(k),\mu)\bigr)
+\approx
+\mathbb{P}(\mathrm{accept}\mid s,a)
+\label{eq:cpsi}
+\end{equation}
+trained on a split feasibility replay $\mathcal{D}_{\mathrm{F}}$. Analytic constraints already encoded in $\mathcal{A}(s)$ are not re-learned; $C_{\psi}$ targets residual twin failures. The actor may include a risk penalty $\beta[-\log C_{\psi}(s,a)]$ once unsafe labels exist. This variant is \emph{not} the paper mainline. The live experiment is support-only FS-HSAC (\texttt{FS\_HSAC\_NO\_FEAS=1} / \texttt{--support}) versus fixed-band Hybrid SAC. $C_{\psi}$ is not plant feasibility inside $\mathcal{A}(s)$, and it is not claimed to make the density contain the twin residual.
+
 \section{Continuous-year viability and intensity carbon accounting}
 \label{app:annual-carbon}
 % =====================================================================

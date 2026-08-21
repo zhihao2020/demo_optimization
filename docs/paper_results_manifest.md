@@ -16,9 +16,9 @@
 
 | 角色 | 路径 |
 |------|------|
-| 主方法 | `runs/seasonal_v1/{winter,transition,summer}/fs_hsac_s0` |
-| 支撑消融 | `runs/seasonal_v1/.../fs_hsac_support_s0` |
-| fixed-band Hybrid SAC | `runs/seasonal_v1/.../sac_param_s0` |
+| 主方法（live） | `runs/seasonal_v1/{winter,transition,summer}/fs_hsac_support_s0` |
+| 对照 | `runs/seasonal_v1/.../sac_param_s0` |
+| 附录完整 FS-HSAC | `runs/seasonal_v1/.../fs_hsac_s0` |
 | 投影消融 | `runs/seasonal_v1/.../sac_s0`（及 proj. TD3） |
 | 经典对照 | `pso_s0` / `linprog_s0` / `milp_s0` |
 

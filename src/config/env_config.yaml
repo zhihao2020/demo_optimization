@@ -125,7 +125,7 @@ market:
   horizon_hours: 24
   buy_scale_yuan_per_kwh: 1.2
   sell_scale_yuan_per_kwh: 0.3
-  # 气库末段可扭回初值。电池对齐崔文：不劫持充放，只靠软奖励。
-  soc_recovery_horizon: 40
+  # horizon<=0 must not rewrite u_caes (paper protocol: no end-of-week CAES hijack).
+  soc_recovery_horizon: 0
   soc_recovery_battery_horizon: 0
-  note: "山东工商业代理购电分时+110kV输配电度价算例；obs可接预测价，结算用实现价；气库末段回收、电池不强制扭回；不做电网出清。"
+  note: "山东工商业代理购电分时+110kV输配电度价算例；obs可接预测价，结算用实现价；末段不强制扭回储能动作；不做电网出清。"
