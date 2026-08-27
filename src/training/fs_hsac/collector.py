@@ -12,7 +12,11 @@ from safety.givesafe_controller import GiveSafeController
 
 
 class FSHSACCollector:
-    """Collect physical Bellman transitions and feasibility labels separately."""
+    """Twin-closed loop (paper Alg. 1): GiveSafe, then one FMU hour, split replay.
+
+    Accepted physical steps go to the Bellman buffer. Rejections never advance
+    the twin and train only the residual feasibility classifier.
+    """
 
     def __init__(self, buffer: FSHSACReplayBuffer, controller: GiveSafeController):
         self.buffer = buffer
@@ -41,11 +45,13 @@ class FSHSACCollector:
         propose_fn: Callable[[], dict],
         *,
         deterministic: bool = False,
+        feasible=None,
     ) -> tuple[Any, ...]:
         if env.last_outputs is None:
             raise RuntimeError("环境未 reset")
         obs_before = np.asarray(env.build_observation(), dtype=np.float32)
-        feasible = env.get_feasible_action_spec()
+        if feasible is None:
+            feasible = env.get_feasible_action_spec()
 
         def on_rejection(action, safety, terms):
             self.stats["policy_attempt_count"] += 1

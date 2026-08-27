@@ -25,16 +25,17 @@ def test_price_profile_valley_peak_hours():
         annual_horizon_hours=8760,
         step_seconds=3600.0,
     )
-    # 山东 2026 代理购电分时：1 月 hour0=平段 F≈0.635；hour16=尖峰 S≈1.136
+    # 山东 2026-01 官方 110 kV 两部制到户：hour0=平段 F；hour16=尖峰 S
+    jan_f, jan_s = 0.64876875, 1.18726875
     buy0, sell0 = profile.prices_at(0.0)
     buy16, sell16 = profile.prices_at(16 * 3600.0)
-    assert abs(buy0 - 0.63457) < 1e-5
-    assert abs(buy16 - 1.13597) < 1e-5
+    assert abs(buy0 - jan_f) < 1e-7
+    assert abs(buy16 - jan_s) < 1e-7
     assert buy16 > buy0
     assert abs(sell0 - 0.1875) < 1e-6
     feats = profile.features_at(0.0)
     assert feats.shape == (48,)
-    assert abs(feats[0] - 0.63457) < 1e-5
+    assert abs(feats[0] - jan_f) < 1e-7
 
 
 def test_buy_positive_grid_is_cost_cashflow_negative():

@@ -17,6 +17,7 @@ from safety import GiveSafeController, ShadowFmuValidator, load_givesafe_config
 from training.episode_starts import training_start_seconds
 from training.fs_hsac.algorithm import FSHSAC
 from training.fs_hsac.collector import FSHSACCollector
+from training.fs_hsac.compute import configure_torch_compute
 from training.fs_hsac.feasibility import FeasibilityTrainer, ResidualFeasibilityNet
 from training.hybrid_common.eval_and_save import (
     finalize_training_run,
@@ -49,16 +50,16 @@ def run_fs_hsac_training(
 ) -> dict[str, Any]:
     """Train FS-HSAC v2 on the FMU twin with split Bellman / feasibility replay.
 
-    Paper mainline is support-only: ``use_feasibility_penalty=False`` or
-    ``FS_HSAC_NO_FEAS=1`` (``scripts/train_seasonal.py --method fs_hsac --support``)
-    versus in-house fixed-band Hybrid SAC (``--method sac``). Full residual
-    ``C_ψ`` remains available when the penalty is left on (appendix). Soft shell
+    Paper mainline keeps the residual feasibility penalty on. Support-only
+    ablation: ``use_feasibility_penalty=False`` or ``FS_HSAC_NO_FEAS=1``
+    (``scripts/train_seasonal.py --method fs_hsac --support``). Soft shell
     stays off for the paper protocol.
     """
     import os
 
     if os.environ.get("FS_HSAC_NO_FEAS", "").strip() in ("1", "true", "True"):
         use_feasibility_penalty = False
+    compute = configure_torch_compute()
     _ = _soft_shell_enabled(False if soft_shell is None else soft_shell)
     run_dir = Path(run_dir)
     root = Path(__file__).resolve().parents[3]
@@ -109,6 +110,7 @@ def run_fs_hsac_training(
         gamma=float(env.reward_calculator.config.get("gamma", 0.99)),
         use_feasibility_penalty=use_feasibility_penalty,
         feasibility_beta=feasibility_beta,
+        device=str(compute["device"]),
     )
     feas_net = ResidualFeasibilityNet(obs_dim)
     feas_trainer = FeasibilityTrainer(feas_net, device=agent.device)
@@ -163,6 +165,8 @@ def run_fs_hsac_training(
         "observation_dim": obs_dim,
         "resume_from": resumed,
         "agent_total_it_at_start": int(agent.total_it),
+        "device": str(agent.device),
+        "torch_threads": int(compute["threads"]),
         "shaping_audit": {
             "terminal_soc_shaping_mode": (env.reward_calculator.config.get("terminal_soc") or {})
             .get("shaping", {})
@@ -178,10 +182,17 @@ def run_fs_hsac_training(
     }
 
     try:
-        pbar = tqdm(total=total_valid_steps, desc="FS-HSAC", unit="step", dynamic_ncols=True)
+        pbar = tqdm(
+            total=total_valid_steps,
+            desc=f"FS-HSAC/{agent.device}",
+            unit="step",
+            dynamic_ncols=True,
+            mininterval=2.0,
+            miniters=20,
+        )
         while valid_steps < total_valid_steps:
             try:
-                env.get_feasible_action_spec()
+                feasible = env.get_feasible_action_spec()
             except FeasibleSetEmpty:
                 episode += 1
                 obs, _info0 = reset_training_episode(episode)
@@ -189,11 +200,11 @@ def run_fs_hsac_training(
 
             def propose():
                 if valid_steps < learning_starts or np.random.rand() < 0.1:
-                    return random_policy.predict(obs)
-                return agent.select_action(obs, env.get_feasible_action_spec(), deterministic=False)
+                    return random_policy.predict(obs, feasible=feasible)
+                return agent.select_action(obs, feasible, deterministic=False)
 
             obs, reward, terminated, truncated, info = collector.step_with_givesafe(
-                env, propose, deterministic=False
+                env, propose, deterministic=False, feasible=feasible
             )
             if info.get("transition_type") == "physical" and info.get("transition_valid"):
                 valid_steps += 1

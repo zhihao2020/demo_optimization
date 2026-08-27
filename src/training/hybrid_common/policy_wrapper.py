@@ -42,12 +42,13 @@ class RandomFeasiblePolicy:
         """
         self.env = env
 
-    def predict(self, _obs, deterministic: bool = False) -> dict:
+    def predict(self, _obs, deterministic: bool = False, feasible=None) -> dict:
         """在可行 CAES 模式与连续边界内随机采样动作。
 
         Args:
             _obs: 观测（未使用）。
             deterministic: 忽略；始终随机。
+            feasible: 若已算过当前步可行集则传入，避免再跑一遍 oracle。
 
         Returns:
             含 u_tp、u_battery、caes_mode、caes_magnitude 的动作字典。
@@ -55,7 +56,8 @@ class RandomFeasiblePolicy:
         Raises:
             FeasibleSetEmpty: 无可选 CAES 模式时抛出。
         """
-        feasible = self.env.get_feasible_action_spec()
+        if feasible is None:
+            feasible = self.env.get_feasible_action_spec()
         modes = [
             m
             for m, ok in zip(

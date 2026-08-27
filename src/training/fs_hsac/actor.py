@@ -118,9 +118,14 @@ class FSHSACActor(nn.Module):
         mode_idx: int,
         *,
         deterministic: bool = False,
+        heads: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Sample continuous components conditioned on a fixed mode index (0/1/2)."""
-        h = self._heads(obs)
+        """Sample continuous components conditioned on a fixed mode index (0/1/2).
+
+        Pass ``heads`` from a single ``_heads(obs)`` when enumerating all three
+        modes in the SAC update so the encoder is not run three extra times.
+        """
+        h = self._heads(obs) if heads is None else heads
         b = obs.size(0)
         device = obs.device
         mode = torch.full((b,), int(mode_idx), dtype=torch.long, device=device)
@@ -198,8 +203,14 @@ class FSHSACActor(nn.Module):
         *,
         deterministic: bool = False,
     ) -> dict[str, torch.Tensor]:
-        """Sample a hybrid action from the feasible support."""
+        """Sample one hybrid action on A(s): mode first, then magnitude for that mode.
+
+        Exact three-mode enumeration is only for the SAC update
+        (`sample_mode_action` + `_exact_soft_value`), not for environment steps.
+        """
         h = self._heads(obs)
+        b = obs.size(0)
+        device = obs.device
         logits, legal = self._mask_logits(h["mode_logits"], support["mode_mask"])
         probs = torch.softmax(logits, dim=-1)
         if deterministic:
@@ -209,30 +220,67 @@ class FSHSACActor(nn.Module):
         log_mode = torch.log(probs.gather(-1, mode.unsqueeze(-1)).clamp_min(1e-8)).squeeze(-1)
         ent_mode = -(probs * probs.clamp_min(1e-8).log()).sum(dim=-1)
 
-        dis = self.sample_mode_action(obs, support, MODE_DISCHARGE, deterministic=deterministic)
-        idle = self.sample_mode_action(obs, support, MODE_IDLE, deterministic=deterministic)
-        chg = self.sample_mode_action(obs, support, MODE_CHARGE, deterministic=deterministic)
+        u_tp, lp_tp, ent_tp = self._sample_bounded(
+            h["mu_tp"],
+            h["ls_tp"],
+            support["u_tp_low"],
+            support["u_tp_high"],
+            deterministic=deterministic,
+        )
+        u_bat, lp_bat, ent_bat = self._sample_bounded(
+            h["mu_bat"],
+            h["ls_bat"],
+            support["u_bat_low"],
+            support["u_bat_high"],
+            deterministic=deterministic,
+        )
 
-        def gather_mode(dis_t, idle_t, chg_t):
-            out = idle_t.clone()
-            out = torch.where(mode == MODE_DISCHARGE, dis_t, out)
-            out = torch.where(mode == MODE_CHARGE, chg_t, out)
-            return out
+        dist_dis = Normal(h["mu_dis"], h["ls_dis"].exp())
+        dist_chg = Normal(h["mu_chg"], h["ls_chg"].exp())
+        z_dis = h["mu_dis"] if deterministic else dist_dis.rsample()
+        z_chg = h["mu_chg"] if deterministic else dist_chg.rsample()
+        y_dis = torch.sigmoid(z_dis)
+        y_chg = torch.sigmoid(z_chg)
+        u_dis = support["dis_lo"] + y_dis * (support["dis_hi"] - support["dis_lo"])
+        u_chg = support["chg_lo"] + y_chg * (support["chg_hi"] - support["chg_lo"])
+        lp_dis = (
+            dist_dis.log_prob(z_dis)
+            - sigmoid_log_jacobian(z_dis)
+            - interval_log_jacobian(support["dis_lo"], support["dis_hi"])
+        )
+        lp_chg = (
+            dist_chg.log_prob(z_chg)
+            - sigmoid_log_jacobian(z_chg)
+            - interval_log_jacobian(support["chg_lo"], support["chg_hi"])
+        )
+        ent_dis = (
+            dist_dis.entropy()
+            + sigmoid_log_jacobian(z_dis)
+            + interval_log_jacobian(support["dis_lo"], support["dis_hi"])
+        )
+        ent_chg = (
+            dist_chg.entropy()
+            + sigmoid_log_jacobian(z_chg)
+            + interval_log_jacobian(support["chg_lo"], support["chg_hi"])
+        )
 
-        u_tp = gather_mode(dis["u_tp"], idle["u_tp"], chg["u_tp"])
-        u_bat = gather_mode(dis["u_battery"], idle["u_battery"], chg["u_battery"])
-        u_caes = gather_mode(dis["u_caes"], idle["u_caes"], chg["u_caes"])
-        mag = gather_mode(dis["mag"], idle["mag"], chg["mag"])
-        lp_cont = gather_mode(dis["log_prob_cont"], idle["log_prob_cont"], chg["log_prob_cont"])
-        ent_cont = gather_mode(dis["entropy_cont"], idle["entropy_cont"], chg["entropy_cont"])
-        cont_dim = gather_mode(dis["cont_dim"], idle["cont_dim"], chg["cont_dim"])
+        zeros = torch.zeros(b, device=device)
+        is_dis = mode == MODE_DISCHARGE
+        is_chg = mode == MODE_CHARGE
+        mag = torch.where(is_dis, y_dis, torch.where(is_chg, y_chg, zeros))
+        u_caes = torch.where(is_dis, u_dis, torch.where(is_chg, u_chg, zeros))
+        lp_mag = torch.where(is_dis, lp_dis, torch.where(is_chg, lp_chg, zeros))
+        ent_mag = torch.where(is_dis, ent_dis, torch.where(is_chg, ent_chg, zeros))
+        cont_dim = torch.where(is_dis | is_chg, torch.full((b,), 3.0, device=device), torch.full((b,), 2.0, device=device))
+        lp_cont = lp_tp + lp_bat + lp_mag
+        ent_cont = ent_tp + ent_bat + ent_mag
 
         return {
             "u_tp": u_tp,
             "u_battery": u_bat,
             "u_caes": u_caes,
             "mode_idx": mode,
-            "mode_onehot": one_hot_modes(mode).to(device=obs.device, dtype=obs.dtype),
+            "mode_onehot": one_hot_modes(mode).to(device=device, dtype=obs.dtype),
             "mag": mag,
             "mode_probs": probs,
             "mode_mask": legal,

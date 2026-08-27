@@ -67,6 +67,24 @@ def test_actor_samples_inside_dynamic_bands():
             assert abs(u) < 1e-5
 
 
+def test_act_samples_tp_bat_once_not_per_mode():
+    """Inference must not call sample_mode_action three times (independent tp/bat)."""
+    actor = FSHSACActor(5)
+    actor.eval()
+    obs = torch.zeros(32, 5)
+    feas = _feas()
+    support = support_from_feasible_batch([feas] * 32)
+    with torch.no_grad():
+        out = actor.act(obs, support, deterministic=True)
+    assert out["u_tp"].shape == (32,)
+    assert out["u_battery"].shape == (32,)
+    assert set(int(x) for x in out["mode_idx"].unique().tolist()) <= {0, 1, 2}
+    idle = out["mode_idx"] == MODE_IDLE
+    if idle.any():
+        assert torch.all(out["u_caes"][idle].abs() < 1e-5)
+        assert torch.all(out["cont_dim"][idle] == 2)
+
+
 def test_illegal_mode_probability_zero():
     actor = FSHSACActor(6)
     obs = torch.zeros(16, 6)
@@ -123,3 +141,17 @@ def test_actor_grad_flows():
     loss.backward()
     grads = [p.grad is not None and float(p.grad.abs().sum()) > 0 for p in actor.parameters()]
     assert any(grads)
+
+
+def test_sample_mode_action_reuses_precomputed_heads():
+    actor = FSHSACActor(5)
+    obs = torch.zeros(4, 5)
+    support = support_from_feasible_batch([_feas()] * 4)
+    h = actor._heads(obs)
+    with torch.no_grad():
+        idle = actor.sample_mode_action(obs, support, MODE_IDLE, heads=h)
+        dis = actor.sample_mode_action(obs, support, MODE_DISCHARGE, heads=h)
+    assert torch.all(idle["u_caes"].abs() < 1e-6)
+    assert idle["cont_dim"][0] == 2
+    assert dis["cont_dim"][0] == 3
+    assert dis["u_caes"].shape == (4,)

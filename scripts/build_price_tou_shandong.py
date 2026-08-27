@@ -1,135 +1,170 @@
-from pathlib import Path
+"""Build data/price_tou.csv.
+
+Default: monthly 110 kV two-part agency-purchase TOU from
+data/price_tou_monthly_official.csv (year=2026). Missing months are
+not filled with the old year-constant 0.4 proxy.
+
+--legacy: previous constructive five-level path (archive only).
+"""
+from __future__ import annotations
+
+import argparse
+import csv
 import json
 from calendar import monthrange
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 
-# 国网山东 2026 工商业分时机制 + 构造性到户价（proxy-purchase · 园区算例）
-# 时段/浮动：鲁发改价格〔2023〕914 号 + 国网山东 2026 公告（机制官方）
-# 绝对值：proxy/capacity_comp/line_loss/sys_op/fund 为算例分量，不是当月代理购电真值
-# 证据台账：docs/parameter_evidence.md
-DOC = {
-    "province": "shandong",
-    "province_name": "山东",
-    "year": 2026,
-    "doc_no": "国网山东省电力公司2026年工商业分时电价公告；框架依据鲁发改价格〔2023〕914号",
-    "effective_from": "2026-01-01",
-    "path": "proxy_purchase_tou",  # 电网代理购电分时路径；非 ISO 出清
-    "review_status": "mechanism-official + constructed absolute levels",
-    "claim_level": "Do not cite absolute buy levels as official 2026 settlement",
-    "source_url": "https://jndpc.jinan.gov.cn/col2191/art/2025/art_2191_4789557.html",
-    "transmission_source": "国家发展改革委第四监管周期省级电网输配电价表（山东 110kV 档示例 td_energy=0.106）",
+RATIOS = {"S": 2.0, "P": 1.7, "F": 1.0, "V": 0.3, "D": 0.1}
+MONTHLY_HOURS = {
+    1: ["F", "F", "V", "V", "V", "V", "F", "P", "P", "F", "V", "D", "D", "D", "V", "F", "S", "S", "S", "P", "P", "F", "F", "F"],
+    2: ["F", "F", "V", "V", "V", "V", "F", "P", "P", "F", "V", "D", "D", "D", "V", "F", "S", "S", "S", "P", "P", "F", "F", "F"],
+    3: ["F", "F", "F", "F", "F", "F", "F", "F", "F", "F", "V", "D", "D", "D", "V", "F", "F", "S", "S", "S", "P", "P", "F", "F"],
+    4: ["F", "F", "F", "F", "F", "F", "F", "F", "F", "F", "V", "D", "D", "D", "V", "F", "F", "S", "S", "S", "P", "P", "F", "F"],
+    5: ["F", "F", "F", "F", "F", "F", "F", "F", "F", "F", "V", "D", "D", "D", "V", "F", "F", "S", "S", "S", "P", "P", "F", "F"],
+    6: ["F", "F", "F", "F", "F", "F", "F", "V", "V", "V", "V", "V", "F", "F", "F", "F", "P", "S", "S", "S", "S", "S", "P", "F"],
+    7: ["F", "V", "V", "V", "V", "V", "F", "F", "F", "F", "F", "F", "F", "F", "F", "F", "P", "S", "S", "S", "S", "S", "P", "F"],
+    8: ["F", "V", "V", "V", "V", "V", "F", "F", "F", "F", "F", "F", "F", "F", "F", "F", "P", "S", "S", "S", "S", "S", "P", "F"],
+    9: ["F", "F", "F", "F", "F", "F", "F", "F", "F", "F", "V", "D", "D", "D", "V", "F", "P", "S", "S", "P", "P", "F", "F", "F"],
+    10: ["F", "F", "F", "F", "F", "F", "F", "F", "F", "F", "V", "D", "D", "D", "V", "F", "P", "S", "S", "P", "P", "F", "F", "F"],
+    11: ["F", "F", "F", "F", "F", "F", "F", "F", "F", "F", "V", "D", "D", "D", "V", "F", "P", "S", "S", "P", "P", "F", "F", "F"],
+    12: ["F", "F", "V", "V", "V", "V", "F", "P", "P", "F", "V", "D", "D", "D", "V", "F", "S", "S", "S", "P", "P", "F", "F", "F"],
 }
+assert all(len(v) == 24 for v in MONTHLY_HOURS.values())
 
-# 浮动基数（参与分时浮动）
-proxy_price = 0.4
-capacity_comp_price = 0.0705
-line_loss_price = 0.01
-sys_op_price = 0.0209
-float_base = proxy_price + capacity_comp_price + line_loss_price + sys_op_price  # 0.5014
+SELL_FLAT = 0.1875
 
-# 不参与浮动
-td_energy_price = 0.106  # 山东 110kV 输配电度价（算例）
-fund_price = 0.02717
-non_float = td_energy_price + fund_price  # 0.13317
 
-ratios = {"S": 2.0, "P": 1.7, "F": 1.0, "V": 0.3, "D": 0.1}
-band_buy = {k: round(float_base * r + non_float, 6) for k, r in ratios.items()}
+def _write_8760(year: int, month_buy: dict[int, dict[str, float]], meta: dict) -> None:
+    days_ok = sum(monthrange(year, m)[1] for m in range(1, 13))
+    assert days_ok in (365, 366)
+    rows = ["time,buy_yuan_per_kwh,sell_yuan_per_kwh,band"]
+    counts = {k: 0 for k in RATIOS}
+    h = 0
+    for month in range(1, 13):
+        bands_h = MONTHLY_HOURS[month]
+        buy_m = month_buy[month]
+        for _day in range(monthrange(year, month)[1]):
+            for hour in range(24):
+                band = bands_h[hour]
+                buy = buy_m[band]
+                rows.append(f"{h * 3600},{buy},{SELL_FLAT},{band}")
+                counts[band] += 1
+                h += 1
+    n_hours = days_ok * 24
+    assert h == n_hours, h
+    out = DATA / "price_tou.csv"
+    out.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    meta = {
+        **meta,
+        "sell_yuan_per_kwh": SELL_FLAT,
+        "band_hours": counts,
+        "calendar_year": year,
+        "n_hours": n_hours,
+        "buy_by_month": {str(m): month_buy[m] for m in range(1, 13)},
+    }
+    (DATA / "price_tou_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("wrote", out)
+    print("bands hours", counts)
 
-# 余电上网：机制电价与市场均价各半（REFERENCE_INPUTS）
-export_mech_price = 0.225
-export_market_price = 0.15
-export_mech_ratio = 0.5
-sell_flat = round(export_mech_ratio * export_mech_price + (1 - export_mech_ratio) * export_market_price, 6)
 
-# 分月 24h 时段表（S尖峰 P高峰 F平 V低谷 D深谷）
-monthly_hours = [
-    {"months": [1, 2, 12], "hours": list("FFVVVVFPPFVDVDV FSSSPPFFF".replace(" ", ""))},
-    {"months": [3, 4, 5], "hours": list("FFFFFFF FFVDVDVFFSSSPPFF".replace(" ", ""))},
-    {"months": [6], "hours": list("FFFFFFFVVVVVFFFFPSSSSSPF".replace(" ", ""))},
-    {"months": [7, 8], "hours": list("FVVVVVFFFFFFFFFFPSSSSSPF".replace(" ", ""))},
-    {"months": [9, 10, 11], "hours": list("FFFFFFFFFFVDVDVFPSSPPFFF".replace(" ", ""))},
-]
-# fix hours strings carefully from original
-monthly_hours = [
-    {"months": [1, 2, 12], "hours": ["F","F","V","V","V","V","F","P","P","F","V","D","D","D","V","F","S","S","S","P","P","F","F","F"]},
-    {"months": [3, 4, 5], "hours": ["F","F","F","F","F","F","F","F","F","F","V","D","D","D","V","F","F","S","S","S","P","P","F","F"]},
-    {"months": [6], "hours": ["F","F","F","F","F","F","F","V","V","V","V","V","F","F","F","F","P","S","S","S","S","S","P","F"]},
-    {"months": [7, 8], "hours": ["F","V","V","V","V","V","F","F","F","F","F","F","F","F","F","F","P","S","S","S","S","S","P","F"]},
-    {"months": [9, 10, 11], "hours": ["F","F","F","F","F","F","F","F","F","F","V","D","D","D","V","F","P","S","S","P","P","F","F","F"]},
-]
-assert all(len(m["hours"]) == 24 for m in monthly_hours)
+def build_monthly(year: int = 2026) -> None:
+    path = DATA / "price_tou_monthly_official.csv"
+    with path.open(encoding="utf-8") as f:
+        table = list(csv.DictReader(f))
+    by_month: dict[int, dict] = {}
+    for row in table:
+        if int(row["year"]) != year:
+            continue
+        m = int(row["month"])
+        by_month[m] = row
+    missing_rows = [m for m in range(1, 13) if m not in by_month]
+    empty_bands = [
+        m
+        for m, r in by_month.items()
+        if not str(r.get("band_S") or "").strip()
+    ]
+    if missing_rows or empty_bands:
+        raise SystemExit(
+            "monthly official 2026 TOU is incomplete; will not overwrite price_tou.csv "
+            f"with the legacy 0.4 proxy. missing_rows={missing_rows} empty_bands={empty_bands}. "
+            "Fill data/price_tou_monthly_official.csv from official PDFs, or pass --legacy."
+        )
+    last_o: dict[str, float] | None = None
+    month_buy: dict[int, dict[str, float]] = {}
+    grades = {}
+    for m in range(1, 13):
+        r = by_month[m]
+        bands = {
+            "S": round(float(r["band_S"]), 8),
+            "P": round(float(r["band_P"]), 8),
+            "F": round(float(r["band_F"]), 8),
+            "V": round(float(r["band_V"]), 8),
+            "D": round(float(r["band_D"]), 8),
+        }
+        grade = (r.get("evidence_grade") or "S").strip()
+        if grade == "S" and last_o is not None and bands == last_o:
+            pass
+        if grade == "O":
+            last_o = bands
+        month_buy[m] = bands
+        grades[m] = grade
+    _write_8760(
+        year,
+        month_buy,
+        {
+            "province": "shandong",
+            "year": year,
+            "path": "monthly_agency_purchase_tou",
+            "review_status": "official monthly 110kV two-part delivered TOU + official clocks",
+            "claim_level": "Buy = monthly agency-purchase tables; sell remains S-grade flat",
+            "evidence_grade_by_month": {str(k): v for k, v in grades.items()},
+            "ledger": str(path.relative_to(ROOT)).replace("\\", "/"),
+            "windows": "国网山东 2026 工商业分时公告; 鲁发改价格〔2023〕914号",
+        },
+    )
 
-month_to_hours = {}
-for block in monthly_hours:
-    for mo in block["months"]:
-        month_to_hours[mo] = block["hours"]
 
-# 2026 非闰年，8760 = 365*24
-year = 2026
-assert sum(monthrange(year, m)[1] for m in range(1, 13)) == 365
+def build_legacy() -> None:
+    """Archive: year-constant constructive five-level path (not the paper default)."""
+    proxy_price = 0.4
+    capacity_comp_price = 0.0705
+    line_loss_price = 0.01
+    sys_op_price = 0.0209
+    float_base = proxy_price + capacity_comp_price + line_loss_price + sys_op_price
+    td_energy_price = 0.106
+    fund_price = 0.02717
+    non_float = td_energy_price + fund_price
+    band_buy = {k: round(float_base * r + non_float, 6) for k, r in RATIOS.items()}
+    month_buy = {m: band_buy for m in range(1, 13)}
+    _write_8760(
+        2026,
+        month_buy,
+        {
+            "province": "shandong",
+            "year": 2026,
+            "path": "legacy_constructive_proxy_purchase_tou",
+            "review_status": "LEGACY year-constant constructive levels; do not cite as official 2026",
+            "claim_level": "Do not cite absolute buy levels as official 2026 settlement",
+            "float_base": float_base,
+            "non_float": non_float,
+            "buy_yuan_per_kwh_by_band": band_buy,
+        },
+    )
 
-rows = ["time,buy_yuan_per_kwh,sell_yuan_per_kwh,band"]
-counts = {k: 0 for k in ratios}
-h = 0
-for month in range(1, 13):
-    days = monthrange(year, month)[1]
-    bands = month_to_hours[month]
-    for _day in range(days):
-        for hour in range(24):
-            band = bands[hour]
-            buy = band_buy[band]
-            sell = sell_flat
-            rows.append(f"{h*3600},{buy},{sell},{band}")
-            counts[band] += 1
-            h += 1
-assert h == 8760, h
 
-out = DATA / "price_tou.csv"
-out.write_text("\n".join(rows) + "\n", encoding="utf-8")
+def main() -> None:
+    p = argparse.ArgumentParser()
+    p.add_argument("--legacy", action="store_true", help="year-constant constructive path (archive)")
+    p.add_argument("--year", type=int, default=2026)
+    args = p.parse_args()
+    if args.legacy:
+        build_legacy()
+    else:
+        build_monthly(args.year)
 
-meta = {
-    **DOC,
-    "float_base_components": {
-        "proxy_price": proxy_price,
-        "capacity_comp_price": capacity_comp_price,
-        "line_loss_price": line_loss_price,
-        "sys_op_price": sys_op_price,
-        "float_base_sum": float_base,
-    },
-    "non_float_components": {
-        "td_energy_price": td_energy_price,
-        "fund_price": fund_price,
-        "non_float_sum": non_float,
-        "td_voltage_note": "算例取山东 110kV 输配电度价 0.106 元/kWh（第四监管周期）",
-    },
-    "ratios": ratios,
-    "buy_yuan_per_kwh_by_band": band_buy,
-    "buy_formula": "buy = (proxy+capacity_comp+line_loss+sys_op) * ratio[band] + td_energy + fund",
-    "sell_yuan_per_kwh": sell_flat,
-    "sell_formula": "0.5*export_mech_price + 0.5*export_market_price",
-    "export_components": {
-        "export_mech_ratio": export_mech_ratio,
-        "export_mech_price": export_mech_price,
-        "export_market_price": export_market_price,
-    },
-    "band_hours_in_8760": counts,
-    "calendar_year": year,
-    "n_hours": 8760,
-    "note": "Price-taker 外生价；非现货出清结果。直接参与市场交易用户电能量价可由现货形成，本文件采用代理购电分时路径。",
-}
-(DATA / "price_tou_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-print("wrote", out)
-print("bands hours", counts)
-print("buy by band", band_buy)
-print("sell", sell_flat)
-print("sample Jan hour0-23:", [bands for bands in [month_to_hours[1]]][0])
-# sanity: first 24 buys
-import csv
-with out.open(encoding="utf-8") as f:
-    r = list(csv.DictReader(f))
-print("row0", r[0])
-print("row16 peak S?", r[16])  # Jan hour 16 should be S
-print("avg buy", sum(float(x["buy_yuan_per_kwh"]) for x in r)/len(r))
+if __name__ == "__main__":
+    main()

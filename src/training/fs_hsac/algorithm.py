@@ -115,7 +115,9 @@ class FSHSAC:
         soft_terms = []
         ent_c_terms = []
         for mode_idx in (MODE_DISCHARGE, MODE_IDLE, MODE_CHARGE):
-            samp = self.actor.sample_mode_action(obs, support, mode_idx, deterministic=False)
+            samp = self.actor.sample_mode_action(
+                obs, support, mode_idx, deterministic=False, heads=h
+            )
             q1, q2 = critic(
                 obs,
                 samp["u_tp"],
@@ -200,7 +202,9 @@ class FSHSAC:
         ent_cont_acc = torch.zeros(obs.size(0), device=self.device)
         log_cont_acc = torch.zeros(obs.size(0), device=self.device)
         for mode_idx in (MODE_DISCHARGE, MODE_IDLE, MODE_CHARGE):
-            samp = self.actor.sample_mode_action(obs, support, mode_idx, deterministic=False)
+            samp = self.actor.sample_mode_action(
+                obs, support, mode_idx, deterministic=False, heads=h
+            )
             q1_pi, q2_pi = self.critic(
                 obs, samp["u_tp"], samp["u_battery"], samp["mode_onehot"], samp["mag"]
             )
@@ -250,7 +254,9 @@ class FSHSAC:
             ent_mode2 = -(probs2 * probs2.clamp_min(1e-8).log()).sum(dim=-1)
             ent_cont2 = torch.zeros(obs.size(0), device=self.device)
             for mode_idx in (MODE_DISCHARGE, MODE_IDLE, MODE_CHARGE):
-                samp = self.actor.sample_mode_action(obs, support, mode_idx, deterministic=False)
+                samp = self.actor.sample_mode_action(
+                    obs, support, mode_idx, deterministic=False, heads=h2
+                )
                 ent_cont2 = ent_cont2 + probs2[:, mode_idx] * samp["entropy_cont"]
             # continuous target scales with expected cont dim ≈ 2 + P(non-idle)
             p_cont = (probs2[:, MODE_DISCHARGE] + probs2[:, MODE_CHARGE]).clamp(0.0, 1.0)

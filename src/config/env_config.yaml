@@ -128,4 +128,4 @@ market:
   # horizon<=0 must not rewrite u_caes (paper protocol: no end-of-week CAES hijack).
   soc_recovery_horizon: 0
   soc_recovery_battery_horizon: 0
-  note: "山东工商业代理购电分时+110kV输配电度价算例；obs可接预测价，结算用实现价；末段不强制扭回储能动作；不做电网出清。"
+  note: "结算=data/price_tou.csv 2026 月度 110kV 两部制到户分时（1–8 月 O / 9–12 月 S 顺延）；buy/sell_scale 只归一化观测，不改结算；不做电网出清。"

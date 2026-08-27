@@ -67,7 +67,7 @@ def test_main_tex_cites_official_carbon_sources():
     assert "mee2025etsnews" in tex or "mee2025etsreport" in tex
     assert "mee2024quota" in tex
     assert "mee2023ef" in tex
-    assert "constructive" in tex.lower() or "Constructive" in tex
+    assert "monthly" in tex.lower() and "agency-purchase" in tex.lower()
     # must not still claim 0.5703 as the main grid factor
     assert "0.5703 / 0.82" not in tex
 

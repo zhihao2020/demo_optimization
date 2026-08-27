@@ -21,8 +21,8 @@ X.~Yang, Y.~Tao, L.~Li, Decentralized coordinated planning model for integrated
 \bibitem{icap2025chinaets}
 {International Carbon Action Partnership}, {China National ETS} factsheet,
   \url{https://icapcarbonaction.com/en/ets/china-national-ets},
-  secondary-market average allowance price (2025) reported as about 70.78
-  CNY/tCO2e; accessed 2026 (2025).
+  secondary-market average allowance price (2025) about 70.78 CNY/tCO2e;
+  sensitivity / legacy OP only; accessed 2026 (2025).
 
 \bibitem{ndrc2021tou}
 {National Development and Reform Commission of China}, Notice on further
@@ -32,7 +32,8 @@ X.~Yang, Y.~Tao, L.~Li, Decentralized coordinated planning model for integrated
 \bibitem{shandong2023tou}
 {Shandong Provincial Development and Reform Commission}, Notice on further
   optimizing industrial and commercial time-of-use electricity prices, lu Fa
-  Gai Price [2023] No. 914 (2023).
+  Gai Price [2023] No. 914; TOU mechanism and band ratios, not absolute
+  delivered tariffs (2023).
 
 \bibitem{emmanuel2020market}
 M.~I. Emmanuel, P.~Denholm, A market feedback framework for improved estimates
@@ -70,16 +71,29 @@ T.~Haarnoja, A.~Zhou, P.~Abbeel, S.~Levine, Soft actor-critic: Off-policy
   Proceedings of the 35th International Conference on Machine Learning, Vol.~80
   of Proceedings of Machine Learning Research, PMLR, 2018, pp. 1861--1870.
 
-\bibitem{garcia2015safe}
-J.~Garc{\'i}a, F.~Fern{\'a}ndez, A comprehensive survey on safe reinforcement
-  learning, Journal of Machine Learning Research 16 (2015) 1437--1480.
+\bibitem{wu2024pricing}
+X.~Wu, B.~Liu, S.~Yuan, B.~Cao, Z.~Zhang, Y.~Hu, Pricing strategy for regional
+  integrated energy system considering privacy based on deep reinforcement
+  learning, CSEE Journal of Power and Energy Systems (2024).
+\newblock \href {https://doi.org/10.17775/CSEEJPES.2021.08300}
+  {\path{doi:10.17775/CSEEJPES.2021.08300}}.
 
-\bibitem{sun2024constrained}
-Q.~Sun, X.~Wang, Z.~Liu, W.~Lin, J.~He, W.~Pei, Dynamic energy dispatch
-  strategy for integrated energy system based on constrained reinforcement
-  learning, CSEE Journal of Power and Energy Systems (2022).
-\newblock \href {https://doi.org/10.17775/CSEEJPES.2021.08770}
-  {\path{doi:10.17775/CSEEJPES.2021.08770}}.
+\bibitem{fan2019hybrid}
+Z.~Fan, R.~Su, W.~Zhang, Y.~Yu, Hybrid actor-critic reinforcement learning in
+  parameterized action space, in: Proceedings of the Twenty-Eighth
+  International Joint Conference on Artificial Intelligence, 2019, pp.
+  2279--2285.
+\newblock \href {https://doi.org/10.24963/ijcai.2019/316}
+  {\path{doi:10.24963/ijcai.2019/316}}.
+
+\bibitem{cui2024caesbess}
+F.~Cui, D.~An, H.~Xi, Integrated energy hub dispatch with a multi-mode
+  {CAES}--{BESS} hybrid system: An option-based hierarchical reinforcement
+  learning approach, Applied Energy 374 (2024) 123950, source of convex BESS
+  degradation form $\psi(\delta)=a_0\delta^{2.03}$ used in hierarchical IES
+  cost models.
+\newblock \href {https://doi.org/10.1016/j.apenergy.2024.123950}
+  {\path{doi:10.1016/j.apenergy.2024.123950}}.
 
 \bibitem{jendoubi2023hier}
 I.~Jendoubi, F.~Bouffard, Multi-agent hierarchical reinforcement learning for
@@ -93,22 +107,75 @@ T.~Ochoa, E.~Gil, A.~Angulo, C.~Valle, Multi-agent deep reinforcement learning
   and real-time markets, Applied EnergyMulti-timescale market bidding with
   multi-agent DRL (2024).
 
+\bibitem{garcia2015safe}
+J.~Garc{\'i}a, F.~Fern{\'a}ndez, A comprehensive survey on safe reinforcement
+  learning, Journal of Machine Learning Research 16 (2015) 1437--1480.
+
+\bibitem{sun2024constrained}
+Q.~Sun, X.~Wang, Z.~Liu, W.~Lin, J.~He, W.~Pei, Dynamic energy dispatch
+  strategy for integrated energy system based on constrained reinforcement
+  learning, CSEE Journal of Power and Energy Systems (2022).
+\newblock \href {https://doi.org/10.17775/CSEEJPES.2021.08770}
+  {\path{doi:10.17775/CSEEJPES.2021.08770}}.
+
 \bibitem{shandong2026tou}
 {State Grid Shandong Electric Power Company}, Announcement of industrial and
-  commercial time-of-use electricity prices for 2026 (2025).
+  commercial time-of-use electricity prices for 2026,
+  \url{https://jndpc.jinan.gov.cn/col2191/art/2025/art_2191_4789557.html},
+  republished via Jinan DRC; supports seasonal TOU windows; accessed 2026-08-20
+  (2025).
 
 \bibitem{ndrc2023td}
 {National Development and Reform Commission of China}, Provincial grid
-  transmission and distribution tariffs for the fourth regulatory cycle (2023).
+  transmission and distribution tariffs for the fourth regulatory cycle, t\&D
+  energy and funds do not float with TOU; Shandong 110~kV energy charge 0.106
+  CNY/kWh in the fourth cycle (2023).
 
-\bibitem{cui2024caesbess}
-F.~Cui, D.~An, H.~Xi, Integrated energy hub dispatch with a multi-mode
-  {CAES}--{BESS} hybrid system: An option-based hierarchical reinforcement
-  learning approach, Applied Energy 374 (2024) 123950, source of convex BESS
-  degradation form $\psi(\delta)=a_0\delta^{2.03}$ used in hierarchical IES
-  cost models.
-\newblock \href {https://doi.org/10.1016/j.apenergy.2024.123950}
-  {\path{doi:10.1016/j.apenergy.2024.123950}}.
+\bibitem{shandong2026td}
+{Shandong Provincial Development and Reform Commission}, Notice on
+  provincial-grid transmission and distribution tariffs for the fourth
+  regulatory cycle, lu Fa Gai Price [2026] No. 556; 110~kV two-part energy
+  charge 0.106 CNY/kWh from 2026-08-01 (2026).
+
+\bibitem{mee2025etsnews}
+{Ministry of Ecology and Environment of China}, 2024 national carbon emission
+  allowance trading and compliance completed smoothly,
+  \url{https://www.mee.gov.cn/ywgz/ydqhbh/syqhbh/202501/t20250105_1099975.shtml},
+  2024 YE closing price 97.49 CNY/t; accessed 2026-08-20 (2025).
+
+\bibitem{mee2025etsreport}
+{Ministry of Ecology and Environment of China}, National carbon market
+  development report (2025),
+  \url{https://www.mee.gov.cn/ywgz/ydqhbh/wsqtkz/202509/W020250927515316322073.pdf},
+  2024 composite close band 69--106 CNY/t; peak 105.65; YE close 97.49;
+  accessed 2026-08-20 (2025).
+
+\bibitem{mee2023ef}
+{Ministry of Ecology and Environment of China}, {National Bureau of Statistics
+  of China}, Announcement on 2023 electricity carbon dioxide emission factors,
+  \url{https://www.mee.gov.cn/xxgk2018/xxgk/xxgk01/202512/t20251231_1139517.html},
+  shandong location-based average factor 0.6191 kgCO2/kWh; accessed 2026-08-20
+  (2025).
+
+\bibitem{mee2024quota}
+{Ministry of Ecology and Environment of China}, 2023 and 2024 national ets
+  power-sector allowance total and allocation plan,
+  \url{https://www.mee.gov.cn/xxgk2018/xxgk/xxgk03/202410/W020241021392230468687.pdf},
+  class II conventional coal generation benchmark 2024: 0.8049 tCO2/MWh; 150~MW
+  unit in this class; accessed 2026-08-20 (2024).
+
+\bibitem{worldbank2024usdnyc}
+{World Bank}, Official exchange rate ({LCU} per {US\$}, period average) ---
+  {China} 2024, indicator PA.NUS.FCRF; ~7.2 CNY/USD used to convert Cui 2024
+  USD costs (2024).
+
+\bibitem{schroeder2015voll}
+T.~Schr{\"o}der, W.~Kuckshinrichs, Value of lost load: An efficient economic
+  indicator for power supply security? a literature review, Frontiers in Energy
+  Research 3 (2015) 55, vOLL literature range; our 1000 CNY/MWh is a
+  conservative scenario lower bound, not a national regulated VOLL.
+\newblock \href {https://doi.org/10.3389/fenrg.2015.00055}
+  {\path{doi:10.3389/fenrg.2015.00055}}.
 
 \bibitem{xu2022lcos}
 Y.~Xu, et~al., The levelized cost of storage of electrochemical energy storage
@@ -116,10 +183,5 @@ Y.~Xu, et~al., The levelized cost of storage of electrochemical energy storage
   order of magnitude for LFP-class stationary storage (2022).
 \newblock \href {https://doi.org/10.3389/fenrg.2022.873800}
   {\path{doi:10.3389/fenrg.2022.873800}}.
-
-\bibitem{garcia2012safe}
-J.~Garc{\'i}a, F.~Fern{\'a}ndez, Safe exploration of state and action spaces in
-  reinforcement learning, Journal of Artificial Intelligence Research 45 (2012)
-  515--564.
 
 \end{thebibliography}

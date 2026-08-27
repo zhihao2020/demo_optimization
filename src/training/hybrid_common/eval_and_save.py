@@ -43,6 +43,14 @@ def prepare_run_dir(run_dir: Path, root: Path) -> None:
         src = root / "src/config" / cfg_name
         if src.exists():
             shutil.copy2(src, run_dir / "config" / cfg_name)
+    for rel in (
+        "data/price_tou.csv",
+        "data/price_tou_monthly_official.csv",
+        "data/price_tou_meta.json",
+    ):
+        src = root / rel
+        if src.exists():
+            shutil.copy2(src, run_dir / "config" / src.name)
 
 
 def parameter_profile_fields(run_dir: Path) -> dict[str, Any]:
