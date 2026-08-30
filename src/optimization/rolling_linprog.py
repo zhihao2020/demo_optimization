@@ -4,6 +4,7 @@
   - 风光发电按 FMU 惯例（发电为负瓦）折成正的注入兆瓦，不再把残差加反
   - 用日前表做 24 小时负荷 / 风 / 光形状，不再把当前小时重复 8 次
   - 目标对齐综合收益：购售电 + 燃料 + 碳 + 弃电 / 缺供 + 电池放电磨损
+  - CAES 能量在代理里无度电价（与 eval J 扣除 FMU 储能设备现金流一致）
   - 周末库存用线性绝对值软罚（真正进目标）
   - 去掉最后 40 小时强行抬火电
   - 压空小功率走待机，不再把幅值抬到 0.5
@@ -214,6 +215,7 @@ class RollingLinprogController:
             base = k * n_u
             c[base + 0] = c_th
             c[base + 2] = cfg.deg_yuan_per_mwh
+            # caes_ch / caes_dis (base+3/+4) stay 0: no FMU storage kWh price in eval J
             c[base + 5] = buy_mwh[k] + c_buy_extra
             c[base + 6] = -sell_mwh[k]
             c[base + 7] = cfg.nu_curt_yuan_per_mwh

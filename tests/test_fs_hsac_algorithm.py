@@ -62,6 +62,14 @@ def test_single_batch_update_finite():
     assert np.isfinite(metrics["alpha_c"])
 
 
+def test_alpha_defaults_stay_in_band():
+    agent = FSHSAC(obs_dim=6, device="cpu")
+    assert agent.alpha_min == 0.05
+    assert agent.alpha_max == 2.0
+    assert 0.05 <= float(agent.alpha_d.item()) <= 2.0
+    assert 0.05 <= float(agent.alpha_c.item()) <= 2.0
+
+
 def test_dual_alpha_independent():
     agent = FSHSAC(obs_dim=6)
     a0 = float(agent.alpha_d.item()), float(agent.alpha_c.item())
@@ -71,6 +79,61 @@ def test_dual_alpha_independent():
     a1 = float(agent.alpha_d.item()), float(agent.alpha_c.item())
     # at least one should move (very likely both)
     assert a0 != a1
+
+
+def test_discrete_alpha_residual_sign():
+    """Peaked mode => E[log π_d]+0.98 log|K| > 0 so GD raises α_d; uniform is near 0."""
+    from training.fs_hsac.action_support import support_from_feasible_batch
+
+    agent = FSHSAC(obs_dim=6, device="cpu")
+    obs = torch.zeros(32, 6)
+    support = support_from_feasible_batch([_feas()] * 32, device=agent.device)
+
+    def residual_d():
+        h = agent.actor._heads(obs)
+        probs, legal = agent.actor.masked_probs(h["mode_logits"], support["mode_mask"])
+        n = legal.sum(dim=-1).clamp_min(1).to(dtype=torch.float32)
+        ent = -(probs * probs.clamp_min(1e-8).log()).sum(dim=-1)
+        return float((-ent + 0.98 * torch.log(n)).mean().item()), float(ent.mean().item())
+
+    with torch.no_grad():
+        agent.actor.mode_head.weight.zero_()
+        agent.actor.mode_head.bias.zero_()
+        agent.actor.mode_head.bias[1] = 12.0
+    r_peak, h_peak = residual_d()
+    assert h_peak < 0.15, h_peak
+    assert r_peak > 0.5, (r_peak, h_peak)
+
+    with torch.no_grad():
+        agent.actor.mode_head.bias.zero_()
+    r_flat, h_flat = residual_d()
+    assert abs(h_flat - float(np.log(3))) < 0.05, h_flat
+    assert r_flat < 0.05, (r_flat, h_flat)
+
+    with torch.no_grad():
+        agent.actor.mode_head.bias[1] = 12.0
+    a0 = float(agent.alpha_d.item())
+    buf = _fill_buffer(80)
+    agent.update(buf, batch_size=16)
+    a1 = float(agent.alpha_d.item())
+    assert a1 > a0, (a0, a1)
+    assert a1 > 1e-3, a1
+
+
+def test_discrete_alpha_rises_when_mode_peaked():
+    """Peaked idle logits must not drive alpha_d to the floor."""
+    agent = FSHSAC(obs_dim=6, device="cpu")
+    with torch.no_grad():
+        agent.actor.mode_head.weight.zero_()
+        agent.actor.mode_head.bias.zero_()
+        agent.actor.mode_head.bias[1] = 8.0
+    a0 = float(agent.alpha_d.item())
+    buf = _fill_buffer(80)
+    for _ in range(6):
+        agent.update(buf, batch_size=16)
+    a1 = float(agent.alpha_d.item())
+    assert a1 >= a0, (a0, a1)
+    assert a1 > 1e-3, a1
 
 
 def test_single_legal_mode_only_idle():

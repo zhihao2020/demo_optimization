@@ -20,6 +20,57 @@ from .policy_wrapper import HybridGiveSafePolicyWrapper
 logger = logging.getLogger(__name__)
 
 
+def _evaluate_hybrid_agent(
+    *,
+    agent: Any,
+    run_id: str,
+    forecast_enabled: bool | None,
+    gs_cfg: dict,
+    use_shadow: bool,
+    make_shadow: Callable[..., ShadowFmuValidator] | None,
+    eval_opts: dict[str, Any],
+    csv_path: Path,
+    deterministic: bool,
+    soft_shell: bool,
+) -> dict[str, Any]:
+    eval_env = PowerSystemEnv(run_id=run_id, forecast_enabled=forecast_enabled)
+    eval_shadow = None
+    if use_shadow:
+        fmu_path = eval_env.root / eval_env.config["fmu"]["path"]
+        step = float(eval_env.config["fmu"]["communication_step_seconds"])
+
+        def efactory():
+            return FmuAdapter(fmu_path, step, eval_env.registry)
+
+        if make_shadow is not None:
+            eval_shadow = make_shadow(eval_env, efactory)
+        else:
+            shadow_cfg = (gs_cfg.get("givesafe") or {}).get("shadow_validation") or {}
+            eval_shadow = ShadowFmuValidator(
+                factory=efactory,
+                oracle=eval_env.oracle,
+                enabled=True,
+                mode=str(shadow_cfg.get("mode", "always")),
+            )
+    eval_ctrl = GiveSafeController(oracle=eval_env.oracle, shadow=eval_shadow, config=gs_cfg)
+    eval_policy = HybridGiveSafePolicyWrapper(
+        agent, eval_env, eval_ctrl, deterministic=deterministic, soft_shell=soft_shell
+    )
+    try:
+        return evaluate_policy(
+            eval_env,
+            eval_policy,
+            csv_path,
+            reset_options=eval_opts,
+            soft_shell=soft_shell,
+            deterministic=deterministic,
+        )
+    finally:
+        if eval_shadow is not None:
+            eval_shadow.close()
+        eval_env.close()
+
+
 def prepare_run_dir(run_dir: Path, root: Path) -> None:
     """创建运行目录结构并复制配置文件快照。
 
@@ -137,42 +188,34 @@ def finalize_training_run(
     )
     rule_env.close()
 
-    eval_env = PowerSystemEnv(run_id=f"{run_dir.name}_eval", forecast_enabled=forecast_enabled)
-    eval_shadow = None
-    if use_shadow:
-        fmu_path = eval_env.root / eval_env.config["fmu"]["path"]
-        step = float(eval_env.config["fmu"]["communication_step_seconds"])
-
-        def efactory():
-            """构造评估用功能模型单元适配器(FmuAdapter)。"""
-            return FmuAdapter(fmu_path, step, eval_env.registry)
-
-        if make_shadow is not None:
-            eval_shadow = make_shadow(eval_env, efactory)
-        else:
-            shadow_cfg = (gs_cfg.get("givesafe") or {}).get("shadow_validation") or {}
-            eval_shadow = ShadowFmuValidator(
-                factory=efactory,
-                oracle=eval_env.oracle,
-                enabled=True,
-                mode=str(shadow_cfg.get("mode", "always")),
-            )
-    eval_ctrl = GiveSafeController(oracle=eval_env.oracle, shadow=eval_shadow, config=gs_cfg)
-    eval_policy = HybridGiveSafePolicyWrapper(
-        agent, eval_env, eval_ctrl, deterministic=True, soft_shell=soft_shell
+    eval_result = _evaluate_hybrid_agent(
+        agent=agent,
+        run_id=f"{run_dir.name}_eval",
+        forecast_enabled=forecast_enabled,
+        gs_cfg=gs_cfg,
+        use_shadow=use_shadow,
+        make_shadow=make_shadow,
+        eval_opts=eval_opts,
+        csv_path=run_dir / "trajectories" / "eval.csv",
+        deterministic=True,
+        soft_shell=soft_shell,
     )
     try:
-        eval_result = evaluate_policy(
-            eval_env,
-            eval_policy,
-            run_dir / "trajectories" / "eval.csv",
-            reset_options=eval_opts,
+        eval_stochastic = _evaluate_hybrid_agent(
+            agent=agent,
+            run_id=f"{run_dir.name}_eval_stoch",
+            forecast_enabled=forecast_enabled,
+            gs_cfg=gs_cfg,
+            use_shadow=False,
+            make_shadow=None,
+            eval_opts=eval_opts,
+            csv_path=run_dir / "trajectories" / "eval_stochastic.csv",
+            deterministic=False,
             soft_shell=soft_shell,
         )
-    finally:
-        if eval_shadow is not None:
-            eval_shadow.close()
-        eval_env.close()
+    except Exception:
+        logger.exception("stochastic eval failed; continuing with greedy only")
+        eval_stochastic = None
     result["eval_start_time_seconds"] = eval_opts["start_time"]
 
     annual_eval_result = None
@@ -220,9 +263,11 @@ def finalize_training_run(
     result.update(
         {
             "eval": eval_result,
+            "eval_stochastic": eval_stochastic,
             "annual_eval": annual_eval_result,
             "rule": rule_result,
             "kpi": extract_kpi_from_eval(eval_result),
+            "kpi_stochastic": extract_kpi_from_eval(eval_stochastic) if eval_stochastic else None,
             "rule_kpi": extract_kpi_from_eval(rule_result),
             "last_metrics": getattr(agent, "last_metrics", {}),
             **parameter_profile_fields(run_dir),

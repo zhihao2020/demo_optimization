@@ -145,7 +145,7 @@ def run_milp_job(run_dir: Path, eval_start: float) -> dict:
         "baseline_notes": {
             "forecast": "perfect horizon from forecast_provider (same as linprog/PSO)",
             "caes": "binary commitment + min-load bands; energy SoC only (no hot/cold/pressure DAE)",
-            "min_run_steps": 4,
+            "min_run_steps": 1,
         },
     }
     (run_dir / "train_result.json").write_text(

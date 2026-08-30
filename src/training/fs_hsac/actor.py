@@ -50,11 +50,10 @@ class FSHSACActor(nn.Module):
         self.dis_mag_log_std = nn.Linear(hidden, 1)
         self.chg_mag_mean = nn.Linear(hidden, 1)
         self.chg_mag_log_std = nn.Linear(hidden, 1)
-        nn.init.constant_(self.tp_mean.bias, 2.0)
+        nn.init.zeros_(self.tp_mean.bias)
         nn.init.zeros_(self.bat_mean.bias)
         nn.init.zeros_(self.mode_head.weight)
         nn.init.zeros_(self.mode_head.bias)
-        self.mode_head.bias.data[MODE_IDLE] = 0.4
         for layer in (
             self.dis_mag_mean,
             self.chg_mag_mean,
@@ -89,10 +88,21 @@ class FSHSACActor(nn.Module):
         legal = torch.where(empty, torch.ones_like(legal), legal)
         return logits.masked_fill(~legal, -1.0e9), legal
 
+    def masked_probs(
+        self, logits: torch.Tensor, mode_mask: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Softmax over legal modes only; illegal coordinates are exact zeros."""
+        logits, legal = self._mask_logits(logits, mode_mask)
+        probs = torch.softmax(logits, dim=-1)
+        legal_f = legal.to(dtype=probs.dtype)
+        probs = probs * legal_f
+        denom = probs.sum(dim=-1, keepdim=True).clamp_min(1e-8)
+        return probs / denom, legal
+
     def mode_probs(self, obs: torch.Tensor, mode_mask: torch.Tensor) -> torch.Tensor:
         h = self._heads(obs)
-        logits, _ = self._mask_logits(h["mode_logits"], mode_mask)
-        return torch.softmax(logits, dim=-1)
+        probs, _ = self.masked_probs(h["mode_logits"], mode_mask)
+        return probs
 
     def _sample_bounded(
         self,
@@ -211,8 +221,7 @@ class FSHSACActor(nn.Module):
         h = self._heads(obs)
         b = obs.size(0)
         device = obs.device
-        logits, legal = self._mask_logits(h["mode_logits"], support["mode_mask"])
-        probs = torch.softmax(logits, dim=-1)
+        probs, legal = self.masked_probs(h["mode_logits"], support["mode_mask"])
         if deterministic:
             mode = probs.argmax(dim=-1)
         else:

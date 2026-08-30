@@ -1,6 +1,6 @@
 # Parameter evidence ledger (official + literature)
 
-文档更新：2026-08-20 (+08:00)  
+文档更新：2026-08-30 20:20 (+08:00)  
 **Active profile:** `official-2024-ets-sd-grid-v1`（见 `src/config/reward_config.yaml`）  
 **Legacy profile (archived runs):** `legacy-2022-grid-factor/proxy-benchmark`（`runs/**/config/reward_config.yaml` 快照勿改）
 
@@ -93,7 +93,26 @@
 
 ---
 
-## 7. How reference papers organise parameters (adopt / reject)
+## 7. DRL trainer knobs (Cui 2024 Table 4)
+
+Cui *Appl. Energy* 374 (2024) 123950 Table 4 is **OCTD3**. Copy only same-hour DRL numbers. Do **not** copy options, \(\kappa\), \(D=2\), \(\sigma^2\), or \(w=0.2\) PFI/CCI.
+
+| 字段 | Cui Table 4 | 本代码 | 说明 |
+|------|-------------|--------|------|
+| \(\varepsilon_{\max},\varepsilon_{\min}\) | 1.0, 0.05 | 同 | `hybrid_common/explore.py` |
+| \(\Delta\varepsilon\) | \(6\times10^{-6}\) @ \(2\times10^5\) step | 按 horizon 比例缩放 | 周协议 \(8.4\times10^5\) step 时约 \(1.43\times10^{-6}\)，\(\varepsilon\) 仍在 \(\approx79\%\) 处落到 0.05 |
+| lr | \(10^{-4}\) | \(10^{-4}\) | actor/critic/\(\alpha\) |
+| \(\tau\) | 0.005 | 0.005 | |
+| batch | 64 | 64 | |
+| \(\gamma\) | 0.99 | 0.99 | |
+| replay | \(10^4\) | \(4.2\times10^4\) | \(\propto\) 步数 |
+| \(R^F\) mix | Eq. (35) \(0.5\) | 0.5 | 只进 \(r^{\mathrm{ext}}\) |
+| \(\theta_{\mathrm{thr}}\) | “历史数据”，无数字 | 50 MW | 本厂 100 MW 电池一半；**S** |
+| SAC \(\alpha\) clip | — | \([0.05,2]\) | Haarnoja；不是 Cui \(\kappa=1\) |
+
+---
+
+## 8. How reference papers organise parameters (adopt / reject)
 
 **Adopt (GHTD3 / OCTD3):**
 
@@ -109,7 +128,7 @@
 
 ---
 
-## 8. Code ↔ paper field map
+## 9. Code ↔ paper field map
 
 | 论文符号 | YAML / kpi |
 |----------|------------|

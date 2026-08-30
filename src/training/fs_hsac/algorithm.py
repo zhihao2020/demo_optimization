@@ -25,12 +25,12 @@ class FSHSAC:
         *,
         gamma: float = 0.99,
         tau: float = 0.005,
-        actor_lr: float = 3e-4,
-        critic_lr: float = 3e-4,
-        alpha_lr: float = 3e-4,
+        actor_lr: float = 1e-4,
+        critic_lr: float = 1e-4,
+        alpha_lr: float = 1e-4,
         device: str | None = None,
-        alpha_min: float = 1e-4,
-        alpha_max: float = 10.0,
+        alpha_min: float = 0.05,
+        alpha_max: float = 2.0,
         q_clip: float = 200.0,
         skip_nonfinite_update: bool = True,
         use_feasibility_penalty: bool = False,
@@ -48,6 +48,7 @@ class FSHSAC:
         self._actor_lr = float(actor_lr)
         self._critic_lr = float(critic_lr)
         self._alpha_lr = float(alpha_lr)
+        # [0.05, 2]: Haarnoja α=10 then floor 1e-4 collapsed the mode head onto idle.
         self.alpha_min = float(alpha_min)
         self.alpha_max = float(alpha_max)
         self.log_alpha_min = float(np.log(self.alpha_min))
@@ -110,11 +111,11 @@ class FSHSAC:
         critic = self.critic_target if target else self.critic
         # recompute with actor heads for consistency under no_grad/grad
         h = self.actor._heads(obs)
-        logits, legal = self.actor._mask_logits(h["mode_logits"], support["mode_mask"])
-        probs = torch.softmax(logits, dim=-1)
+        probs, legal = self.actor.masked_probs(h["mode_logits"], support["mode_mask"])
         soft_terms = []
         ent_c_terms = []
         for mode_idx in (MODE_DISCHARGE, MODE_IDLE, MODE_CHARGE):
+            w = probs[:, mode_idx]
             samp = self.actor.sample_mode_action(
                 obs, support, mode_idx, deterministic=False, heads=h
             )
@@ -130,10 +131,10 @@ class FSHSAC:
                 min_q = min_q.clamp(-self.q_clip, self.q_clip)
             # soft Q contribution for this mode
             term = min_q - self.alpha_c.detach() * samp["log_prob_cont"]
-            soft_terms.append(probs[:, mode_idx] * term)
-            ent_c_terms.append(probs[:, mode_idx] * samp["entropy_cont"])
+            soft_terms.append(w * term)
+            ent_c_terms.append(w * samp["entropy_cont"])
         soft_q = soft_terms[0] + soft_terms[1] + soft_terms[2]
-        # subtract discrete entropy bonus: E[Q - α_d log π_d - α_c log π_c]
+        # V = E[Q - α_c log π_c] - α_d E[log π_d] = E[Q - α_c log π_c] + α_d H_d
         log_probs = probs.clamp_min(1e-8).log()
         soft_q = soft_q - self.alpha_d.detach() * (probs * log_probs).sum(dim=-1)
         ent_mode = -(probs * log_probs).sum(dim=-1)
@@ -193,15 +194,12 @@ class FSHSAC:
         torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 10.0)
         self.critic_opt.step()
 
-        # Actor: exact mode expectation
+        # Actor: exact mode expectation over legal K(s) only
         h = self.actor._heads(obs)
-        logits, legal = self.actor._mask_logits(h["mode_logits"], support["mode_mask"])
-        probs = torch.softmax(logits, dim=-1)
+        probs, legal = self.actor.masked_probs(h["mode_logits"], support["mode_mask"])
         actor_terms = []
-        ent_mode = -(probs * probs.clamp_min(1e-8).log()).sum(dim=-1)
-        ent_cont_acc = torch.zeros(obs.size(0), device=self.device)
-        log_cont_acc = torch.zeros(obs.size(0), device=self.device)
         for mode_idx in (MODE_DISCHARGE, MODE_IDLE, MODE_CHARGE):
+            w = probs[:, mode_idx]
             samp = self.actor.sample_mode_action(
                 obs, support, mode_idx, deterministic=False, heads=h
             )
@@ -215,16 +213,13 @@ class FSHSAC:
                 obs, samp["u_tp"], samp["u_battery"], samp["mode_onehot"], samp["mag"]
             )
             # J = E_k[ α_d log π_d + α_c log π_c - Q + β (-log C) ]
-            # with exact sum over modes
             term = (
-                self.alpha_d.detach() * probs[:, mode_idx].clamp_min(1e-8).log()
+                self.alpha_d.detach() * w.clamp_min(1e-8).log()
                 + self.alpha_c.detach() * samp["log_prob_cont"]
                 - min_q
                 + self.feasibility_beta * pen
             )
-            actor_terms.append(probs[:, mode_idx] * term)
-            ent_cont_acc = ent_cont_acc + probs[:, mode_idx] * samp["entropy_cont"]
-            log_cont_acc = log_cont_acc + probs[:, mode_idx] * samp["log_prob_cont"]
+            actor_terms.append(w * term)
         actor_loss = (actor_terms[0] + actor_terms[1] + actor_terms[2]).mean()
         if not torch.isfinite(actor_loss):
             self.nonfinite_skips += 1
@@ -242,28 +237,32 @@ class FSHSAC:
         torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 10.0)
         self.actor_opt.step()
 
-        # Dual temperatures
-        # discrete target entropy: -H_uniform = -log(|K|)
-        n_modes = legal.sum(dim=-1).clamp_min(1).to(dtype=torch.float32)
-        target_ent_d = -torch.log(n_modes)
-        # stop-grad on entropy estimates from fresh forward after actor step
+        # Dual temperatures, Haarnoja/Christodoulou form:
+        #   L(α) = -α (E[log π] + H_target)
+        # Discrete: H_target = 0.98 log|K|  (NOT -log|K|).
+        # Continuous: H_target = -E[cont_dim]; use E[log π_c] not analytic entropy.
         with torch.no_grad():
             h2 = self.actor._heads(obs)
-            logits2, legal2 = self.actor._mask_logits(h2["mode_logits"], support["mode_mask"])
-            probs2 = torch.softmax(logits2, dim=-1)
+            probs2, legal2 = self.actor.masked_probs(h2["mode_logits"], support["mode_mask"])
+            n_modes2 = legal2.sum(dim=-1).clamp_min(1).to(dtype=torch.float32)
+            target_ent_d = 0.98 * torch.log(n_modes2)
             ent_mode2 = -(probs2 * probs2.clamp_min(1e-8).log()).sum(dim=-1)
+            log_pi_d = -ent_mode2
+            log_pi_c = torch.zeros(obs.size(0), device=self.device)
             ent_cont2 = torch.zeros(obs.size(0), device=self.device)
+            cont_dim_acc = torch.zeros(obs.size(0), device=self.device)
             for mode_idx in (MODE_DISCHARGE, MODE_IDLE, MODE_CHARGE):
+                w = probs2[:, mode_idx]
                 samp = self.actor.sample_mode_action(
                     obs, support, mode_idx, deterministic=False, heads=h2
                 )
-                ent_cont2 = ent_cont2 + probs2[:, mode_idx] * samp["entropy_cont"]
-            # continuous target scales with expected cont dim ≈ 2 + P(non-idle)
-            p_cont = (probs2[:, MODE_DISCHARGE] + probs2[:, MODE_CHARGE]).clamp(0.0, 1.0)
-            target_ent_c = -2.0 - p_cont  # approx -cont_dim
+                log_pi_c = log_pi_c + w * samp["log_prob_cont"]
+                ent_cont2 = ent_cont2 + w * samp["entropy_cont"]
+                cont_dim_acc = cont_dim_acc + w * samp["cont_dim"]
+            target_ent_c = -cont_dim_acc
 
-        alpha_d_loss = -(self.log_alpha_d * (ent_mode2 + target_ent_d).detach()).mean()
-        alpha_c_loss = -(self.log_alpha_c * (ent_cont2 + target_ent_c).detach()).mean()
+        alpha_d_loss = -(self.log_alpha_d * (log_pi_d + target_ent_d).detach()).mean()
+        alpha_c_loss = -(self.log_alpha_c * (log_pi_c + target_ent_c).detach()).mean()
         self.alpha_d_opt.zero_grad()
         alpha_d_loss.backward()
         self.alpha_d_opt.step()

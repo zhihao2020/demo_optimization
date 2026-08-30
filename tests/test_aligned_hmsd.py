@@ -92,14 +92,17 @@ def test_aligned_goal_box_is_4d():
 def test_cui2024_startup_scales_from_table2():
     from envs.reward_calculator import RewardCalculator
 
-    unit = RewardCalculator.caes_startup_unit_cny({
+    base = {
         "c_su_usd_ref": 3.42,
         "p_ref_w": 8.0e5,
         "p_cap_w": 1.5e8,
         "usd_cny": 7.2,
-    })
-    assert abs(unit - 3.42 * (1.5e8 / 8.0e5) * 7.2) < 1e-6
-    assert abs(unit - 4617.0) < 1e-6
+    }
+    none = RewardCalculator.caes_startup_unit_cny({**base, "scale_mode": "none"})
+    linear = RewardCalculator.caes_startup_unit_cny({**base, "scale_mode": "linear_capacity"})
+    assert abs(none - 3.42 * 7.2) < 1e-6
+    assert abs(linear - 3.42 * (1.5e8 / 8.0e5) * 7.2) < 1e-6
+    assert abs(linear - 4617.0) < 1e-6
 
 
 def test_startup_enters_j_gen():

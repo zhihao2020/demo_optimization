@@ -1,5 +1,7 @@
 # MILP baseline notes (paper §5.1)
 
+文档更新：2026-08-28 16:40 (+08:00)
+
 Implementation: `src/optimization/rolling_milp.py` (`RollingMilpController`).  
 Entry: `python scripts/train_seasonal.py --method milp --season <season> --seed 0`.
 
@@ -15,7 +17,7 @@ Entry: `python scripts/train_seasonal.py --method milp --season <season> --seed 
 
 - Binary \(z^{\mathrm{chg}}_t, z^{\mathrm{dis}}_t\) with mutual exclusion.
 - Min-load bands: charge power in \([0.86,1]P_{\mathrm{cap}}\) when \(z^{\mathrm{chg}}=1\); discharge in \([0.33,1]P_{\mathrm{cap}}\) when \(z^{\mathrm{dis}}=1\).
-- Minimum-run / mode-lock style inequalities inside the horizon (`MIN_CAES_RUN_STEPS=4`), warm-started from the previous closed-loop mode.
+- No consecutive-run lock (`min_run_steps=1`). Cui 2024 penalises switches with start-up cost only.
 
 ## Approximations that must be stated in the paper
 

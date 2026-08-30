@@ -26,6 +26,7 @@ PY = REMOTE + r"\.venv\Scripts\python.exe"
 
 SYNCS = [
     "scripts/train_seasonal.py",
+    "scripts/seasonal_cli.py",
     "src/training/fs_hsac/__init__.py",
     "src/training/fs_hsac/action_support.py",
     "src/training/fs_hsac/actor.py",
@@ -37,8 +38,10 @@ SYNCS = [
     "src/training/fs_hsac/train.py",
     "src/replay/fs_hsac_replay.py",
     "src/training/hybrid_common/eval_and_save.py",
+    "src/training/hybrid_common/explore.py",
     "src/training/hybrid_common/policy_wrapper.py",
     "src/training/episode_starts.py",
+    "src/envs/reward_calculator.py",
     "src/config/env_config.yaml",
     "src/config/givesafe_config.yaml",
     "src/config/reward_config.yaml",
@@ -94,10 +97,17 @@ def main() -> None:
     p.add_argument("--seasons", type=str, default="winter,transition,summer")
     p.add_argument("--seeds", type=str, default="0")
     p.add_argument("--episodes", type=int, default=5000)
+    p.add_argument("--tag", type=str, default="", help="run-dir tag; default fs_hsac or fs_hsac_support")
+    p.add_argument("--cuda", action="store_true", help="train on GPU 0 (default in this file was CPU)")
+    p.add_argument(
+        "--kill-live",
+        action="store_true",
+        help="terminate live train_seasonal / fs_hsac_alpha python before launch",
+    )
     args = p.parse_args()
     seasons = [s.strip() for s in args.seasons.split(",") if s.strip()]
     seeds = [int(x) for x in args.seeds.split(",") if x.strip()]
-    tag = "fs_hsac_support" if args.support else "fs_hsac"
+    tag = args.tag.strip() or ("fs_hsac_support" if args.support else "fs_hsac")
 
     t = paramiko.Transport((HOST, 22))
     t.banner_timeout = 60
@@ -127,6 +137,32 @@ def main() -> None:
         sftp.put(str(src), rpath)
         print("PUT", rel)
 
+    if args.kill_live:
+        print("=== kill live train_seasonal / fs_hsac_alpha ===")
+        print(run(t, r"""cmd /c wmic process where "CommandLine like '%fs_hsac_alpha%'" call terminate"""))
+        time.sleep(2)
+        print(run(t, r"""cmd /c wmic process where "CommandLine like '%train_seasonal.py%'" call terminate"""))
+        time.sleep(3)
+        live2 = run(
+            t,
+            r'cmd /c wmic process where "name=\"python.exe\"" get ProcessId,CommandLine /FORMAT:LIST',
+            80,
+        )
+        pids = []
+        cur_pid, cur_cmd = None, ""
+        for ln in live2.splitlines():
+            if ln.startswith("ProcessId="):
+                cur_pid = ln.split("=", 1)[-1].strip()
+            elif ln.startswith("CommandLine="):
+                cur_cmd = ln.split("=", 1)[-1]
+                if cur_pid and ("train_seasonal" in cur_cmd.lower() or "fs_hsac_alpha" in cur_cmd.lower()):
+                    pids.append(cur_pid)
+                cur_pid, cur_cmd = None, ""
+        if pids:
+            print("FORCE", pids)
+            print(run(t, "cmd /c " + " & ".join(f"taskkill /F /PID {p}" for p in pids)))
+            time.sleep(2)
+
     if not args.launch:
         print("sync-only; pass --launch to start jobs")
         sftp.close()
@@ -141,6 +177,21 @@ def main() -> None:
             err = log + ".err"
             bat = rf"{REMOTE}\logs\run_{name}.bat"
             feas = "set FS_HSAC_NO_FEAS=1" if args.support else "set FS_HSAC_NO_FEAS="
+            if args.cuda:
+                dev = """set CUDA_VISIBLE_DEVICES=0
+set OPTIMAL_DEMO_DEVICE=cuda
+set OPTIMAL_DEMO_TORCH_THREADS=1
+set OMP_NUM_THREADS=1
+set MKL_NUM_THREADS=1
+set OPENBLAS_NUM_THREADS=1"""
+            else:
+                dev = """set CUDA_VISIBLE_DEVICES=-1
+set OPTIMAL_DEMO_DEVICE=cpu
+set OPTIMAL_DEMO_TORCH_THREADS=4
+set OMP_NUM_THREADS=4
+set MKL_NUM_THREADS=4
+set OPENBLAS_NUM_THREADS=4"""
+            extra = "--support" if args.support else ""
             body = f"""@echo off
 cd /d {REMOTE}
 set PYTHONUNBUFFERED=1
@@ -149,31 +200,23 @@ set OPTIMAL_DEMO_CACHE={REMOTE}_cache
 set OPTIMAL_DEMO_JOB_ID={name}
 set OPTIMAL_DEMO_TMP={REMOTE}_cache\\tmp\\{name}
 set OPTIMAL_DEMO_FMU_ISOLATE=1
-set CUDA_VISIBLE_DEVICES=-1
-set OPTIMAL_DEMO_DEVICE=cpu
-set OPTIMAL_DEMO_TORCH_THREADS=4
-set OMP_NUM_THREADS=4
-set MKL_NUM_THREADS=4
-set OPENBLAS_NUM_THREADS=4
+{dev}
 set NUMEXPR_NUM_THREADS=1
 {feas}
 if not exist "%OPTIMAL_DEMO_TMP%" mkdir "%OPTIMAL_DEMO_TMP%"
 if not exist "{run_abs}" mkdir "{run_abs}"
 echo START %DATE% %TIME% > "{log}"
-"{PY}" "{REMOTE}\\scripts\\train_seasonal.py" --method fs_hsac --season {season} --episodes {args.episodes} --seed {seed} --run-dir "{run_abs}" >> "{log}" 2>> "{err}"
+"{PY}" "{REMOTE}\\scripts\\train_seasonal.py" --method fs_hsac {extra} --season {season} --episodes {args.episodes} --seed {seed} --run-dir "{run_abs}" >> "{log}" 2>> "{err}"
 echo EXIT %ERRORLEVEL% %DATE% %TIME% >> "{log}"
 """
             sftp_mkdirs(sftp, str(Path(bat).parent))
             sftp_mkdirs(sftp, run_abs)
             with sftp.file(bat, "wb") as f:
                 f.write(body.replace("\n", "\r\n").encode("gbk", errors="replace"))
-            ps = (
-                "powershell -NoProfile -Command "
-                f"\"Start-Process -FilePath 'cmd.exe' -ArgumentList '/c','{bat}' "
-                f"-WorkingDirectory '{REMOTE}' -WindowStyle Hidden\""
-            )
+            # SSH Start-Process dies with the session; WMIC create detaches.
+            wmic = 'cmd /c wmic process call create "cmd.exe /c ' + bat + '","' + REMOTE + '"'
             print("START", name)
-            print(run(t, ps, 30)[:400])
+            print(run(t, wmic, 30)[:400])
 
     time.sleep(4)
     print("=== GPU after start ===")

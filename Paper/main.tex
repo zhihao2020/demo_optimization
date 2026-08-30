@@ -695,21 +695,8 @@ Figure~\ref{fig:algorithm} summarises the loop. Figure~\ref{fig:action-rep} cont
 
 \begin{figure}[!htbp]
 \centering
-\begin{tikzpicture}[
-  font=\scriptsize,
-  box/.style={draw, rounded corners=2pt, align=center, inner sep=4pt, minimum height=1.35cm},
-  arr/.style={-{Latex}, thick}
-]
-\node[box, fill=blue!8, minimum width=0.30\textwidth] (c1) {\textbf{C1 DAE object}\\Sysplorer thermal--BESS--CAES\\gas/thermal DAEs $\to$ FMI FMU\\1~h communication};
-\node[box, fill=green!8, minimum width=0.30\textwidth, right=0.12cm of c1] (c2) {\textbf{C2 Hybrid support}\\$\mathcal{A}(s)=\mathcal{K}(s)\times\mathcal{M}_k(s)$\\mode mask + dynamic bands\\decode $\mu$ into current interval};
-\node[box, fill=orange!12, minimum width=0.30\textwidth, right=0.12cm of c2] (c3) {\textbf{C3 Executable loop}\\sample chosen $(k,\mu)$ only\\GiveSafe $\to$ step FMU\\$\mathcal{D}_{\mathrm{B}}$ vs $\mathcal{D}_{\mathrm{F}}$};
-\draw[arr] (c1) -- (c2);
-\draw[arr] (c2) -- (c3);
-\node[below=0.12cm of c1, text width=0.30\textwidth, align=center] {not an algebraic SoC map};
-\node[below=0.12cm of c2, text width=0.30\textwidth, align=center] {not a $[-1,1]$ box};
-\node[below=0.12cm of c3, text width=0.30\textwidth, align=center] {rejected hours $\notin$ Bellman};
-\end{tikzpicture}
-\caption{Causal chain of FS-HSAC. The DAE twin induces a state-dependent hybrid support; the policy is sampled and screened on that support before the FMU steps.}
+\includegraphics[width=\textwidth]{fig_algorithm}
+\caption{FS-HSAC closed loop on the Sysplorer FMU. Inference samples the chosen mode only. GiveSafe (adopted, fallback off) admits the hour; accepted transitions enter $\mathcal{D}_{\mathrm{B}}$, rejections enter $\mathcal{D}_{\mathrm{F}}$ only. The SAC update enumerates the three modes exactly.}
 \label{fig:algorithm}
 \end{figure}
 

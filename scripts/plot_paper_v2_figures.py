@@ -117,47 +117,54 @@ def plot_caes_legal() -> Path:
 
 
 def plot_action_rep() -> Path:
-    fig, axes = plt.subplots(1, 2, figsize=(9.8, 3.8), gridspec_kw={"width_ratios": [1.05, 1.15]})
+    fig, axes = plt.subplots(1, 3, figsize=(10.6, 3.55))
+    z = np.linspace(-1.0, 1.0, 700)
 
     ax = axes[0]
-    z = np.linspace(-1.0, 1.0, 600)
-    u = np.where(
-        (z >= DIS_LO) & (z <= DIS_HI),
-        z,
-        np.where((z >= CHG_LO) & (z <= CHG_HI), z, 0.0),
-    )
+    u_proj = np.where((z >= DIS_LO) & (z <= DIS_HI), z, np.where((z >= CHG_LO) & (z <= CHG_HI), z, 0.0))
     ax.fill_between([-1, DIS_HI], -1.15, 1.15, color=C_DIS, alpha=0.08)
     ax.fill_between([CHG_LO, 1], -1.15, 1.15, color=C_CHG, alpha=0.08)
-    ax.plot(z, u, color="#222", lw=1.6)
+    ax.plot(z, u_proj, color="#222", lw=1.6)
     ax.axhline(0, color="#bbb", lw=0.6)
-    ax.axvline(0, color="#bbb", lw=0.6)
     ax.set_xlim(-1.05, 1.05)
     ax.set_ylim(-1.15, 1.15)
     ax.set_xlabel(r"raw $z_{\mathrm{caes}}$")
-    ax.set_ylabel(r"projected $u_{\mathrm{caes}}$")
-    ax.set_title("Scalar projection (legacy)")
-    ax.text(0.05, 0.55, "gap → idle", fontsize=8, color="#666")
+    ax.set_ylabel(r"$u_{\mathrm{caes}}$")
+    ax.set_title("(i) Scalar projection")
+    ax.text(0.0, 0.55, "gap → idle", fontsize=8, color="#666", ha="center")
 
     ax = axes[1]
     ax.set_xlim(0, 10)
-    ax.set_ylim(0, 6.2)
+    ax.set_ylim(0, 6.4)
     ax.axis("off")
-    ax.set_title("Parameterized (mode, mag)")
-    _box(ax, (0.3, 4.35), 2.7, 1.35, r"mode logits" + "\n" + r"$k\in\{-,0,+\}$", fc="#E8F4FC", ec=C_DIS)
-    _box(ax, (3.3, 4.35), 2.5, 1.35, r"magnitude" + "\n" + r"$m\in[0,1]$", fc="#FDEFE2", ec=C_CHG)
-    _box(ax, (6.1, 4.35), 3.6, 1.35, r"decode $u=u(k,m)$" + "\nin a legal band", fc="#E7F6EE", ec=C_TD3)
-    _arrow(ax, (3.0, 5.0), (3.3, 5.0))
-    _arrow(ax, (5.8, 5.0), (6.1, 5.0))
-    _box(ax, (0.3, 0.7), 9.4, 2.9, "", fc="#FAFAFA", ec="#CCCCCC")
-    ax.text(5.0, 3.2, r"$\mathcal{F}(s)$ mask: illegal $k$ logits $\leftarrow -10^{9}$", ha="center", fontsize=8)
-    ax.add_patch(Rectangle((0.8, 1.25), 2.5, 0.45, color=C_DIS, alpha=0.85))
-    ax.add_patch(Rectangle((4.7, 1.25), 0.7, 0.45, color=C_IDLE, alpha=0.95))
-    ax.add_patch(Rectangle((6.7, 1.25), 2.5, 0.45, color=C_CHG, alpha=0.85))
-    ax.text(2.05, 1.95, "discharge", color=C_DIS, fontsize=8, ha="center")
-    ax.text(5.05, 1.95, "idle", color="#555", fontsize=8, ha="center")
-    ax.text(7.95, 1.95, "charge", color=C_CHG, fontsize=8, ha="center")
+    ax.set_title("(ii) Fixed-band hybrid")
+    _box(ax, (0.4, 4.15), 2.8, 1.45, r"mode logits" + "\n" + r"$k\in\{-,0,+\}$", fc="#E8F4FC", ec=C_DIS)
+    _box(ax, (3.6, 4.15), 2.8, 1.45, r"mag on static" + "\n" + r"device envelope", fc="#FDEFE2", ec=C_CHG)
+    _box(ax, (6.8, 4.15), 2.8, 1.45, "clamp after" + "\nsampling", fc="#F3F3F3", ec="#888")
+    _arrow(ax, (3.2, 4.88), (3.6, 4.88))
+    _arrow(ax, (6.4, 4.88), (6.8, 4.88))
+    ax.text(5.0, 2.55, "mask $k$; magnitude not on $\\mathcal{M}_k(s)$", ha="center", fontsize=8, color="#555")
+    ax.add_patch(Rectangle((1.1, 1.15), 2.2, 0.45, color=C_DIS, alpha=0.85))
+    ax.add_patch(Rectangle((4.55, 1.15), 0.7, 0.45, color=C_IDLE, alpha=0.95))
+    ax.add_patch(Rectangle((6.5, 1.15), 2.2, 0.45, color=C_CHG, alpha=0.85))
+    ax.text(2.2, 1.75, "discharge", color=C_DIS, fontsize=8, ha="center")
+    ax.text(4.9, 1.75, "idle", color="#555", fontsize=8, ha="center")
+    ax.text(7.6, 1.75, "charge", color=C_CHG, fontsize=8, ha="center")
 
-    fig.suptitle("Why the CAES head is a parameterized action, not a box", y=1.03, fontsize=11)
+    ax = axes[2]
+    lo, hi = -0.72, -0.40
+    y = 1.0 / (1.0 + np.exp(-3.2 * z))
+    u_dyn = lo + y * (hi - lo)
+    ax.fill_between([lo, hi], -1.15, 1.15, color=C_DIS, alpha=0.16)
+    ax.plot(z, u_dyn, color="#222", lw=1.6)
+    ax.axhline(0, color="#bbb", lw=0.6)
+    ax.set_xlim(-1.05, 1.05)
+    ax.set_ylim(-1.15, 1.15)
+    ax.set_xlabel(r"latent $z_k$")
+    ax.set_title(r"(iii) FS-HSAC $\mathcal{M}_k(s)$")
+    ax.text(0.15, -0.55, r"affine $+$ Jacobian", fontsize=8, color="#666", ha="center")
+
+    fig.suptitle("CAES action: projection vs fixed band vs feasible support", y=1.04, fontsize=11)
     fig.tight_layout()
     return _save(fig, "fig_action_rep")
 

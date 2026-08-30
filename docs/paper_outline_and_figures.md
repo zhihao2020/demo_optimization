@@ -1,5 +1,7 @@
 # Paper outline and figure checklist
 
+文档更新：2026-08-28 16:40 (+08:00)
+
 **Working title:** *Plant-level weekly dispatch of a thermal–BESS–CAES system with state-dependent multi-mode commands: a feasible-support hybrid soft actor–critic approach on a high-fidelity Modelica twin*
 
 **短标题:** *Feasible-support hybrid SAC for multi-mode CAES plant dispatch*
@@ -26,7 +28,7 @@
 
 **写作门槛（results gate）:** FS-HSAC 须三季满 168 h，且综合成本优于投影 SAC/TD3、fixed-band Hybrid SAC 与 PSO。数字未回之前 **§5 表图占位不填假数**；§6 只收束因果链，不写优越性百分比。
 
-文档更新：2026-08-26 17:10 (+08:00)。`Paper/main.tex` 摘要、highlights、引言分段、`tab:lit`（+Jendoubi/Ochoa/Fan 2019）、§5 实验协议与 §6 已改成期刊口径；内部 “results gate” 字样已从正文去掉。空表保留。`pdflatex`+`bibtex` 通过（24 页）。
+文档更新：2026-08-27 22:10 (+08:00)。`Paper/main.tex` 摘要、highlights、引言分段、`tab:lit`（+Jendoubi/Ochoa/Fan 2019）、§5 实验协议与 §6 已改成期刊口径；内部 “results gate” 字样已从正文去掉。空表保留。`pdflatex`+`bibtex` 通过（24 页）。
 
 ---
 
@@ -101,7 +103,7 @@
 ### 3. Problem formulation
 
 - 3.1–3.3 发电 / 转换 / 储能物理（保留）
-- 3.4 系统运行约束：min-load 带、模式锁、最短运行——**写在约束里，不当发现**；断开合法集作设备包线
+- 3.4 系统运行约束：min-load 带、模式锁——**写在约束里，不当发现**；断开合法集作设备包线；无最短运行锁（崔 2024 启停费）
 - 3.5 优化目标 \(J^{\mathrm{gen}}\) 分项 + 周末库存软加分
 - 3.6 **状态相关混合 MDP**：\(\mathcal A(s)=\mathcal A_{\mathrm{tp}}\times\mathcal A_{\mathrm{bat}}\times\bigcup_k\{k\}\times\mathcal M_k(s)\)；解码进动态区间；奖励 \(r^{\mathrm{ext}}\)
 - **图：** Fig.4 `fig_caes_legal`。
@@ -196,8 +198,8 @@ Basename 均在 `Paper/figures/`。
 | Fig.2 | `fig_price_tou` | 月度 TOU：冬评日 + 1 月 vs 8 月 | 有（`gen_fig_price_tou.py`） |
 | Fig.3 | `fig_seasonal_boundary` | 三季 held-out 周风光荷 + 月度价 | 有（`gen_fig_seasonal_boundary.py`；周 5/18/31） |
 | Fig.4 | `fig_caes_legal` | CAES 合法包线 + 模式锁 | 有 |
-| Fig.5 | `fig_action_rep` | 投影 vs 混合支撑 | 有（宜更新标注 FS-HSAC） |
-| Fig.6 | `fig_algorithm` | FS-HSAC 闭环 | 有（宜更新：双 buffer / \(C_\psi\)） |
+| Fig.5 | `fig_action_rep` | 投影 vs 固定带 vs \(\mathcal M_k(s)\) | 有（三栏 matplotlib） |
+| Fig.6 | `fig_algorithm` | FS-HSAC 闭环（拆分 \(\mathcal D_B/\mathcal D_F\)） | 有（`gen_fig_algorithm.py`；Image 草稿 `fig_algorithm_imgen.jpg`） |
 | Fig.7+ | 功率平衡 / SoC / 成本条 | §5 | 待数据 |
 
 ### B. 附录 / 补充

@@ -12,12 +12,14 @@ from market.settlement import settle_grid_step
 SOC_KEYS = ("battery_soc", "caes_gas_soc", "caes_hot_soc", "caes_cold_soc")
 ECONOMIC_TOTAL = "economic_cashflow_total"
 ECONOMIC_GRID = "economic_cashflow_grid"
+ECONOMIC_BATTERY = "economic_cashflow_battery"
+ECONOMIC_CAES = "economic_cashflow_caes"
 ECONOMIC_COMPONENTS = (
     "economic_cashflow_wind",
     "economic_cashflow_pv",
     "economic_cashflow_thermal",
-    "economic_cashflow_battery",
-    "economic_cashflow_caes",
+    ECONOMIC_BATTERY,
+    ECONOMIC_CAES,
     "economic_cashflow_load",
     ECONOMIC_GRID,
 )
@@ -406,6 +408,39 @@ class RewardCalculator:
             "grid_contract_p_abs_w": float(abs(p)),
         }
 
+    def _storage_use_reward(self, outputs: Mapping[str, float]) -> tuple[float, dict[str, float]]:
+        """Cui 2024 Eq. (35) R^F indicator. Learning-only; not part of J^gen."""
+        cfg = self.config.get("storage_use") or {}
+        zero = {
+            "storage_use_enabled": 0.0,
+            "storage_use_reward": 0.0,
+            "storage_use_small": 0.0,
+            "storage_use_large": 0.0,
+            "storage_use_p_disp_w": 0.0,
+        }
+        if not bool(cfg.get("enabled", False)):
+            return 0.0, zero
+        p_grid = float(outputs.get(str(cfg.get("grid_power_key", "p_grid")), 0.0) or 0.0)
+        p_caes = float(outputs.get(str(cfg.get("caes_power_key", "p_caes")), 0.0) or 0.0)
+        p_bat = float(outputs.get(str(cfg.get("battery_power_key", "p_battery")), 0.0) or 0.0)
+        p_disp = p_grid + p_caes + p_bat
+        theta = float(cfg.get("theta_w", 5.0e7))
+        active_w = float(cfg.get("active_w", 1.0e6))
+        rf_coef = float(cfg.get("rf_coef", 0.5))
+        caes_on = abs(p_caes) >= active_w
+        bess_on = abs(p_bat) >= active_w
+        small = abs(p_disp) < theta
+        hit_small = small and bess_on and not caes_on
+        hit_large = (not small) and caes_on
+        total = float(rf_coef) if (hit_small or hit_large) else 0.0
+        return total, {
+            "storage_use_enabled": 1.0,
+            "storage_use_reward": total,
+            "storage_use_small": 1.0 if hit_small else 0.0,
+            "storage_use_large": 1.0 if hit_large else 0.0,
+            "storage_use_p_disp_w": float(p_disp),
+        }
+
     def _curtailment_cost(self, outputs: Mapping[str, float], *, dt_h: float) -> tuple[float, dict[str, float]]:
         """C^CUT: curtailment + unserved penalties [CNY] from FMU powers."""
         cfg = self.config.get("curtailment") or {}
@@ -550,9 +585,9 @@ class RewardCalculator:
     def caes_startup_unit_cny(cfg: Mapping[str, Any]) -> float:
         """CNY per compressor/expander switch from Cui 2024 Table 2.
 
-        Source case: 3.42 USD at 800 kW. Default ``scale_mode: linear_capacity``
-        extrapolates by P_cap/P_ref (scenario, not authorised by the source paper).
-        Modes: ``none`` (no capacity scale), ``linear_capacity``, ``sqrt_capacity``.
+        Source case: 3.42 USD at 800 kW. Default ``scale_mode: none`` matches
+        Cui 2024 Table 2 (no capacity scale). ``linear_capacity`` / ``sqrt_capacity``
+        remain available as explicit plant-scale scenarios.
         Explicit ``c_su_cny`` overrides (tests only).
         """
         if cfg.get("c_su_cny") is not None and str(cfg.get("c_su_cny")).strip() != "":
@@ -563,7 +598,7 @@ class RewardCalculator:
         fx = float(cfg.get("usd_cny", 7.2))
         if p_ref <= 0.0:
             return 0.0
-        mode = str(cfg.get("scale_mode", "linear_capacity")).lower().strip()
+        mode = str(cfg.get("scale_mode", "none")).lower().strip()
         ratio = max(p_cap / p_ref, 0.0)
         if mode in ("none", "unscaled", "ref"):
             scale = 1.0
@@ -633,6 +668,8 @@ class RewardCalculator:
 
         ΔJ_gen = ΔJ_cash − π·Δm − C^CUT − C^deg − C^su − C^grid（Python 权威经济层）。
         market_prices 若提供 buy/sell，则用分时电价替换 FMU 电网增量。
+        默认再从 ΔJ_cash 扣除 FMU 电池/CAES 设备现金流：母线 Electrical.C 是
+        flow 变量，设备侧 0.2/0.4 元/kWh 记账在 bus 上符号相反，且与 TOU 重复。
         """
         if self.previous_cashflow is None:
             raise RuntimeError("RewardCalculator 必须先 reset")
@@ -669,6 +706,22 @@ class RewardCalculator:
                 **settled,
                 "fmu_grid_cashflow_delta": fmu_grid_delta,
             }
+
+        fmu_battery_delta = float(delta.get(ECONOMIC_BATTERY, 0.0) or 0.0)
+        fmu_caes_delta = float(delta.get(ECONOMIC_CAES, 0.0) or 0.0)
+        exclude_storage = bool(self.config.get("exclude_storage_device_cash", True))
+        storage_removed = 0.0
+        if exclude_storage:
+            storage_removed = fmu_battery_delta + fmu_caes_delta
+            cash_delta = float(cash_delta) - storage_removed
+            delta = dict(delta)
+            delta[ECONOMIC_TOTAL] = cash_delta
+        storage_terms = {
+            "storage_device_cash_excluded": 1.0 if exclude_storage else 0.0,
+            "fmu_battery_cashflow_delta": fmu_battery_delta,
+            "fmu_caes_cashflow_delta": fmu_caes_delta,
+            "storage_bookkeeping_removed_cny": float(storage_removed),
+        }
 
         carbon_cost, carbon_terms = self._carbon_cost(
             outputs, dt_h=dt_h, is_final_step=bool(is_final_step)
@@ -710,7 +763,8 @@ class RewardCalculator:
                 terminal_bonus = -fail_pen * l1_err
         elif gates and term.get("mode") == "quadratic_penalty":
             terminal_bonus = -float(term.get("quadratic_weight", 1.0)) * diag["terminal_soc_l2_error"]
-        reward = economic_reward + shaping_reward + terminal_bonus
+        use_reward, use_terms = self._storage_use_reward(outputs)
+        reward = economic_reward + shaping_reward + terminal_bonus + float(use_reward)
         terms: dict[str, float] = {
             "economic_cashflow_total": current[ECONOMIC_TOTAL],
             "economic_cashflow_delta": cash_delta,
@@ -737,6 +791,8 @@ class RewardCalculator:
             **deg_terms,
             **su_terms,
             **grid_terms,
+            **use_terms,
+            **storage_terms,
         }
         for name in ECONOMIC_COMPONENTS:
             suffix = name.removeprefix("economic_cashflow_")

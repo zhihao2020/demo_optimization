@@ -45,7 +45,11 @@ Actor / critic objectives use a discrete sum over \(\mathcal K(s)\) (no Gumbel a
 \mathbb E_{u_k}\big[Q(s,k,u_k)-\alpha_c\log\pi_c(u_k\mid s,k)\big]
 -\alpha_d\log\pi_d(k\mid s).
 \]
-Dual temperatures \(\alpha_d,\alpha_c\) target discrete entropy \(-\log|\mathcal K(s)|\) and continuous entropy scaled by active continuous dimension.
+Dual temperatures \(\alpha_d,\alpha_c\) use Haarnoja's \(L(\alpha)=-\alpha(\mathbb E[\log\pi]+H_{\mathrm{target}})\). Discrete target is \(0.98\log|\mathcal K(s)|\) (Christodoulou), **not** \(-\log|\mathcal K|\). Continuous target is \(-\mathbb E[\mathrm{cont\_dim}]\) on \(\mathbb E[\log\pi_c]\), not analytic Gaussian entropy.
+
+Trainer knobs that transfer from Cui 2024 Table 4 (OCTD3): \(\varepsilon_{\max}=1.0\), \(\varepsilon_{\min}=0.05\), \(\Delta\varepsilon=6\times10^{-6}\) on a \(2\times10^5\)-step run, \(\alpha_{\mathrm{lr}}=10^{-4}\), \(\tau=0.005\), batch \(64\), \(\gamma=0.99\), replay \(10^4\). The fair week is \(5000\times168=8.4\times10^5\) steps, so \(\varepsilon\) and replay are scaled to the same horizon fraction ( \(\varepsilon\) hits \(0.05\) at \(158\,333/200\,000\approx0.79\) of training; replay \(4.2\times10^4\) ). TD3 delay \(D=2\), Gaussian \(\sigma^2=0.1\), option temperature \(\kappa=1\), and PFI/CCI weight \(w=0.2\) are **not** SAC knobs and are not copied. Dual temperatures stay clamped to \([0.05,2]\) (Haarnoja, not Cui \(\kappa\)). `storage_use` is Eq. (35) \(R^F\) on \(r^{\mathrm{ext}}\) only; mix weight \(0.5\). \(\theta=50\) MW is a plant-scale stand-in: Cui's \(\theta_{\mathrm{thr}}\) is “from historical data”, no numeric value.
+
+文档更新：2026-08-30 20:20 (+08:00)
 
 Critic input is \((s,u^{\mathrm{tp}},u^{\mathrm{bat}},\mathrm{onehot}(k),m)\), not a collapsed scalar \(u_{\mathrm{caes}}\).
 

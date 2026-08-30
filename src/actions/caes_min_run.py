@@ -9,8 +9,9 @@ from .mode_mask import ModeMask
 from .types import CaesMode
 
 
-# CAES 最短连续运行步数(MIN_CAES_RUN_STEPS)：非 idle 段须连续成功运行该步数后才解锁。
-MIN_CAES_RUN_STEPS = 4
+# 1 = no dwell lock. Cui 2024 uses start-up cost only (no MUT/MDT).
+# Pass min_steps>=2 to restore a consecutive-run lock (tests use 4).
+MIN_CAES_RUN_STEPS = 1
 
 
 @dataclass
@@ -51,6 +52,8 @@ class CaesMinimumRunController:
         Returns:
             (mask, status)：叠加最短运行后的模式掩码，以及含 caes_min_run_event 的状态字典。
         """
+        if int(self.min_steps) <= 1:
+            return physical_mask, {**self.status(), "caes_min_run_event": None}
         event: dict[str, Any] | None = None
         if self.active_mode is not None and not physical_mask.allows(self.active_mode):
             event = self.interrupt("locked_mode_no_longer_safe", step=step)

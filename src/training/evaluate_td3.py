@@ -61,6 +61,7 @@ def evaluate_policy(
     reset_options: dict[str, Any] | None = None,
     max_steps: int | None = None,
     soft_shell: bool = False,
+    deterministic: bool = True,
 ) -> dict[str, Any]:
     """评估单个时间窗口内的策略表现。
 
@@ -72,6 +73,7 @@ def evaluate_policy(
         reset_options: 传给 ``env.reset(options=...)`` 的选项，如 ``start_time``。
         max_steps: 最大步数；用于年度尾窗不足一周时截断。
         soft_shell: 为 True 时包装预检重试，并在 ``predict`` 抛 NoSafeAction 时用保守动作。
+        deterministic: 传给 ``policy.predict``；主表 greedy 为 True。
 
     Returns:
         含步数、奖励、成本分项、SOC、CAES 合规率等字段的字典。
@@ -108,6 +110,10 @@ def evaluate_policy(
         "grid_contract_violation_hours": 0.0,
         "solver_timeout_count": 0.0,
         "solver_fail_count": 0.0,
+        "caes_hours_nonzero": 0.0,
+        "caes_hours_discharge": 0.0,
+        "caes_hours_idle": 0.0,
+        "caes_hours_charge": 0.0,
         "_decision_times_s": [],
     }
     previous_thermal: float | None = None
@@ -125,7 +131,7 @@ def evaluate_policy(
     while True:
         t_dec0 = time.perf_counter()
         try:
-            predicted = policy.predict(obs, deterministic=True)
+            predicted = policy.predict(obs, deterministic=deterministic)
             action = predicted[0] if isinstance(predicted, tuple) else predicted
         except (NoSafeActionFoundError, FeasibleSetEmpty):
             if not soft_shell or shell is None:
@@ -220,6 +226,19 @@ def evaluate_policy(
             metrics["unserved_energy_mwh"] += float(current.get("p_unserved", 0)) * 1e-6 * dt_hours
             metrics["battery_throughput_mwh"] += abs(float(current.get("p_battery", 0))) * 1e-6 * dt_hours
             metrics["caes_throughput_mwh"] += abs(float(current.get("p_caes", 0))) * 1e-6 * dt_hours
+            if abs(float(current.get("p_caes", 0))) > 1e6:
+                metrics["caes_hours_nonzero"] += 1.0
+            mode = info.get("requested_caes_mode")
+            try:
+                mode_i = int(mode)
+            except (TypeError, ValueError):
+                mode_i = 1
+            if mode_i == 0:
+                metrics["caes_hours_discharge"] += 1.0
+            elif mode_i == 2:
+                metrics["caes_hours_charge"] += 1.0
+            else:
+                metrics["caes_hours_idle"] += 1.0
             metrics["thermal_generation_mwh"] += abs(float(current.get("p_thermal", 0))) * 1e-6 * dt_hours
             # Generation channels are negative watts in the FMU; report positive MWh.
             w_av = abs(float(current.get("p_wind_available", 0))) * 1e-6 * dt_hours

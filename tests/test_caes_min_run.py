@@ -7,9 +7,18 @@ from envs.power_system_env import PowerSystemEnv
 from test_env_reset import FakeAdapter
 
 
+def test_default_min_run_does_not_lock_idle():
+    """Mainline min_steps=1 leaves idle legal after a charge step."""
+    ctrl = CaesMinimumRunController()
+    assert ctrl.min_steps == 1
+    ctrl.record_success(CaesMode.CHARGE, step=1)
+    mask, _ = ctrl.constrain(ModeMask(), steps_remaining=8, step=1)
+    assert mask.idle and mask.charge and mask.discharge
+
+
 def test_charge_locks_direction_for_four_successful_steps_with_variable_magnitude():
     """验证 CHARGE 成功后连续 4 步锁定方向且幅值可变。"""
-    ctrl = CaesMinimumRunController()
+    ctrl = CaesMinimumRunController(min_steps=4)
     mask, state = ctrl.constrain(ModeMask(), steps_remaining=8, step=0)
     assert mask.charge and state["caes_locked_mode"] is None
     for step in range(1, 5):
@@ -24,7 +33,7 @@ def test_charge_locks_direction_for_four_successful_steps_with_variable_magnitud
 
 def test_discharge_tail_cannot_start_and_unsafe_lock_is_interrupted():
     """验证尾段禁止新放电启动，且锁定模式变不安全时中断并计数。"""
-    ctrl = CaesMinimumRunController()
+    ctrl = CaesMinimumRunController(min_steps=4)
     tail, _ = ctrl.constrain(ModeMask(), steps_remaining=3, step=0)
     assert tail.idle and not tail.charge and not tail.discharge
     ctrl.record_success(CaesMode.DISCHARGE, step=1)
@@ -55,6 +64,7 @@ def test_environment_rejects_idle_during_locked_run_without_fmu_step():
     """验证锁定运行中 IDLE 被拒绝且不调用 FMU。"""
     adapter = FakeAdapter()
     env = PowerSystemEnv(adapter=adapter)
+    env.caes_min_run.min_steps = 4
     env.episode_steps = 4
     env.reset()
     _, _, _, _, first = env.step(_action(CaesMode.DISCHARGE, 0.2))
@@ -71,6 +81,7 @@ def test_environment_forbids_new_start_in_tail():
     """验证 episode 尾段禁止新启动 CAES 放电且不步进 FMU。"""
     adapter = FakeAdapter()
     env = PowerSystemEnv(adapter=adapter)
+    env.caes_min_run.min_steps = 4
     env.episode_steps = 3
     env.reset()
     _, _, _, truncated, rejected = env.step(_action(CaesMode.DISCHARGE, 0.2))

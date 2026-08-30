@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,13 @@ from training.hybrid_common.eval_and_save import (
     prepare_run_dir,
     write_summary_and_report,
 )
+from training.hybrid_common.explore import (
+    CUI_BATCH,
+    CUI_LR,
+    CUI_TAU,
+    explore_epsilon,
+    scaled_replay,
+)
 from training.hybrid_common.policy_wrapper import RandomFeasiblePolicy
 from training.hybrid_td3.train import (
     _soft_shell_enabled,
@@ -38,7 +46,7 @@ def run_fs_hsac_training(
     run_dir: str | Path = "runs/fs_hsac_smoke",
     seed: int = 0,
     learning_starts: int = 256,
-    batch_size: int = 128,
+    batch_size: int = CUI_BATCH,
     formal: bool = False,
     enable_shadow: bool | None = None,
     forecast_enabled: bool | None = None,
@@ -50,10 +58,10 @@ def run_fs_hsac_training(
 ) -> dict[str, Any]:
     """Train FS-HSAC v2 on the FMU twin with split Bellman / feasibility replay.
 
-    Paper mainline keeps the residual feasibility penalty on. Support-only
-    ablation: ``use_feasibility_penalty=False`` or ``FS_HSAC_NO_FEAS=1``
-    (``scripts/train_seasonal.py --method fs_hsac --support``). Soft shell
-    stays off for the paper protocol.
+    Paper mainline is support-only: ``use_feasibility_penalty=False`` or
+    ``FS_HSAC_NO_FEAS=1`` (``scripts/train_seasonal.py --method fs_hsac --support``).
+    Residual C_psi (this function's default True) is appendix-only.
+    Soft shell stays off for the paper protocol.
     """
     import os
 
@@ -102,12 +110,16 @@ def run_fs_hsac_training(
         )
 
     controller = GiveSafeController(oracle=env.oracle, shadow=shadow, config=gs_cfg)
-    buffer = FSHSACReplayBuffer(capacity=100_000)
+    buffer = FSHSACReplayBuffer(capacity=scaled_replay(int(total_valid_steps)))
     collector = FSHSACCollector(buffer, controller)
     obs_dim = int(np.prod(env.observation_space.shape))
     agent = FSHSAC(
         obs_dim=obs_dim,
         gamma=float(env.reward_calculator.config.get("gamma", 0.99)),
+        tau=CUI_TAU,
+        actor_lr=CUI_LR,
+        critic_lr=CUI_LR,
+        alpha_lr=CUI_LR,
         use_feasibility_penalty=use_feasibility_penalty,
         feasibility_beta=feasibility_beta,
         device=str(compute["device"]),
@@ -131,8 +143,10 @@ def run_fs_hsac_training(
     random_policy = RandomFeasiblePolicy(env)
     valid_steps = 0
     episode = 0
+    caes_nonzero = 0
     step_log: list[dict] = []
     episode_start_times: list[float] = []
+    progress_path = run_dir / "train" / "progress.json"
 
     def reset_training_episode(index: int):
         start_time = training_start_seconds(
@@ -199,7 +213,11 @@ def run_fs_hsac_training(
                 continue
 
             def propose():
-                if valid_steps < learning_starts or np.random.rand() < 0.1:
+                if valid_steps < learning_starts:
+                    return random_policy.predict(obs, feasible=feasible)
+                remain = max(int(total_valid_steps) - int(learning_starts), 1)
+                eps = explore_epsilon(valid_steps - learning_starts, remain)
+                if np.random.rand() < eps:
                     return random_policy.predict(obs, feasible=feasible)
                 return agent.select_action(obs, feasible, deterministic=False)
 
@@ -209,6 +227,14 @@ def run_fs_hsac_training(
             if info.get("transition_type") == "physical" and info.get("transition_valid"):
                 valid_steps += 1
                 metrics: dict[str, float] = {}
+                raw_u = info.get("requested_u_caes", 0.0)
+                try:
+                    u_caes = abs(float(np.asarray(raw_u).reshape(-1)[0]))
+                except (TypeError, ValueError):
+                    u_caes = 0.0
+                if u_caes > 1e-6:
+                    caes_nonzero += 1
+                caes_frac = caes_nonzero / max(valid_steps, 1)
                 if buffer.bellman_size >= learning_starts:
                     metrics = agent.update(buffer, batch_size=min(batch_size, len(buffer)))
                     if buffer.feasibility_size >= 64:
@@ -218,21 +244,35 @@ def run_fs_hsac_training(
                             use_feasibility_penalty and feas_trainer.enabled
                         )
                 if valid_steps % 500 == 0 or valid_steps == total_valid_steps:
-                    step_log.append(
-                        {
-                            "valid_step": valid_steps,
-                            "reward": reward,
-                            "attempts": info.get("givesafe_attempt_count"),
-                            "rejected": info.get("givesafe_rejected_attempts"),
-                            **metrics,
-                        }
+                    entry = {
+                        "valid_step": valid_steps,
+                        "reward": reward,
+                        "attempts": info.get("givesafe_attempt_count"),
+                        "rejected": info.get("givesafe_rejected_attempts"),
+                        "caes_nonzero": caes_nonzero,
+                        "caes_frac": caes_frac,
+                        **metrics,
+                    }
+                    step_log.append(entry)
+                    progress_path.parent.mkdir(parents=True, exist_ok=True)
+                    progress_path.write_text(
+                        json.dumps(entry, indent=2, ensure_ascii=False, default=str),
+                        encoding="utf-8",
                     )
                 pbar.update(1)
+                remain = max(int(total_valid_steps) - int(learning_starts), 1)
+                eps_now = (
+                    1.0
+                    if valid_steps < learning_starts
+                    else explore_epsilon(valid_steps - learning_starts, remain)
+                )
                 pbar.set_postfix(
                     ep=episode,
                     r=f"{float(reward):.3f}",
                     ad=f"{float(agent.last_metrics.get('alpha_d', 0.0)):.3f}",
                     ac=f"{float(agent.last_metrics.get('alpha_c', 0.0)):.3f}",
+                    eps=f"{eps_now:.2f}",
+                    caes=f"{caes_frac:.2f}",
                     refresh=False,
                 )
             if terminated or truncated:

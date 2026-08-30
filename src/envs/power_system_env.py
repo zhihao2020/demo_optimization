@@ -263,7 +263,8 @@ class PowerSystemEnv(gym.Env):
         self.failure_records: list[FailureRecord] = []
         self.last_step_diagnostics: dict[str, Any] = {}
         self._pending_action_meta: dict[str, Any] = {}
-        self.caes_min_run = CaesMinimumRunController()
+        min_run = int((self.config.get("caes") or {}).get("min_run_steps", 1))
+        self.caes_min_run = CaesMinimumRunController(min_steps=max(1, min_run))
 
     def build_observation(self) -> np.ndarray:
         """物理输出 + 可选日前 forecast + 可选分时电价前瞻 + 年内辅助特征。"""

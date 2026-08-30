@@ -19,6 +19,7 @@ from training.hybrid_common.eval_and_save import (
     prepare_run_dir,
     write_summary_and_report,
 )
+from training.hybrid_common.explore import CUI_BATCH, CUI_LR, CUI_TAU, explore_epsilon, scaled_replay
 from training.hybrid_common.policy_wrapper import RandomFeasiblePolicy
 from training.hybrid_td3.buffer import SafetyDataset
 from training.hybrid_td3.givesafe_collector import GiveSafeTransitionCollector
@@ -38,7 +39,7 @@ def run_hybrid_sac_training(
     run_dir: str | Path = "runs/givesafe_sac_smoke",
     seed: int = 0,
     learning_starts: int = 256,
-    batch_size: int = 128,
+    batch_size: int = CUI_BATCH,
     formal: bool = False,
     enable_shadow: bool | None = None,
     forecast_enabled: bool | None = None,
@@ -109,7 +110,7 @@ def run_hybrid_sac_training(
 
     controller = GiveSafeController(oracle=env.oracle, shadow=shadow, config=gs_cfg)
     buffer = HybridGiveSafeReplayBuffer(
-        capacity=100_000,
+        capacity=scaled_replay(int(total_valid_steps)),
         physical_fraction=float(replay_cfg.get("physical_fraction", 0.7)),
         givesafe_fraction=float(replay_cfg.get("givesafe_fraction", 0.3)),
     )
@@ -120,6 +121,10 @@ def run_hybrid_sac_training(
     agent = HybridSAC(
         obs_dim=int(np.prod(env.observation_space.shape)),
         gamma=float(env.reward_calculator.config.get("gamma", 0.99)),
+        tau=CUI_TAU,
+        actor_lr=CUI_LR,
+        critic_lr=CUI_LR,
+        alpha_lr=CUI_LR,
         parameterized_caes=True,
     )
     resumed: str | None = None
@@ -186,8 +191,11 @@ def run_hybrid_sac_training(
                 continue
 
             def propose():
-                """随机或策略采样下一步动作提案。"""
-                if valid_steps < learning_starts or np.random.rand() < 0.1:
+                """Cui Table 4 ε-greedy mix with random feasible actions."""
+                if valid_steps < learning_starts:
+                    return random_policy.predict(obs)
+                remain = max(int(total_valid_steps) - int(learning_starts), 1)
+                if np.random.rand() < explore_epsilon(valid_steps - learning_starts, remain):
                     return random_policy.predict(obs)
                 return agent.select_action(obs, env.get_feasible_action_spec(), deterministic=False)
 

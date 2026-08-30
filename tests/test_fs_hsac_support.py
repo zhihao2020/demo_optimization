@@ -92,7 +92,7 @@ def test_illegal_mode_probability_zero():
     support = support_from_feasible_batch([feas] * 16)
     with torch.no_grad():
         out = actor.act(obs, support, deterministic=False)
-    assert torch.all(out["mode_probs"][:, MODE_CHARGE] < 1e-6)
+    assert torch.all(out["mode_probs"][:, MODE_CHARGE] == 0)
     assert torch.all(out["mode_idx"] != MODE_CHARGE)
 
 

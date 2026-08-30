@@ -5,9 +5,10 @@
   1. 未来 horizon 内风光荷与电价取 forecast_provider（主矩阵 mode=perfect，
      与 PSO / 混合 SAC 观测对齐；不是随机规划）。
   2. 电池与气罐用能量线性 SoC；省略热罐/冷罐、压力–温度 DAE 与变工况效率。
-  3. 压空用二元开停 + 大 M 落入 [-1,-0.33]∪{0}∪[0.86,1]；最短运行在视界内
-     用 UC 型时序约束近似（MIN_CAES_RUN_STEPS）。
+  3. 压空用二元开停 + 大 M 落入 [-1,-0.33]∪{0}∪[0.86,1]；无最短运行锁
+     （Cui 2024 只用启停费；min_run_steps=1）。
   4. 目标与 linprog 相同：购售电 + 燃料 + 碳 + 弃/缺电 + 电池放电磨损 + 末端库存软罚。
+     CAES 能量无度电价（eval J 扣除 FMU 储能设备现金流）。
   5. 只执行第一步，真仿真闭环；求解失败则回退到当前火电、零储能。
 
 这不是孪生上的全局最优，也不是综合收益的严格上界。
@@ -112,6 +113,7 @@ class RollingMilpController(RollingLinprogController):
             base = k * n_step
             c[base + 0] = c_th
             c[base + 2] = cfg.deg_yuan_per_mwh
+            # caes_ch / caes_dis (base+3/+4) stay 0: no FMU storage kWh price in eval J
             c[base + 5] = buy_mwh[k] + c_buy_extra
             c[base + 6] = -sell_mwh[k]
             c[base + 7] = cfg.nu_curt_yuan_per_mwh
