@@ -103,7 +103,8 @@ class GiveSafeController:
             NoSafeActionFoundError: 在 max_attempts 次内未找到安全动作时。
         """
         result = GiveSafeResult(safe_action=None, oracle_version=self.oracle.oracle_version)
-        for attempt in range(self.max_attempts):
+        n_try = 1 if deterministic else int(self.max_attempts)
+        for attempt in range(n_try):
             proposed = policy_sample_fn()
             result.proposed_actions.append(proposed)
             result.attempt_count = attempt + 1
@@ -143,8 +144,11 @@ class GiveSafeController:
             result.safe_action = proposed
             return result
         result.no_safe_action = True
+        first = result.safety_check_metadata[0] if result.safety_check_metadata else None
         raise NoSafeActionFoundError(
-            f"在 {self.max_attempts} 次尝试后仍无安全动作（无 fallback）",
-            attempts=self.max_attempts,
+            f"在 {n_try} 次尝试后仍无安全动作（无 fallback；deterministic={deterministic})",
+            attempts=n_try,
             rejected=list(result.rejected_actions),
+            first_check=first,
+            reasons=list(result.rejection_reasons),
         )

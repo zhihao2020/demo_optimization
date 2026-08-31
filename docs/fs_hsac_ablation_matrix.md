@@ -1,42 +1,35 @@
-# FS-HSAC ablation matrix & phased training protocol
+# PC-HybridTD3 ablation matrix & staged training
 
-Date: 2026-08-21. Code: `src/training/fs_hsac/`.  
-Paper mainline: `--method fs_hsac --support` (or `FS_HSAC_NO_FEAS=1`) vs `--method sac`.
+文档更新：2026-08-30 22:40 (+08:00)
 
-Do **not** change the density math in `actor.py` / `algorithm.py` / `action_support.py`.
+Code: `src/training/hybrid_td3/`.  
+Paper mainline: `--method td3` (dynamic \(\mathcal A_f(s)\)).
 
-## Methods
+Two ablations only (会议论文不再堆矩阵):
 
-| Tag | Role | Run dir pattern |
-|-----|------|-----------------|
-| FS-HSAC-support | **live** same-hour support-consistent Hybrid SAC; `use_feasibility_penalty=False` | `runs/seasonal_v1/<season>/fs_hsac_support_s0` |
-| param SAC | **live contrast** fixed-band Hybrid SAC (latent density then clamp) | `runs/seasonal_v1/<season>/sac_param_s0` |
-| FS-HSAC | appendix residual $C_\psi$ | `runs/seasonal_v1/<season>/fs_hsac_s0` |
-| proj SAC | optional archive | `runs/seasonal_v1/<season>/sac_s0` |
-| PSO / linprog / milp | setting diagnostics only; no superiority claim | existing |
+| Tag | Role | CLI / flag |
+|-----|------|------------|
+| PC-HybridTD3 | **live** parameterized hybrid TD3 on \(\mathcal A_f(s)\) | `--method td3` |
+| projection TD3 | Ablation 1: continuous box + \(\Pi_{\mathrm{bands}}\) | `--method td3 --ablation projection` |
+| static-support hybrid TD3 | Ablation 2: mode+mag on static bands | `--method td3 --ablation static-support` |
+| price-aware rule | engineering baseline | eval companion |
+| rolling MILP | model-based baseline (surrogate opt, FMU eval) | `--method milp` |
 
-## Phase order
+FS-HSAC / param SAC / HMSD are archive, not this matrix.
 
-1. **Unit / smoke** — `python logs/_smoke_fs_hsac.py` (optionally `--fmu-steps 100`)
-2. **transition seed 0, small budget** — support-only first
-   ```text
-   python scripts/train_seasonal.py --method fs_hsac --support --season transition --episodes 20 --seed 0 --run-dir runs/seasonal_v1/transition/fs_hsac_support_s0
-   python scripts/train_seasonal.py --method sac --season transition --episodes 20 --seed 0 --run-dir runs/seasonal_v1/transition/sac_param_s0
-   ```
-3. **three seasons seed 0 full budget** (`episodes=5000`) for the live pair
-4. Appendix full FS-HSAC and extra seeds only after the live pair exists
+## Stages (重构.txt)
 
-## Acceptance (bookkeeping; not a manuscript superiority claim)
-
-- report reject rate, `valid_steps=168`, comprehensive cost
-- truncated weeks never ranked on cash
-- `docs/fs_hsac_results_gate.md` stays `gate_passed: false` until the live pair is archived
+| Stage | Budget | Gate |
+|-------|--------|------|
+| A support-only | 10k decoded actions, no train | illegal mode = 0, bound violation = 0, NaN = 0 |
+| B FMU smoke | ~5k physical steps | charge and discharge appear; \(\Delta SOC^{gas}>0.05\); FMU fail = 0 |
+| C learnability | 20–50k | critic stable; mode not collapsed idle |
+| D formal | 300–500k physical / seed × {0,1,2} | TEST tables; 840k only if 500k still climbing |
 
 ## Status
 
 | Step | Status |
 |------|--------|
-| Unit gates | implemented (`tests/test_fs_hsac_*.py`) |
-| CLI `--support` / `--no-feas` | `scripts/train_seasonal.py` |
-| three-season full live pair | pending |
-| results gate | **false** |
+| P0 actor/critic/replay | implemented (`tests/test_pc_hybrid_td3.py`) |
+| CLI `--ablation` + 36/8/8 | implemented |
+| Stage A–D remote | not started |

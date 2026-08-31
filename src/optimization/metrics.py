@@ -106,6 +106,14 @@ def extract_kpi_from_eval(res: dict[str, Any], *, wall_s: float = 0.0, fmu_steps
         "thermal_mwh": metrics.get("thermal_generation_mwh"),
         "battery_throughput_mwh": metrics.get("battery_throughput_mwh"),
         "caes_throughput_mwh": metrics.get("caes_throughput_mwh"),
+        "caes_hours_charge": metrics.get("caes_hours_charge"),
+        "caes_hours_discharge": metrics.get("caes_hours_discharge"),
+        "caes_hours_idle": metrics.get("caes_hours_idle"),
+        "caes_mode_switches": metrics.get("caes_mode_switches"),
+        "caes_gas_soc_min": metrics.get("caes_gas_soc_min"),
+        "caes_gas_soc_max": metrics.get("caes_gas_soc_max"),
+        "caes_gas_soc_range": metrics.get("caes_gas_soc_range"),
+        "e_terminal": res.get("e_terminal"),
         "terminal_soc_satisfied": res.get("terminal_soc_satisfied"),
         "terminal_soc_l1": terms.get("terminal_soc_l1_error") or terms.get("terminal_soc_l1_energy"),
         "terminal_soc_l1_full": terms.get("terminal_soc_l1_full"),
@@ -115,6 +123,12 @@ def extract_kpi_from_eval(res: dict[str, Any], *, wall_s: float = 0.0, fmu_steps
         "forbidden_action_count": res.get("forbidden_action_count"),
         "soft_shell_count": res.get("soft_shell_count"),
         "givesafe_reject_proxy": res.get("forbidden_action_count"),
+        "givesafe_rejection_rate": res.get("proposal_rejection_rate") or res.get("givesafe_rejection_rate"),
+        "decision_time_mean_ms": (
+            float(metrics["decision_time_mean_s"]) * 1000.0
+            if metrics.get("decision_time_mean_s") is not None
+            else None
+        ),
         # --- online compute ---
         "decision_time_mean_s": metrics.get("decision_time_mean_s"),
         "decision_time_p95_s": metrics.get("decision_time_p95_s"),

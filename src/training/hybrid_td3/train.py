@@ -25,6 +25,7 @@ from training.episode_starts import eval_start_seconds, training_start_seconds
 from training.evaluate_td3 import evaluate_annual_policy, evaluate_policy
 from controllers.price_aware_rule import PriceAwareRuleController
 from controllers.rule_based_controller import RuleBasedController
+from training.hybrid_common.policy_wrapper import RandomFeasiblePolicy
 
 from .algorithm import HybridTD3
 from .buffer import SafetyDataset
@@ -36,61 +37,6 @@ def _soft_shell_enabled(explicit: bool | None = None) -> bool:
     if explicit is not None:
         return bool(explicit)
     return os.environ.get("SOFT_SHELL", "").strip().lower() in ("1", "true", "yes", "on")
-
-
-class RandomFeasiblePolicy:
-    """可行域内探索；默认偏置 IDLE/满发，避免均匀抽 CAES 导致早期无效吞吐。"""
-
-    def __init__(self, env: PowerSystemEnv, idle_bias: float = 0.55, high_tp_bias: float = 0.4):
-        self.env = env
-        self.idle_bias = float(idle_bias)
-        self.high_tp_bias = float(high_tp_bias)
-
-    def predict(self, _obs, deterministic: bool = False) -> dict:
-        """在可行域内均匀随机采样混合动作。
-
-        Args:
-            _obs: 观测（未使用）。
-            deterministic: 忽略。
-
-        Returns:
-            混合动作字典。
-
-        Raises:
-            FeasibleSetEmpty: 无可选 CAES 模式时抛出。
-        """
-        feasible = self.env.get_feasible_action_spec()
-        modes = [
-            m
-            for m, ok in zip(
-                (CaesMode.DISCHARGE, CaesMode.IDLE, CaesMode.CHARGE),
-                (feasible.mode_mask.discharge, feasible.mode_mask.idle, feasible.mode_mask.charge),
-            )
-            if ok
-        ]
-        if not modes:
-            raise FeasibleSetEmpty("无可选 CAES 模式")
-        if CaesMode.IDLE in modes and np.random.rand() < self.idle_bias:
-            mode = CaesMode.IDLE
-        else:
-            mode = modes[int(np.random.randint(len(modes)))]
-        if np.random.rand() < self.high_tp_bias:
-            # 偏高出力探索：在 [mid, high] 采样
-            mid = 0.5 * (feasible.u_tp_low + feasible.u_tp_high)
-            u_tp = float(np.random.uniform(mid, feasible.u_tp_high))
-        else:
-            u_tp = float(np.random.uniform(feasible.u_tp_low, feasible.u_tp_high))
-        # 电池：40% 采样 0（若可行），否则均匀
-        if feasible.u_battery_low <= 0.0 <= feasible.u_battery_high and np.random.rand() < 0.4:
-            u_bat = 0.0
-        else:
-            u_bat = float(np.random.uniform(feasible.u_battery_low, feasible.u_battery_high))
-        mag = 0.0 if mode == CaesMode.IDLE else float(np.random.uniform(0.0, 1.0))
-        return {
-            "u_tp": np.asarray([u_tp], dtype=np.float32),
-            "u_battery": np.asarray([u_bat], dtype=np.float32),
-            "u_caes": np.asarray([float((__import__("actions.caes_u", fromlist=["u_from_mode_mag"]).u_from_mode_mag(mode, mag)))], dtype=np.float32),
-        }
 
 
 class HybridPolicyWrapper:
@@ -317,19 +263,23 @@ def run_hybrid_training(
     total_valid_steps: int = 5000,
     run_dir: str | Path = "runs/givesafe_td3_smoke",
     seed: int = 0,
-    learning_starts: int = 256,
-    batch_size: int = 128,
+    learning_starts: int = 1024,
+    batch_size: int = 64,
     formal: bool = False,
     enable_shadow: bool | None = None,
     forecast_enabled: bool | None = None,
     annual_evaluation: bool = False,
-    random_explore_start: float = 0.25,
+    random_explore_start: float = 1.0,
     random_explore_end: float = 0.05,
     gradient_steps: int = 2,
     resume_from: str | Path | None = None,
     reset_critic_on_resume: bool = False,
-    rule_demo_fraction: float = 0.25,
+    rule_demo_fraction: float = 0.0,
     soft_shell: bool | None = None,
+    parameterized_caes: bool = True,
+    use_dynamic_support: bool = True,
+    forecast_mode: str | None = None,
+    require_gas_swing: float | None = None,
 ) -> dict[str, Any]:
     """Hybrid-GiveSafe-TD3 主训练循环：收集物理有效步、更新 TD3、评估并写 summary。
 
@@ -374,7 +324,12 @@ def run_hybrid_training(
 
     np.random.seed(seed)
     try:
-        env = PowerSystemEnv(require_complete_reward=formal, run_id=run_dir.name, forecast_enabled=forecast_enabled)
+        env = PowerSystemEnv(
+            require_complete_reward=formal,
+            run_id=run_dir.name,
+            forecast_enabled=forecast_enabled,
+            forecast_mode=forecast_mode,
+        )
     except IncompleteRewardConfigError as exc:
         return {"status": "blocked_incomplete_reward", "error": str(exc)}
 
@@ -404,8 +359,8 @@ def run_hybrid_training(
     controller = GiveSafeController(oracle=env.oracle, shadow=shadow, config=gs_cfg)
     buffer = HybridGiveSafeReplayBuffer(
         capacity=100_000,
-        physical_fraction=float(replay_cfg.get("physical_fraction", 0.7)),
-        givesafe_fraction=float(replay_cfg.get("givesafe_fraction", 0.3)),
+        physical_fraction=float(replay_cfg.get("physical_fraction", 1.0)),
+        givesafe_fraction=float(replay_cfg.get("givesafe_fraction", 0.0)),
     )
     safety_dataset = SafetyDataset()
     collector = GiveSafeTransitionCollector(
@@ -415,9 +370,12 @@ def run_hybrid_training(
     agent = HybridTD3(
         obs_dim=int(np.prod(env.observation_space.shape)),
         gamma=float(rew_cfg.get("gamma", 0.99)),
-        explore_noise=0.08,
+        actor_lr=1e-4,
+        critic_lr=1e-4,
+        explore_noise=0.1,
         q_clip=200.0,
-        parameterized_caes=True,
+        parameterized_caes=bool(parameterized_caes),
+        use_dynamic_support=bool(use_dynamic_support),
     )
     # 目标网络与带先验的 actor 同步
     agent.actor_target.load_state_dict(agent.actor.state_dict())
@@ -491,14 +449,17 @@ def run_hybrid_training(
         "episode_start_schedule": "annual_cycling_windows",
         "forecast_enabled": env.forecast_enabled,
         "forecast_horizon_hours": env.forecast_provider.horizon_hours if env.forecast_provider else 0,
+        "forecast_mode": forecast_mode or (env.forecast_provider.mode if env.forecast_provider else None),
         "observation_dim": int(np.prod(env.observation_space.shape)),
         "parameterized_caes": bool(agent.parameterized_caes),
+        "use_dynamic_support": bool(agent.use_dynamic_support),
+        "algorithm": "PC-HybridTD3",
         "training_recipe": {
             "random_explore_start": random_explore_start,
             "random_explore_end": random_explore_end,
             "gradient_steps": n_grad,
-            "actor_prior": "high_tp_idle_bias",
-            "random_idle_bias": True,
+            "actor_prior": "no_idle_bias",
+            "random_idle_bias": False,
             "rule_policy": rule_policy_name,
             "resume_from": resumed,
             "reset_critic_on_resume": bool(reset_critic_on_resume and resumed),
@@ -507,8 +468,11 @@ def run_hybrid_training(
         },
     }
 
+    warmup_checked = False
+    gas_soc_min: float | None = None
+    gas_soc_max: float | None = None
     try:
-        pbar = tqdm(total=total_valid_steps, desc="Hybrid-TD3", unit="step", dynamic_ncols=True)
+        pbar = tqdm(total=total_valid_steps, desc="PC-HybridTD3", unit="step", dynamic_ncols=True)
         while valid_steps < total_valid_steps:
             try:
                 feasible = env.get_feasible_action_spec()
@@ -521,26 +485,38 @@ def run_hybrid_training(
             rule_frac = float(np.clip(rule_demo_fraction, 0.0, 1.0))
 
             def propose():
-                # 预热：规则/随机混合；其后 ε-greedy，规则示范比例可配置（BC 后微调宜偏高）
                 if valid_steps < learning_starts:
-                    if np.random.rand() < max(rule_frac, 0.5):
-                        return rule_policy.predict(obs)
-                    return random_policy.predict(obs)
-                r = np.random.rand()
-                if r < eps * rule_frac:
-                    return rule_policy.predict(obs)
-                if r < eps:
-                    return random_policy.predict(obs)
-                return agent.select_action(obs, env.get_feasible_action_spec(), deterministic=False)
+                    return random_policy.predict(obs, feasible=feasible)
+                if np.random.rand() < eps:
+                    return random_policy.predict(obs, feasible=feasible)
+                return agent.select_action(obs, feasible, deterministic=False)
 
             obs, reward, terminated, truncated, info = collector.step_with_givesafe(
                 env, propose, deterministic=False
             )
             if info.get("transition_type") == "physical" and info.get("transition_valid"):
                 valid_steps += 1
-                # 探索噪声随进度略降
+                outputs = info.get("last_valid_outputs") or getattr(env, "last_outputs", None) or {}
+                soc_g = outputs.get("caes_gas_soc")
+                if soc_g is not None:
+                    sg = float(soc_g)
+                    gas_soc_min = sg if gas_soc_min is None else min(gas_soc_min, sg)
+                    gas_soc_max = sg if gas_soc_max is None else max(gas_soc_max, sg)
                 progress = valid_steps / max(total_valid_steps, 1)
-                agent.explore_noise = float(0.08 * (1.0 - 0.6 * progress))
+                agent.explore_noise = float(0.1 * (1.0 - 0.6 * progress))
+                agent.actor.gumbel_tau = float(max(0.2, 1.0 - 0.8 * progress))
+                if (not warmup_checked) and valid_steps >= learning_starts:
+                    counts = collector.stats.get("caes_mode_counts") or {}
+                    n_d = int(counts.get(0, 0))
+                    n_i = int(counts.get(1, 0))
+                    n_c = int(counts.get(2, 0))
+                    print(f"WARMUP modes discharge={n_d} idle={n_i} charge={n_c}", flush=True)
+                    if n_d <= 100 or n_c <= 100:
+                        raise RuntimeError(
+                            f"warm-up CAES coverage failed: D={n_d} C={n_c} I={n_i} "
+                            "(need D>100 and C>100 before gradient updates)"
+                        )
+                    warmup_checked = True
                 metrics = {}
                 if buffer.physical_size >= learning_starts:
                     for _ in range(n_grad):
@@ -571,21 +547,38 @@ def run_hybrid_training(
         else:
             result.update(status="completed", valid_steps=valid_steps)
         pbar.close()
-
+        swing = (
+            None
+            if gas_soc_min is None or gas_soc_max is None
+            else float(gas_soc_max - gas_soc_min)
+        )
+        result["caes_gas_soc_range_train"] = swing
+        result["stage_b_interaction"] = "passed"
+        if require_gas_swing is not None and (swing is None or swing <= float(require_gas_swing)):
+            result["stage_b_interaction"] = "failed"
+            result["error"] = f"ΔSOC_gas={swing} (need > {require_gas_swing})"
         agent.save(run_dir / "checkpoints" / "hybrid_givesafe_td3.pt")
         safety_dataset.save(run_dir / "train" / "safety_dataset.json")
 
         eval_opts = {"start_time": eval_start_seconds(env.config["fmu"])}
-        rule_env = PowerSystemEnv(run_id=f"{run_dir.name}_rule", forecast_enabled=forecast_enabled)
+        rule_env = PowerSystemEnv(
+            run_id=f"{run_dir.name}_rule",
+            forecast_enabled=forecast_enabled,
+            forecast_mode=forecast_mode,
+        )
         rule_result = evaluate_policy(
             rule_env,
-            RuleBasedController(rule_env),
+            PriceAwareRuleController(rule_env),
             run_dir / "trajectories" / "rule.csv",
             reset_options=eval_opts,
         )
         rule_env.close()
 
-        eval_env = PowerSystemEnv(run_id=f"{run_dir.name}_eval", forecast_enabled=forecast_enabled)
+        eval_env = PowerSystemEnv(
+            run_id=f"{run_dir.name}_eval",
+            forecast_enabled=forecast_enabled,
+            forecast_mode=forecast_mode,
+        )
         eval_shadow = None
         if use_shadow:
             fmu_path = eval_env.root / eval_env.config["fmu"]["path"]
@@ -617,10 +610,53 @@ def run_hybrid_training(
                 eval_shadow.close()
             eval_env.close()
         result["eval_start_time_seconds"] = eval_opts["start_time"]
+        if eval_result.get("eval_failed"):
+            result["stage_b_greedy_eval"] = "failed"
+            result["greedy_eval"] = "failed"
+            if result.get("stage_b_interaction") == "passed":
+                result["status"] = "partial_pass"
+            fail = eval_result.get("failure") or {}
+            (run_dir / "eval_failure.json").write_text(
+                json.dumps(fail, indent=2, ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
+        else:
+            result["stage_b_greedy_eval"] = "passed"
+            result["greedy_eval"] = "passed"
+        last_m = agent.last_metrics or {}
+        finite_q = True
+        for k in ("critic_loss", "actor_loss", "q1_mean"):
+            v = last_m.get(k)
+            if v is None:
+                continue
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                finite_q = False
+                break
+            if fv != fv or abs(fv) == float("inf"):
+                finite_q = False
+                break
+        counts = (collector.stats or {}).get("caes_mode_counts") or {}
+        n_d = int(counts.get(0, 0) or 0)
+        n_c = int(counts.get(2, 0) or 0)
+        result["stage_c_gates"] = {
+            "c1_learning_stability": bool(finite_q),
+            "c2_greedy_deployability": result.get("greedy_eval") == "passed",
+            "c3_storage_effectiveness": bool(
+                (swing is not None and swing > 0.05) and n_d > 0 and n_c > 0
+            ),
+            "caes_mode_counts": {"D": n_d, "I": int(counts.get(1, 0) or 0), "C": n_c},
+            "gas_soc_range": swing,
+        }
 
         annual_eval_result = None
         if annual_evaluation:
-            annual_env = PowerSystemEnv(run_id=f"{run_dir.name}_annual_eval", forecast_enabled=forecast_enabled)
+            annual_env = PowerSystemEnv(
+                run_id=f"{run_dir.name}_annual_eval",
+                forecast_enabled=forecast_enabled,
+                forecast_mode=forecast_mode,
+            )
             annual_shadow = None
             if use_shadow:
                 fmu_path = annual_env.root / annual_env.config["fmu"]["path"]
@@ -680,7 +716,21 @@ def run_hybrid_training(
     finally:
         if shadow is not None:
             shadow.close()
-        env.close()
+        try:
+            env.close()
+        except Exception:
+            pass
+        try:
+            (run_dir / "train").mkdir(parents=True, exist_ok=True)
+            (run_dir / "train" / "step_log.json").write_text(
+                json.dumps(step_log, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            result.setdefault("algo", "hybrid_givesafe_td3")
+            (run_dir / "summary.json").write_text(
+                json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+            )
+        except Exception:
+            pass
 
     (run_dir / "train").mkdir(parents=True, exist_ok=True)
     (run_dir / "train" / "step_log.json").write_text(
@@ -774,7 +824,7 @@ def run_td3_scratch(total_valid_steps: int = 35000, **kwargs) -> dict[str, Any]:
         训练 summary 字典。
     """
     kwargs.setdefault("rule_demo_fraction", 0.0)
-    kwargs.setdefault("random_explore_start", 0.40)
+    kwargs.setdefault("random_explore_start", 1.0)
     kwargs.setdefault("random_explore_end", 0.05)
     kwargs.setdefault("enable_shadow", False)
     return run_hybrid_training(

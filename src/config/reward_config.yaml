@@ -106,14 +106,14 @@ grid_contract:
 # Learning-only Cui 2024 Eq. (35) R^F. Not added to J^gen / linprog cash.
 # ω1=RR (BESS only) when |P^disp|<θ; ω2/ω3=LEB/SA (CAES on) when |P^disp|≥θ.
 storage_use:
-  enabled: true
+  enabled: false
   grid_power_key: p_grid
   caes_power_key: p_caes
   battery_power_key: p_battery
   theta_w: 5.0e7          # 50 MW; half of 100 MW battery rating, ~CAES min charge
-  rf_coef: 0.5            # Cui 2024 Eq. (35) mix weight; learning-only, not J^gen
+  rf_coef: 0.5            # Cui 2024 Eq. (35); paper mainline off — do not reward "running CAES"
   active_w: 1.0e6         # |P|≥1 MW counts as on
-  note: "r^ext only; indicator R^F, not a caes_active bonus on small deviations"
+  note: "r^ext only; indicator R^F; mainline disabled so CAES use is economic"
 battery_degradation:
   enabled: true
   # Cui-style convex cumulative discharge: ψ(δ)=a0·δ^p, C_t=ψ(δ_t)-ψ(δ_{t-1})

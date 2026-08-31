@@ -114,6 +114,24 @@ class FilteredReplayBuffer:
         u_tp = np.asarray([t.hybrid_action["u_tp"] for t in batch], dtype=np.float32)
         u_bat = np.asarray([t.hybrid_action["u_battery"] for t in batch], dtype=np.float32)
         u_caes = np.asarray([t.hybrid_action["u_caes"] for t in batch], dtype=np.float32)
+        from actions.caes_u import mag_from_u, mode_from_u
+
+        caes_mode = np.asarray(
+            [
+                int(t.hybrid_action.get("caes_mode", int(mode_from_u(float(t.hybrid_action["u_caes"])))))
+                for t in batch
+            ],
+            dtype=np.int64,
+        )
+        caes_magnitude = np.asarray(
+            [
+                float(
+                    t.hybrid_action.get("caes_magnitude", mag_from_u(float(t.hybrid_action["u_caes"])))
+                )
+                for t in batch
+            ],
+            dtype=np.float32,
+        )
         reward = np.asarray([t.reward for t in batch], dtype=np.float32)
         done = np.asarray([t.terminated for t in batch], dtype=np.float32)
         mask = np.stack([t.valid_mode_mask for t in batch]).astype(np.bool_)
@@ -121,12 +139,27 @@ class FilteredReplayBuffer:
             [(t.next_valid_mode_mask if t.next_valid_mode_mask is not None else t.valid_mode_mask) for t in batch]
         ).astype(np.bool_)
 
+        from actions.caes_u import CHARGE_HI, CHARGE_LO, DISCHARGE_HI, DISCHARGE_LO
+
+        _fb = {
+            "u_caes_discharge_low": DISCHARGE_LO,
+            "u_caes_discharge_high": DISCHARGE_HI,
+            "u_caes_charge_low": CHARGE_LO,
+            "u_caes_charge_high": CHARGE_HI,
+            "grid_residual_W": 0.0,
+            "grid_g_min_W": -5.0e8,
+            "grid_g_max_W": 5.0e8,
+            "p_cap_thermal_W": 1.5e8,
+            "p_cap_battery_W": 1.0e8,
+            "p_cap_caes_W": 1.5e8,
+        }
+
         def bounds_arr(key: str, next_b: bool = False):
             """从批次转移中提取动态界数组。"""
             vals = []
             for t in batch:
                 src = t.next_dynamic_action_bounds if next_b and t.next_dynamic_action_bounds else t.dynamic_action_bounds
-                vals.append(float(src[key]))
+                vals.append(float(src.get(key, _fb.get(key, 0.0))))
             return np.asarray(vals, dtype=np.float32)
 
         return {
@@ -135,6 +168,8 @@ class FilteredReplayBuffer:
             "u_tp": u_tp,
             "u_battery": u_bat,
             "u_caes": u_caes,
+            "caes_mode": caes_mode,
+            "caes_magnitude": caes_magnitude,
             "reward": reward,
             "done": done,
             "mode_mask": mask,
@@ -143,10 +178,27 @@ class FilteredReplayBuffer:
             "u_tp_high": bounds_arr("u_tp_high"),
             "u_bat_low": bounds_arr("u_battery_low"),
             "u_bat_high": bounds_arr("u_battery_high"),
+            "dis_lo": bounds_arr("u_caes_discharge_low"),
+            "dis_hi": bounds_arr("u_caes_discharge_high"),
+            "chg_lo": bounds_arr("u_caes_charge_low"),
+            "chg_hi": bounds_arr("u_caes_charge_high"),
             "next_u_tp_low": bounds_arr("u_tp_low", True),
             "next_u_tp_high": bounds_arr("u_tp_high", True),
             "next_u_bat_low": bounds_arr("u_battery_low", True),
             "next_u_bat_high": bounds_arr("u_battery_high", True),
+            "next_dis_lo": bounds_arr("u_caes_discharge_low", True),
+            "next_dis_hi": bounds_arr("u_caes_discharge_high", True),
+            "next_chg_lo": bounds_arr("u_caes_charge_low", True),
+            "next_chg_hi": bounds_arr("u_caes_charge_high", True),
+            "grid_residual_W": bounds_arr("grid_residual_W"),
+            "grid_g_min_W": bounds_arr("grid_g_min_W"),
+            "grid_g_max_W": bounds_arr("grid_g_max_W"),
+            "p_cap_thermal_W": bounds_arr("p_cap_thermal_W"),
+            "p_cap_battery_W": bounds_arr("p_cap_battery_W"),
+            "p_cap_caes_W": bounds_arr("p_cap_caes_W"),
+            "next_grid_residual_W": bounds_arr("grid_residual_W", True),
+            "next_grid_g_min_W": bounds_arr("grid_g_min_W", True),
+            "next_grid_g_max_W": bounds_arr("grid_g_max_W", True),
         }
 
 

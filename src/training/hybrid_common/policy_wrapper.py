@@ -6,7 +6,8 @@ from typing import Any, Protocol
 
 import numpy as np
 
-from actions.caes_u import clamp_u_caes_to_spec, physical_dict, u_from_mode_mag
+from actions.caes_u import physical_dict, u_from_mode_mag_feasible
+from actions.joint_support import coupling_from_feasible, decode_joint_numpy
 from actions import CaesMode
 from envs.failures import FeasibleSetEmpty
 from envs.power_system_env import PowerSystemEnv
@@ -72,7 +73,19 @@ class RandomFeasiblePolicy:
         u_tp = float(np.random.uniform(feasible.u_tp_low, feasible.u_tp_high))
         u_bat = float(np.random.uniform(feasible.u_battery_low, feasible.u_battery_high))
         mag = 0.0 if mode == CaesMode.IDLE else float(np.random.uniform(0.0, 1.0))
-        u_caes, _ = clamp_u_caes_to_spec(u_from_mode_mag(mode, mag), feasible)
+        u_caes = u_from_mode_mag_feasible(feasible, mode, mag)
+        ctx = coupling_from_feasible(feasible)
+        if ctx is not None:
+            u_tp, u_bat = decode_joint_numpy(
+                ctx,
+                float(feasible.u_tp_low),
+                float(feasible.u_tp_high),
+                float(feasible.u_battery_low),
+                float(feasible.u_battery_high),
+                float(u_caes),
+                float(u_tp),
+                float(u_bat),
+            )
         return physical_dict(float(u_tp), float(u_bat), float(u_caes))
 
 

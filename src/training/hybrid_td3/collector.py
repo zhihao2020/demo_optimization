@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from actions.caes_u import mode_from_u, np_as_scalar
+from actions.caes_u import feasible_bound_dict, mag_from_u, mode_from_u, np_as_scalar
 from actions.validator import physical_from_dict
 
 from .buffer import EconomicReplayBuffer, FilteredReplayBuffer, SafetyDataset, Transition
@@ -130,12 +130,7 @@ class ValidTransitionCollector:
                 next_observation=obs_before,
                 terminated=True,
                 valid_mode_mask=feasible.mode_mask.as_bool_array(),
-                dynamic_action_bounds={
-                    "u_tp_low": feasible.u_tp_low,
-                    "u_tp_high": feasible.u_tp_high,
-                    "u_battery_low": feasible.u_battery_low,
-                    "u_battery_high": feasible.u_battery_high,
-                },
+                dynamic_action_bounds=feasible_bound_dict(feasible),
                 reward_terms={},
                 physically_valid=False,
             )
@@ -152,6 +147,8 @@ class ValidTransitionCollector:
             "u_tp": float(physical["u_tp"]),
             "u_battery": float(physical["u_battery"]),
             "u_caes": float(physical["u_caes"]),
+            "caes_mode": mode,
+            "caes_magnitude": float(mag_from_u(float(physical["u_caes"]))),
         }
         self.safety_dataset.add_safe_transition(
             previous_observation=prev_outputs,
@@ -172,19 +169,9 @@ class ValidTransitionCollector:
             next_observation=np.asarray(obs, dtype=np.float32),
             terminated=bool(terminated or truncated),
             valid_mode_mask=feasible.mode_mask.as_bool_array(),
-            dynamic_action_bounds={
-                "u_tp_low": feasible.u_tp_low,
-                "u_tp_high": feasible.u_tp_high,
-                "u_battery_low": feasible.u_battery_low,
-                "u_battery_high": feasible.u_battery_high,
-            },
+            dynamic_action_bounds=feasible_bound_dict(feasible),
             next_valid_mode_mask=next_feasible.mode_mask.as_bool_array(),
-            next_dynamic_action_bounds={
-                "u_tp_low": next_feasible.u_tp_low,
-                "u_tp_high": next_feasible.u_tp_high,
-                "u_battery_low": next_feasible.u_battery_low,
-                "u_battery_high": next_feasible.u_battery_high,
-            },
+            next_dynamic_action_bounds=feasible_bound_dict(next_feasible),
             reward_terms=dict(info.get("reward_terms") or {}),
             constraint_metadata={"failure_type": None},
             physically_valid=True,

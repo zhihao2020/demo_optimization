@@ -67,6 +67,7 @@ def test_large_deviation_bess_only_scores_zero():
 def test_yaml_rf_coef_matches_cui():
     cfg = yaml.safe_load((ROOT / "src" / "config" / "reward_config.yaml").read_text(encoding="utf-8"))
     assert float(cfg["storage_use"]["rf_coef"]) == 0.5
+    assert cfg["storage_use"]["enabled"] is False
 
 
 def test_storage_use_not_in_j_gen_terms_as_cash():

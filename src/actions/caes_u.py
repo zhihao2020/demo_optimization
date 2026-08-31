@@ -153,10 +153,73 @@ def u_from_mode_mag(mode: CaesMode | int, mag: float) -> float:
 
 
 def u_from_mode_onehot_torch(onehot: torch.Tensor, mag: torch.Tensor) -> torch.Tensor:
-    """(B,3) one-hot [dis, idle, chg] and mag∈[0,1] → u_caes (B,)."""
+    """(B,3) one-hot [dis, idle, chg] and mag∈[0,1] → u_caes on the static envelope."""
     mag = mag.clamp(0.0, 1.0)
     u_dis = DISCHARGE_LO + mag * (DISCHARGE_HI - DISCHARGE_LO)
     u_chg = CHARGE_LO + mag * (CHARGE_HI - CHARGE_LO)
+    return onehot[:, 0] * u_dis + onehot[:, 2] * u_chg
+
+
+def caes_intervals_from_feasible(feasible: Any) -> dict[str, float]:
+    """Oracle intervals with static-envelope fallback when a direction is closed."""
+    dis = getattr(feasible, "u_caes_discharge", None)
+    chg = getattr(feasible, "u_caes_charge", None)
+    d_lo, d_hi = (float(dis[0]), float(dis[1])) if dis is not None else (DISCHARGE_LO, DISCHARGE_HI)
+    c_lo, c_hi = (float(chg[0]), float(chg[1])) if chg is not None else (CHARGE_LO, CHARGE_HI)
+    return {
+        "u_caes_discharge_low": d_lo,
+        "u_caes_discharge_high": d_hi,
+        "u_caes_charge_low": c_lo,
+        "u_caes_charge_high": c_hi,
+    }
+
+
+def feasible_bound_dict(feasible: Any) -> dict[str, float]:
+    """Thermal/battery + CAES oracle intervals for replay."""
+    out = {
+        "u_tp_low": float(feasible.u_tp_low),
+        "u_tp_high": float(feasible.u_tp_high),
+        "u_battery_low": float(feasible.u_battery_low),
+        "u_battery_high": float(feasible.u_battery_high),
+    }
+    out.update(caes_intervals_from_feasible(feasible))
+    meta = getattr(feasible, "metadata", None) or {}
+    if meta.get("joint_grid_coupling"):
+        out["grid_residual_W"] = float(meta["grid_residual_W"])
+        out["grid_g_min_W"] = float(meta["grid_g_min_W"])
+        out["grid_g_max_W"] = float(meta["grid_g_max_W"])
+        out["p_cap_thermal_W"] = float(meta["p_cap_thermal_W"])
+        out["p_cap_battery_W"] = float(meta["p_cap_battery_W"])
+        out["p_cap_caes_W"] = float(meta["p_cap_caes_W"])
+    return out
+
+
+def u_from_mode_mag_feasible(feasible: Any, mode: CaesMode | int, mag: float) -> float:
+    """Decode (mode, mag) onto the current oracle interval, not the static envelope."""
+    mode_i = int(mode)
+    mag = 0.0 if mode_i == int(CaesMode.IDLE) else float(np.clip(mag, 0.0, 1.0))
+    iv = caes_intervals_from_feasible(feasible)
+    if mode_i == int(CaesMode.DISCHARGE):
+        lo, hi = iv["u_caes_discharge_low"], iv["u_caes_discharge_high"]
+        return float(lo + mag * (hi - lo))
+    if mode_i == int(CaesMode.CHARGE):
+        lo, hi = iv["u_caes_charge_low"], iv["u_caes_charge_high"]
+        return float(lo + mag * (hi - lo))
+    return IDLE_U
+
+
+def u_from_mode_onehot_dynamic(
+    onehot: torch.Tensor,
+    mag: torch.Tensor,
+    dis_lo: torch.Tensor,
+    dis_hi: torch.Tensor,
+    chg_lo: torch.Tensor,
+    chg_hi: torch.Tensor,
+) -> torch.Tensor:
+    """Decode onto state-dependent [l_D,h_D] / [l_C,h_C]. Idle is a point mass at 0."""
+    mag = mag.clamp(0.0, 1.0)
+    u_dis = dis_lo + mag * (dis_hi - dis_lo)
+    u_chg = chg_lo + mag * (chg_hi - chg_lo)
     return onehot[:, 0] * u_dis + onehot[:, 2] * u_chg
 
 

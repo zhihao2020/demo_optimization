@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 
 from actions import CaesMode, FeasibilityOracle
-from actions.caes_u import physical_dict, u_from_mode_mag
+from actions.caes_u import physical_dict, u_from_mode_mag_feasible
 from controllers.rule_based_controller import RuleBasedController
 
 
@@ -121,4 +121,4 @@ class PriceAwareRuleController(RuleBasedController):
                 elif feasible.mode_mask.charge:
                     mode = CaesMode.CHARGE
 
-        return physical_dict(u_tp, u_bat, u_from_mode_mag(mode, mag))
+        return physical_dict(u_tp, u_bat, u_from_mode_mag_feasible(feasible, mode, mag))

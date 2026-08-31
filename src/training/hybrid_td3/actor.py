@@ -6,15 +6,22 @@ import torch
 import torch.nn as nn
 
 from actions.caes_u import (
+    CHARGE_HI,
+    CHARGE_LO,
+    DISCHARGE_HI,
+    DISCHARGE_LO,
     apply_mode_mask_to_u_torch,
+    caes_intervals_from_feasible,
     clamp_u_caes_to_spec,
     gumbel_mode_onehot,
     legalize_mode_mask,
     mask_mode_logits,
     physical_dict,
     project_u_caes_torch,
+    u_from_mode_onehot_dynamic,
     u_from_mode_onehot_torch,
 )
+from actions.joint_support import coupling_from_feasible, decode_joint_numpy
 
 
 def _mlp(in_dim: int, hidden: int = 256) -> nn.Sequential:
@@ -39,11 +46,13 @@ class HybridActor(nn.Module):
         *,
         continuous_caes: bool = True,
         parameterized_caes: bool = True,
+        use_dynamic_support: bool = True,
         gumbel_tau: float = 1.0,
     ):
         super().__init__()
         _ = continuous_caes
         self.parameterized_caes = bool(parameterized_caes)
+        self.use_dynamic_support = bool(use_dynamic_support)
         self.gumbel_tau = float(gumbel_tau)
         self.obs_dim = int(obs_dim)
         self.encoder = _mlp(obs_dim, hidden)
@@ -56,8 +65,7 @@ class HybridActor(nn.Module):
             self.caes_mag_head = nn.Linear(hidden, 1)
             nn.init.zeros_(self.caes_mode_head.weight)
             nn.init.zeros_(self.caes_mag_head.weight)
-            nn.init.constant_(self.caes_mode_head.bias, 0.0)
-            self.caes_mode_head.bias.data[1] = 0.4
+            nn.init.zeros_(self.caes_mode_head.bias)
             nn.init.zeros_(self.caes_mag_head.bias)
         else:
             self.caes_head = nn.Linear(hidden, 1)
@@ -81,6 +89,15 @@ class HybridActor(nn.Module):
         mapped = low + torch.sigmoid(z) * (high - low)
         return torch.minimum(torch.maximum(mapped, low), high)
 
+    @staticmethod
+    def _bound(value, batch: int, fill: float, device) -> torch.Tensor:
+        if value is None:
+            return torch.full((batch,), float(fill), device=device)
+        t = torch.as_tensor(value, dtype=torch.float32, device=device).reshape(-1)
+        if t.numel() == 1 and batch > 1:
+            t = t.expand(batch)
+        return t
+
     def act(
         self,
         obs: torch.Tensor,
@@ -93,11 +110,32 @@ class HybridActor(nn.Module):
         deterministic: bool = False,
         gumbel_tau: float = 1.0,
         explore_noise_std: float = 0.0,
+        dis_lo=None,
+        dis_hi=None,
+        chg_lo=None,
+        chg_hi=None,
+        use_dynamic_support: bool | None = None,
+        grid_residual=None,
+        grid_g_min=None,
+        grid_g_max=None,
+        p_cap_thermal=None,
+        p_cap_battery=None,
+        p_cap_caes=None,
     ) -> dict[str, torch.Tensor]:
         tau = gumbel_tau if gumbel_tau is not None else self.gumbel_tau
+        if use_dynamic_support is None:
+            use_dynamic_support = self.use_dynamic_support
+        b = int(obs.size(0))
+        device = obs.device
         out = self.forward_logits(obs)
         u_tp = self.map_bounded(out["z_tp"], u_tp_low, u_tp_high)
         u_bat = self.map_bounded(out["z_bat"], u_bat_low, u_bat_high)
+        d_lo = self._bound(dis_lo, b, DISCHARGE_LO, device)
+        d_hi = self._bound(dis_hi, b, DISCHARGE_HI, device)
+        c_lo = self._bound(chg_lo, b, CHARGE_LO, device)
+        c_hi = self._bound(chg_hi, b, CHARGE_HI, device)
+        onehot = None
+        mag = None
         if self.parameterized_caes:
             logits = mask_mode_logits(out["mode_logits"], mode_mask)
             onehot, _idx = gumbel_mode_onehot(
@@ -108,8 +146,11 @@ class HybridActor(nn.Module):
             )
             mag = torch.sigmoid(out["z_mag"])
             if explore_noise_std > 0 and not deterministic:
-                mag = (mag + 0.5 * explore_noise_std * torch.randn_like(mag)).clamp(0.0, 1.0)
-            u_caes = u_from_mode_onehot_torch(onehot, mag)
+                mag = (mag + explore_noise_std * torch.randn_like(mag)).clamp(0.0, 1.0)
+            if use_dynamic_support:
+                u_caes = u_from_mode_onehot_dynamic(onehot, mag, d_lo, d_hi, c_lo, c_hi)
+            else:
+                u_caes = u_from_mode_onehot_torch(onehot, mag)
         else:
             u_caes = project_u_caes_torch(torch.tanh(out["z_caes"]))
             if explore_noise_std > 0 and not deterministic:
@@ -123,14 +164,37 @@ class HybridActor(nn.Module):
         if mask_b.size(0) == 1 and u_caes.size(0) > 1:
             mask_b = mask_b.expand(u_caes.size(0), -1)
         u_caes = apply_mode_mask_to_u_torch(u_caes, mask_b)
-        return {
+        if grid_residual is not None:
+            from actions.joint_support import decode_joint_torch
+
+            u_tp, u_bat = decode_joint_torch(
+                u_tp,
+                u_bat,
+                u_caes,
+                u_tp_low,
+                u_tp_high,
+                u_bat_low,
+                u_bat_high,
+                self._bound(grid_residual, b, 0.0, device),
+                self._bound(grid_g_min, b, -5.0e8, device),
+                self._bound(grid_g_max, b, 5.0e8, device),
+                self._bound(p_cap_thermal, b, 1.5e8, device),
+                self._bound(p_cap_battery, b, 1.0e8, device),
+                self._bound(p_cap_caes, b, 1.5e8, device),
+            )
+        packed = {
             "u_tp": u_tp,
             "u_battery": u_bat,
             "u_caes": u_caes,
         }
+        if onehot is not None:
+            packed["mode_onehot"] = onehot
+            packed["mag"] = mag
+        return packed
 
     def act_numpy(self, obs, feasible, deterministic: bool = True, device="cpu", explore_noise_std: float = 0.0):
         self.eval()
+        iv = caes_intervals_from_feasible(feasible)
         with torch.no_grad():
             o = torch.as_tensor(obs, dtype=torch.float32, device=device).view(1, -1)
             mask = torch.as_tensor(
@@ -145,10 +209,27 @@ class HybridActor(nn.Module):
                 mask,
                 deterministic=deterministic,
                 explore_noise_std=0.0 if deterministic else explore_noise_std,
+                dis_lo=iv["u_caes_discharge_low"],
+                dis_hi=iv["u_caes_discharge_high"],
+                chg_lo=iv["u_caes_charge_low"],
+                chg_hi=iv["u_caes_charge_high"],
+                use_dynamic_support=self.use_dynamic_support,
             )
-        u_caes, _ = clamp_u_caes_to_spec(float(out["u_caes"][0].cpu()), feasible)
-        return physical_dict(
-            float(out["u_tp"][0].cpu()),
-            float(out["u_battery"][0].cpu()),
-            float(u_caes),
-        )
+        u_raw = float(out["u_caes"][0].cpu())
+        u_caes, clamped = clamp_u_caes_to_spec(u_raw, feasible)
+        _ = clamped  # audit only; live path already decodes inside A_f(s)
+        u_tp = float(out["u_tp"][0].cpu())
+        u_bat = float(out["u_battery"][0].cpu())
+        ctx = coupling_from_feasible(feasible)
+        if ctx is not None:
+            u_tp, u_bat = decode_joint_numpy(
+                ctx,
+                float(feasible.u_tp_low),
+                float(feasible.u_tp_high),
+                float(feasible.u_battery_low),
+                float(feasible.u_battery_high),
+                float(u_caes),
+                u_tp,
+                u_bat,
+            )
+        return physical_dict(u_tp, u_bat, float(u_caes))

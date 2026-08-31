@@ -1,50 +1,42 @@
 # Paper outline and figure checklist
 
-文档更新：2026-08-28 16:40 (+08:00)
+文档更新：2026-08-30 22:40 (+08:00)
 
-**Working title:** *Plant-level weekly dispatch of a thermal–BESS–CAES system with state-dependent multi-mode commands: a feasible-support hybrid soft actor–critic approach on a high-fidelity Modelica twin*
+**Working title:** *Feasible-Support Hybrid TD3 for Multi-Energy Scheduling with Nonconvex Compressed Air Energy Storage Actions*
 
-**短标题:** *Feasible-support hybrid SAC for multi-mode CAES plant dispatch*
+**短标题:** *Feasible-support hybrid TD3 for nonconvex CAES actions*
 
-**主方法:** **FS-HSAC v2**（状态相关可行支撑集上的混合 SAC：动态 \(\mathcal M_k(s)\)、精确模式枚举、双温度、残余可行性分类器）。旧 Hybrid SAC（固定设备带 + clamp）与投影 SAC 作消融。
+**主方法:** **PC-HybridTD3**（物理约束参数化混合 TD3：Actor 在 \(\mathcal A_f(s)\) 上解码 mode+magnitude；Critic 看 \((e_m,z)\)；经济 Bellman 只用 FMU 真转移）。投影连续 TD3 与静态带宽 hybrid TD3 为仅有的两组消融。FS-HSAC 不再作为论文身份。
 
 **体裁:** Applied Energy 能源调度 + DRL（对标 OCTD3 / GHTD3）。
 
-**单一源（数字）:** 主表取 `runs/seasonal_tou2026/**/fs_hsac_s0`（过 `docs/fs_hsac_results_gate.md` 后）。**禁止**把 year-constant 五档的 `seasonal_v1` 现金混入月度代理购电正文。`sac_param_s0` = fixed-band 消融；旧 `sac_s0` = 投影消融。
+**单一源（数字）:** Stage D 之后主表取 `runs/seasonal_tou2026/**/pc_hybrid_td3_s*`。**禁止**把 year-constant `seasonal_v1` 或归档 `fs_hsac_*` 现金混入月度代理购电正文。投影消融 = `--ablation projection`；静态支撑消融 = `--ablation static-support`。
 
 ---
 
-## 0. Status snapshot（2026-08-26）
+## 0. Status snapshot（2026-08-30）
 
 | 项 | 现状 |
 |----|------|
-| 代码 `src/training/fs_hsac/` | **已落地**；推理只采当前模式；精确三模式枚举留在 update |
-| 训练入口 | `scripts/train_seasonal.py --method fs_hsac`；远程 seed-0 在 `runs/seasonal_tou2026`（CPU 三季重开中） |
-| `Paper/main.tex` | **可投骨架**（cas-sc，24 页）：摘要/引言/`tab:lit`/C1–C4/§5 协议已去门控黑话；经济表仍空 |
+| 代码 `src/training/hybrid_td3/` | **P0 已落地**：动态 \(\mathcal A_f(s)\) 解码、6-D critic、target \(\arg\max m'\)+只噪 \(z\)、physical-only replay |
+| 训练入口 | `scripts/train_seasonal.py --method td3 --season all`；36/8/8 |
+| `Paper/main.tex` | 身份改为 PC-HybridTD3（摘要/引言/§4/算法/表头）；经济表仍空 |
 | 购电 | 2026 月度 110 kV 两部制；`tab:tou-monthly` + `tab:tou-windows`；09–12 顺延 8 月（S） |
 | PAMDP 形式化 | `docs/pamdp_formalization.md` |
-| 主数字源 | `seasonal_tou2026` FS-HSAC seed-0（待三季满 168 h 过门） |
-| 消融对照 | 投影 SAC/TD3；fixed-band hybrid SAC；FS-HSAC-support；PSO / linprog / MILP |
+| 主数字源 | Stage D TEST weeks（尚未跑） |
+| 消融对照 | 投影 TD3；静态支撑 hybrid TD3；rule / rolling MILP |
 
-**写作门槛（results gate）:** FS-HSAC 须三季满 168 h，且综合成本优于投影 SAC/TD3、fixed-band Hybrid SAC 与 PSO。数字未回之前 **§5 表图占位不填假数**；§6 只收束因果链，不写优越性百分比。
+**写作门槛:** Stage D 前 **§5 表图占位不填假数**；不声称 RL 现金优于 MILP。FS-HSAC 不再是论文身份。
 
 文档更新：2026-08-27 22:10 (+08:00)。`Paper/main.tex` 摘要、highlights、引言分段、`tab:lit`（+Jendoubi/Ochoa/Fan 2019）、§5 实验协议与 §6 已改成期刊口径；内部 “results gate” 字样已从正文去掉。空表保留。`pdflatex`+`bibtex` 通过（24 页）。
 
 ---
 
-## 0.5 四条贡献（对齐 OCTD3 / GHTD3）
+## 0.5 三条贡献（不超过三条）
 
-1. **系统与机制**  
-   厂级火电 + 电池 + 绝热多罐压空 DAE，三模态（充/闲/放），山东**月度**代理购电分时 + 国家 ETS；Sysplorer Modelica 经 FMI 导出为 FMU 闭环（FMI 是交换标准，不是创新）。因果链：对象硬 → \(\mathcal A(s)\) → 孪生上可执行。
-
-2. **形式化**  
-   状态相关混合动作支撑 \(\mathcal A(s)\)：\(\mathcal K(s)=\) 当前可选模式；\(\mathcal M_k(s)=\) 选定模式 \(k\) 下允许的幅值区间。统一写进策略支撑，而不是仅事后投影/屏蔽。
-
-3. **算法（FS-HSAC）**  
-   **同时间尺度**参数化混合 SAC（离散模式头 + 条件连续幅值头）：Jacobian 校正密度、精确模式枚举、双温度 \(\alpha_d/\alpha_c\)、残余 \(C_\psi\)、GiveSafe 采用。不是高层每 \(c\) 步的库存 HRL。
-
-4. **验证**  
-   三季典型周；算法消融 + **系统机制消融（lock-CAES）**；对照 PSO、LP、MILP；分项综合成本 + 消纳/灵活性/可靠性/时延 KPI + 灵敏度（含弃电价与合同价）。
+1. **非凸 CAES 混合动作** — \((m,z)\) 保拓扑，避免盒投影死区。
+2. **联合 \(\mathcal A_f(s)=(\mathcal A_T\times\mathcal A_B\times\mathcal A_C)\cap\mathcal A_{\mathrm{grid}}\)** — 解析 decoder，不是分量盒再 GiveSafe 蒙。
+3. **FMU 闭环验证** — 物理-only Bellman；36/8/8 TEST；rule / rolling MILP（同一 FMU）/ projection TD3；noisy + 8760 h 部署。碳价/磨损/启停/预测/GiveSafe/Gumbel/TD3 不当贡献。
 
 **勿写**
 
@@ -52,7 +44,7 @@
 - “RL 会预判所以优于 MILP”
 - 把断开合法集当主要创新或“发现”
 - 把动态幅值收缩说成纯 FMU 物理（含 oracle 余量）
-- “仿真很少用 FMI”“option 可自由选”“FS-HSAC 天然优于 HRL”
+- “仿真很少用 FMI”“option 可自由选”“PC-HybridTD3 天然优于 HRL”
 - 把投影静音 / clamp / Bellman 自环写成 Intro gap
 - first hierarchical CAES；new TD3 家族；\(r^{\mathrm{lo}}=r^{\mathrm{ext}}\)
 
@@ -72,7 +64,7 @@
 
 | 档 | 期刊 | 条件 |
 |----|------|------|
-| **主攻** | **Applied Energy** | 系统+支撑形式化+FS-HSAC+三季分项成本表写干净 |
+| **主攻** | **Applied Energy** | 系统+支撑形式化+PC-HybridTD3+TEST 分项成本表写干净 |
 | **同等** | **Energy** | 更挤（GHTD3 同刊）；强调多模态压空 + FMU |
 | **备选** | ECM；IEEE TII | 孪生与工业可执行性作辅线 |
 | **不优先** | IEEE TPWRS；NeurIPS/ICML | 不是电网出清，也不是新 RL 家族论文 |
@@ -108,17 +100,17 @@
 - 3.6 **状态相关混合 MDP**：\(\mathcal A(s)=\mathcal A_{\mathrm{tp}}\times\mathcal A_{\mathrm{bat}}\times\bigcup_k\{k\}\times\mathcal M_k(s)\)；解码进动态区间；奖励 \(r^{\mathrm{ext}}\)
 - **图：** Fig.4 `fig_caes_legal`。
 
-### 4. Solution methodology（已按 FS-HSAC 重写）
+### 4. Solution methodology（已按 PC-HybridTD3 重写）
 
 - 4.0 **为何同时间尺度、而非库存 HRL**（已成小节）
-- 4.1 孪生闭环：推理只采当前模式；拒绝不进 \(\mathcal D_B\)；季节栈 shadow off
-- 4.2 动作表示对照：投影 vs 固定带 vs 可行支撑；`fig_action_rep`
-- 4.3 FS-HSAC actor：掩码分类、每模式幅值头、区间仿射 + Jacobian
-- 4.4 混合 critic + 精确 \(V(s)\) + \(L_Q\) / \(L_\pi\)
-- 4.5 网络：256-ReLU 双层；\(\log\sigma\in[-5,2]\)
-- 4.6 残余 \(C_\psi\)（惩罚非第二硬门）+ 采用 GiveSafe；拆分 replay
-- 4.7 消融与基线：投影 / fixed-band / FS-HSAC-support；PSO、LP、MILP
-- **图 / 算法框 / 表：** `fig_algorithm`；`fig_action_rep`；Alg. FS-HSAC；`tab:hyper`
+- 4.1 孪生闭环：Actor 解码已在 \(\mathcal A_f(s)\)；拒绝不进 \(\mathcal D_B\)；季节栈 shadow off
+- 4.2 动作表示对照：投影 vs 静态带 vs 动态支撑；`fig_action_rep`
+- 4.3 PC-HybridTD3 actor：掩码分类、单一幅值头、动态区间仿射
+- 4.4 6 维 hybrid critic + TD3 target（\(\arg\max m'\)，只噪 \(z'\)）
+- 4.5 网络：256-ReLU 双层；lr \(10^{-4}\)；batch 64
+- 4.6 物理-only 经济 replay + 采用 GiveSafe；拒绝进安全审计
+- 4.7 两组消融：连续 vs 混合；静态 vs 动态。主方法：rule / rolling MILP / projection TD3 / PC-HybridTD3
+- **图 / 算法框 / 表：** `fig_algorithm`；`fig_action_rep`；Alg. PC-HybridTD3；`tab:hyper`
 
 ### 5. Simulation results（数字过门后再填）
 
@@ -126,15 +118,15 @@
 - **5.2a 经济：** `tab:main` / `tab:econ` — 仅 `valid_steps=168`；主列 \(CC=-J^{\mathrm{gen}}\) 与分项（cash / CO₂ / CUT / deg / su / grid）
 - **5.2b 消纳与灵活性：** 弃电 MWh/率、可再生利用率；合同越限 MWh/小时、\(|P_{\mathrm{grid}}|_{\max}\)、峰谷差/爬坡（1 h，不写快速瞬态）
 - **5.2c 机制消融（多能协同）：** 完整 thermal+BESS+CAES vs **lock-CAES**（及已有储能受限对照）；报告 \(\Delta CC\)、\(\Delta E_{\mathrm{curt}}\)、越限/峰谷、BESS/CAES 分时功率与启停——用轨迹+分项说明互补，**不**造单一“协同指数”
-- **5.2d 可靠与在线计算：** unserved、有效步、FMU 失败、GiveSafe 拒绝、末端库存；FS-HSAC 推理时延 vs rolling MILP/linprog 每步求解（mean/p95/max/超时率）
+- **5.2d 可靠与在线计算：** unserved、有效步、FMU 失败、GiveSafe 拒绝、\(E_{\mathrm{terminal}}\)；PC-HybridTD3 推理时延 vs rolling MILP 每步求解（mean/p95/max/超时率）
 - 5.3 灵敏度：官方碳价带、β/η、可行性裕度、压空容量、弃电/缺供、合同价、**启停缩放模式**、TOU 构造基价（见 `docs/sensitivity_section.md`）
 - **声明规则：** 最低 CC 只称经济最优；更低弃电/越限只称对应维；仅当 CC+弃电+可靠性均不差时才写“总体更优”，否则 Pareto；价格参数分 O/M/L/S 四级，禁止把情景价写成监管价
 - **辅助：** `tab:run` 作脚注，不是主经济 KPI
 
 ### 6. Conclusions
 
-- 编号四点：DAE 对象；\(\mathcal A(s)\)；同时间尺度 FS-HSAC；月度 110 kV 结算。无现金排名。
-- 限制：单 seed；动态区间含 oracle 余量；周重置；\(C_\psi\) 非第二硬门；09–12 为 S 级顺延
+- 编号四点：DAE 对象；\(\mathcal A_f(s)\)；同时间尺度 PC-HybridTD3；月度 110 kV 结算。无现金排名。
+- 限制：Stage D 前无数；动态区间含 oracle 余量；周重置；09–12 为 S 级顺延
 - 若 MILP 更便宜：按价格/约束权衡与代理模型近似解释（文献路径），不改论文身份，不写“RL 预判更聪明”
 
 ---
@@ -147,7 +139,7 @@
 |------|------|---------------------|
 | **OCTD3 / CAES–BESS（AE 2024）** | 机制组 × 算法组两套对照；经济—稳定—协同多维（PFI/CCI/SRSI 思路） | 本项目 1 h 分辨率 → **不直接照搬 SRSI**；改用合同越限、网交换波动、设备机制消融。OCTD3 **没有** MILP 对照，勿借其结论写“RL 优于精确优化” |
 | **GHTD3** | 三季典型周、综合成本分项、QP 对照 | **保留关键事实**：凸化 QP 常给出最低标量 CC，但弃电/多能利用可能较差 → **按维解释**，禁止写成 RL 全面优于求解器 |
-| **A3C vs CPLEX** | “成本接近最优 + 在线策略”定位 | 用作 FS-HSAC **不必击败**精确优化器的论据；其成本约高 0.33%，不是 RL 胜出 |
+| **A3C vs CPLEX** | “成本接近最优 + 在线策略”定位 | 用作 PC-HybridTD3 **不必击败**精确优化器的论据；其成本约高 0.33%，不是 RL 胜出 |
 | **多智能体 HRL vs CPLEX/MPC** | 全知优化器作下界；RL 作非完美预测反馈策略 | 本项目**主矩阵共享 perfect forecast** → **不得**用不确定性优势替经济结果辩护 |
 | **MADRL 多时间尺度竞价** | 同时报告利润、失衡量、跟踪率、每步计算时间 | 对应报告 CC、合同越限/网交换、可执行性、推理/求解时间 |
 
@@ -168,7 +160,7 @@
 | **可靠** | 缺供、执行 | `unserved_mwh`, `valid_steps`, `fmu_failure_count`, `forbidden_action_count`, `terminal_soc_*` |
 | **计算** | 时延 / 超时 | `decision_time_{mean,p95,max,sum}_s`, `solver_timeout_count`, `solver_timeout_rate` |
 
-`Paper/main.tex` 表头与公式符号须与上表一致。FS-HSAC 训练代码只消费统一评测结果，不另造加分指标。
+`Paper/main.tex` 表头与公式符号须与上表一致。PC-HybridTD3 训练代码只消费统一评测结果，不另造加分指标。
 
 ---
 
@@ -199,7 +191,7 @@ Basename 均在 `Paper/figures/`。
 | Fig.3 | `fig_seasonal_boundary` | 三季 held-out 周风光荷 + 月度价 | 有（`gen_fig_seasonal_boundary.py`；周 5/18/31） |
 | Fig.4 | `fig_caes_legal` | CAES 合法包线 + 模式锁 | 有 |
 | Fig.5 | `fig_action_rep` | 投影 vs 固定带 vs \(\mathcal M_k(s)\) | 有（三栏 matplotlib） |
-| Fig.6 | `fig_algorithm` | FS-HSAC 闭环（拆分 \(\mathcal D_B/\mathcal D_F\)） | 有（`gen_fig_algorithm.py`；Image 草稿 `fig_algorithm_imgen.jpg`） |
+| Fig.6 | `fig_algorithm` | PC-HybridTD3 闭环（\(\mathcal D_B\) 物理 / \(\mathcal D_S\) 审计） | 有（`gen_fig_algorithm.py`） |
 | Fig.7+ | 功率平衡 / SoC / 成本条 | §5 | 待数据 |
 
 ### B. 附录 / 补充
@@ -216,12 +208,11 @@ Basename 均在 `Paper/figures/`。
 
 | 论文对象 | 代码 |
 |----------|------|
-| \(\mathcal A(s),\mathcal M_k(s)\) | `fs_hsac/action_support.py` |
-| FS-HSAC actor / critic | `fs_hsac/actor.py`, `critic.py` |
-| 精确枚举 + \(\alpha_d/\alpha_c\) | `fs_hsac/algorithm.py` (`fs_hsac_v2`) |
-| 拆分 replay | `replay/fs_hsac_replay.py`, `fs_hsac/collector.py` |
-| \(C_\psi\) | `fs_hsac/feasibility.py` |
-| 训练入口 | `fs_hsac/train.py`；`--method fs_hsac` |
+| \(\mathcal A_f(s),\mathcal M_k(s)\) | `actions/caes_u.py` + FeasibilityOracle |
+| PC-HybridTD3 actor / critic | `hybrid_td3/actor.py`, `critic.py` |
+| TD3 target + ST-Gumbel | `hybrid_td3/algorithm.py` |
+| 物理-only replay | `replay/hybrid_replay_buffer.py`, `hybrid_td3/givesafe_collector.py` |
+| 训练入口 | `hybrid_td3/train.py`；`--method td3` |
 | \(J^{\mathrm{gen}}\) / \(CC\) 真源 | `envs/reward_calculator.py` + `config/reward_config.yaml` |
 | 参数出处台账 | `docs/parameter_evidence.md`（`parameter_profile_id`） |
 | 统一评测 KPI | `training/evaluate_td3.py`；`optimization/metrics.py` |

@@ -1,4 +1,8 @@
-# seasonal_v1 matrix status (FS-HSAC paper)
+# seasonal_v1 matrix status (archive; not PC-HybridTD3)
+
+文档更新：2026-08-30 22:40 (+08:00)
+
+**Archive.** Paper identity is PC-HybridTD3 (`--method td3`). Do not mix these cash numbers into `Paper/main.tex`.
 
 Date checked: 2026-08-20 (restart under **official-2024-ets-sd-grid-v1**).
 

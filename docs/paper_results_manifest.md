@@ -1,8 +1,10 @@
-# 论文结果清单（FS-HSAC / seasonal_v1）
+# 论文结果清单（PC-HybridTD3）
+
+文档更新：2026-08-30 22:40 (+08:00)
 
 **提纲：** [`docs/paper_outline_and_figures.md`](paper_outline_and_figures.md)
 
-**结果门（唯一）：** [`docs/fs_hsac_results_gate.md`](fs_hsac_results_gate.md) — 未过门前不在 `Paper/main.tex` 写优越性。
+**书账：** [`docs/fs_hsac_results_gate.md`](fs_hsac_results_gate.md) — Stage D 前不在 `Paper/main.tex` 填表、不写优越性。归档 `fs_hsac_*` / `seasonal_v1` 现金禁止混入正文。
 
 **主文：** `Paper/main.tex`
 
@@ -16,8 +18,8 @@
 
 | 角色 | 路径 |
 |------|------|
-| 主方法（live） | `runs/seasonal_v1/{winter,transition,summer}/fs_hsac_support_s0` |
-| 对照 | `runs/seasonal_v1/.../sac_param_s0` |
+| 主方法（live） | `runs/seasonal_tou2026/{winter,transition,summer,autumn,all}/pc_hybrid_td3_s*`（Stage D 后） |
+| 对照 | 同树 `td3_proj_s*` / `td3_static_s*` / `milp_s0` / rule eval |
 | 附录完整 FS-HSAC | `runs/seasonal_v1/.../fs_hsac_s0` |
 | 投影消融 | `runs/seasonal_v1/.../sac_s0`（及 proj. TD3） |
 | 经典对照 | `pso_s0` / `linprog_s0` / `milp_s0` |

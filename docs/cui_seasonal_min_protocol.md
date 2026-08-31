@@ -1,64 +1,70 @@
-# Fair seasonal comparison protocol
+# Fair weekly comparison protocol
 
-文档更新：2026-08-21
+文档更新：2026-08-30 22:40 (+08:00)
 
-论文 live 方法已改为 **FS-HSAC-support** vs **sac_param**（见 `docs/paper_outline_and_figures.md`）。下文 HMSD 窗口仍可用作**设定**（三季 week index），不是论文身份。
+论文 live 方法：**PC-HybridTD3**（`scripts/train_seasonal.py --method td3`）。下文 36/8/8 周拆分是设定，不是 HMSD/FS-HSAC 身份。
 
-Code truth: `scripts/train_seasonal.py` (`--method fs_hsac --support` vs `--method sac`).
+Code truth: `src/training/episode_starts.py` (`TRAIN_WEEK_IDS` / `VAL_WEEK_IDS` / `TEST_WEEK_IDS`) and `scripts/seasonal_cli.py` (`SEASON_WEEKS`).
 
 ## Principle
 
 Algorithm comparison requires the **same optimization problem**:
 
 - same env / FMU / prices / GiveSafe
-- same external reward \(r^{\mathrm{ext}}\) for the main value update
-- train on a **set of weeks**, evaluate on **held-out weeks** in the same season
+- same external reward \(r^{\mathrm{ext}}\) (no `storage_use` / \(R^F\))
+- train on TRAIN weeks only; pick checkpoints on VAL; **tables on TEST**
+- 8760 h rollout = deployment evaluation, not test
 
-## Defaults
+## Defaults (formal paper)
 
 | Piece | Choice |
 |-------|--------|
-| Train weeks | winter `0–4`, transition `13–17`, summer `26–30` |
-| Eval week (held-out) | winter `5`, transition `18`, summer `31` |
-| HMSD low-level reward | **`low_reward: ext`** (= env \(r^{\mathrm{ext}}\), same as TD3) |
-| Goal | 2D inventory (conditioning + HER only) |
-| HER | `her_mix` |
-| GiveSafe | on |
+| Split | 52 weeks, 9/2/2 per quarter → **36 / 8 / 8** |
+| Winter | train 0–8, val 9–10, test 11–12 |
+| Transition | train 13–21, val 22–23, test 24–25 |
+| Summer | train 26–34, val 35–36, test 37–38 |
+| Autumn | train 39–47, val 48–49, test 50–51 |
+| `--season all` | the union above |
+| GiveSafe | on, fallback off |
+| Forecast | 24 h perfect (noisy robustness: 10/10/8 %) |
 
-Legacy goal-tracking low reward: set `low_reward: intrinsic` (ablation only).
+Legacy 5-train / 1-eval windows are withdrawn.
 
 ## Train
 
 ```bash
-# formal fair protocol (Story A J includes ±200 MW grid contract)
-python scripts/train_seasonal.py --method hmsd --season winter --episodes 5000 --seed 0
-python scripts/train_seasonal.py --method td3  --season winter --episodes 5000 --seed 0
+# paper mainline
+python scripts/train_seasonal.py --method td3 --season all --episodes 2000 --seed 0
 
-# lock-CAES counterfactual (same J, u_caes forced idle)
-python scripts/train_seasonal.py --method hmsd --season winter --episodes 5000 --seed 0 --lock-caes
+# continuous-projection ablation
+python scripts/train_seasonal.py --method td3 --ablation projection --season all --seed 0
 
-# debug single week (not for paper comparison)
-python scripts/train_seasonal.py --method hmsd --season winter --episodes 200 --single-week
+# static-support ablation
+python scripts/train_seasonal.py --method td3 --ablation static-support --season all --seed 0
+
+# rolling MILP (surrogate opt, FMU eval)
+python scripts/train_seasonal.py --method milp --season winter --seed 0
+
+# debug single week (not for paper tables)
+python scripts/train_seasonal.py --method td3 --season winter --episodes 20 --single-week
 ```
 
 Env vars set by the script:
 
-- `OPTIMAL_DEMO_TRAIN_WEEK_STARTS` — comma-separated start seconds (train pool)
-- `OPTIMAL_DEMO_EVAL_EPISODE_START` — held-out eval start
+- `OPTIMAL_DEMO_TRAIN_WEEK_STARTS` — training pool
+- `OPTIMAL_DEMO_VAL_WEEK_STARTS` — validation
+- `OPTIMAL_DEMO_TEST_WEEK_STARTS` — TEST (tables)
+- `OPTIMAL_DEMO_EVAL_EPISODE_START` — first TEST week
 - `OPTIMAL_DEMO_FORCE_EPISODE_START` — only with `--single-week`
 - `OPTIMAL_DEMO_LOCK_CAES` — `1` when `--lock-caes`
 
-## Re-eval existing checkpoints
+## Four methods
 
-```bash
-python scripts/eval_seasonal_fair.py --method hmsd --ckpt path/to/ghtd3.pt --weeks 5,6 --out out.json
-python scripts/eval_seasonal_fair.py --method td3  --ckpt path/to/hybrid_givesafe_td3.pt --weeks 5 --out out.json
-```
+| Method | CLI |
+|--------|-----|
+| Price-aware rule | evaluated alongside each RL run |
+| Rolling MILP | `--method milp` |
+| Continuous-projection TD3 | `--method td3 --ablation projection` |
+| **PC-HybridTD3** | `--method td3` |
 
-## Primary KPI
-
-1. `sum_delta_j_gen` = sum of `generalized_cashflow_delta`
-2. `unserved_energy_mwh`
-3. `terminal_soc_satisfied`
-
-Do not use train-week-only scores as the sole comparison table.
+Budget: 300k–500k **physical** steps × seeds 0,1,2, same for projection TD3.

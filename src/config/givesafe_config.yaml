@@ -36,8 +36,8 @@ givesafe:
       unknown: 1.0
 
 replay_sampling:
-  physical_fraction: 0.7
-  givesafe_fraction: 0.3
+  physical_fraction: 1.0
+  givesafe_fraction: 0.0
 
 phase_e_gates:
   # 已完成探针验证，允许正式训练入口启动；训练结束仍按以下硬门控判定结果。

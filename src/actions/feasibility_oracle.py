@@ -17,6 +17,7 @@ from .feasible_set import DynamicFeasibleActionSet
 from .mode_mask import ModeMask
 from .types import CaesMode, PhysicalFmuAction
 from .validator import physical_from_dict
+from .joint_support import coupling_from_oracle, tighten_caes_modes
 
 # FMU 输出变量
 OBS_NAMES = (
@@ -172,6 +173,21 @@ class FeasibilityOracle:
         bat = self._battery_bounds(float(outputs["battery_soc"]))
         mode, intervals = self._caes_mask_and_intervals(outputs)
         tp = self._thermal_bounds_from_actual(p_prev)
+        ctx = coupling_from_oracle(self, outputs)
+        dis_i = intervals.get("discharge")
+        chg_i = intervals.get("charge")
+        new_dis, new_chg, allow_d, allow_i, allow_c = tighten_caes_modes(
+            ctx,
+            tp[0],
+            tp[1],
+            bat[0],
+            bat[1],
+            dis_i if mode.discharge else None,
+            chg_i if mode.charge else None,
+            bool(mode.idle),
+        )
+        mode = ModeMask(discharge=allow_d, idle=allow_i, charge=allow_c)
+        intervals = {"discharge": new_dis, "charge": new_chg, "idle": (0.0, 0.0)}
         caes_mag = self._caes_magnitude_caps(intervals)
         empty = (
             bat[0] > bat[1] + 1e-12
@@ -187,6 +203,13 @@ class FeasibilityOracle:
             "oracle_version": self.oracle_version,
             "feasible_set_empty": empty,
             "caes_magnitude_caps": caes_mag,
+            "joint_grid_coupling": True,
+            "grid_residual_W": ctx.residual,
+            "grid_g_min_W": ctx.g_min,
+            "grid_g_max_W": ctx.g_max,
+            "p_cap_thermal_W": ctx.p_thermal,
+            "p_cap_battery_W": ctx.p_battery,
+            "p_cap_caes_W": ctx.p_caes,
         }
         return DynamicFeasibleActionSet(
             u_tp_low=tp[0],

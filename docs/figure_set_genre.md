@@ -1,5 +1,7 @@
 # Figure set (genre checklist)
 
+文档更新：2026-08-30 22:40 (+08:00)
+
 Aligned with GHTD3 Fig.4–9 and OCTD3 style. Full paths under `Paper/figures/`.
 
 ## Main text
@@ -11,9 +13,9 @@ Aligned with GHTD3 Fig.4–9 and OCTD3 style. Full paths under `Paper/figures/`.
 | 3 | `fig_seasonal_boundary` | Wind / PV / load / price × 3 seasons | same | none |
 | 4 | `fig_caes_legal` | Operating envelope (constraints §3.3) | `plot_paper_v2_figures.py` | none |
 | 5 | `fig_action_rep` | Projection vs fixed-band vs \(\mathcal M_k(s)\) | `plot_paper_v2_figures.py` | none |
-| 6 | `fig_algorithm` | FS-HSAC loop, split replay | `Paper/figures/gen_fig_algorithm.py` | none |
-| 7 | `fig_training` | Reward / cost curves: hybrid SAC vs proj. | `plot_paper_figures_v2.py` | `sac_param` progress |
-| 8–10 | `fig_balance_{winter,transition,summer}` | 4 panels: hybrid SAC / hybrid TD3 / PSO / MILP | `plot_paper_figures_cui_style.py` | full-week traj |
+| 6 | `fig_algorithm` | PC-HybridTD3 loop, physical-only replay | `Paper/figures/gen_fig_algorithm.py` | none |
+| 7 | `fig_training` | Reward / cost curves: PC-HybridTD3 vs projection | `plot_paper_figures_v2.py` | Stage D progress |
+| 8–10 | `fig_balance_{winter,transition,summer}` | 4 panels: PC-HybridTD3 / projection TD3 / rule / MILP | `plot_paper_figures_cui_style.py` | full-week TEST traj |
 | 11 | `fig_storage_strategies` | Battery SoC + CAES mode footprint, 3×4 | new / cui-style | full-week traj |
 | 12 | `fig_cost_components` | Stacked CC breakdown | `plot_paper_plan_figures.py` | `tab:main` |
 | 13 | `fig_sensitivity` | Carbon / margin / capacity | TBD | sensitivity runs |

@@ -10,9 +10,29 @@ from typing import Any
 import numpy as np
 from tqdm import tqdm
 
+from dataclasses import asdict
+
 from envs.failures import FeasibleSetEmpty
 from safety import NoSafeActionFoundError
 from safety.soft_constraint_shell import SoftConstraintEnv, SoftConstraintShell
+
+
+def _jsonify(obj):
+    if obj is None:
+        return None
+    if hasattr(obj, "__dataclass_fields__"):
+        return {k: _jsonify(v) for k, v in asdict(obj).items()}
+    if isinstance(obj, dict):
+        return {str(k): _jsonify(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_jsonify(v) for v in obj]
+    if isinstance(obj, (np.generic,)):
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (float, int, str, bool)):
+        return obj
+    return str(obj)
 
 
 def _grid_contract_p_lim_w(env) -> float:
@@ -114,10 +134,14 @@ def evaluate_policy(
         "caes_hours_discharge": 0.0,
         "caes_hours_idle": 0.0,
         "caes_hours_charge": 0.0,
+        "caes_mode_switches": 0.0,
+        "caes_gas_soc_min": None,
+        "caes_gas_soc_max": None,
         "_decision_times_s": [],
     }
     previous_thermal: float | None = None
     previous_grid: float | None = None
+    previous_caes_mode: int | None = None
     p_lim_w = _grid_contract_p_lim_w(env)
     weekly_raw = 0.0
     weekly_reward = 0.0
@@ -133,11 +157,70 @@ def evaluate_policy(
         try:
             predicted = policy.predict(obs, deterministic=deterministic)
             action = predicted[0] if isinstance(predicted, tuple) else predicted
-        except (NoSafeActionFoundError, FeasibleSetEmpty):
-            if not soft_shell or shell is None:
-                raise
-            action = shell.recover(env if not isinstance(step_env, SoftConstraintEnv) else step_env.env)
-            soft_shell_count += 1
+        except (NoSafeActionFoundError, FeasibleSetEmpty) as exc:
+            if soft_shell and shell is not None:
+                action = shell.recover(env if not isinstance(step_env, SoftConstraintEnv) else step_env.env)
+                soft_shell_count += 1
+            else:
+                failure = {
+                    "eval_status": "failed_no_safe_action",
+                    "failed_step": len(rows),
+                    "completed_steps": len(rows),
+                    "failure_type": getattr(exc, "failure_type", type(exc).__name__),
+                    "reason": str(exc),
+                    "attempts": int(getattr(exc, "attempts", 0) or 0),
+                    "rejection_reasons": list(getattr(exc, "reasons", []) or []),
+                    "first_check": _jsonify(getattr(exc, "first_check", None)),
+                    "policy_action": _jsonify((getattr(exc, "rejected", None) or [None])[0]),
+                    "last_outputs": _jsonify(getattr(env, "last_outputs", None)),
+                    "previous_thermal": getattr(env, "previous_thermal", None),
+                }
+                spec = None
+                if hasattr(env, "get_feasible_action_spec"):
+                    try:
+                        fs = env.get_feasible_action_spec()
+                        spec = fs.as_dict() if hasattr(fs, "as_dict") else _jsonify(fs)
+                    except Exception:
+                        spec = None
+                failure["feasible_action_spec"] = spec
+                pred_grid = None
+                first = getattr(exc, "first_check", None)
+                if first is not None:
+                    failure["rejection_stage"] = getattr(first, "rejection_stage", None)
+                    failure["violation_type"] = getattr(first, "violation_type", None)
+                    failure["oracle_rejection_reason"] = getattr(first, "oracle_rejection_reason", None)
+                    failure["shadow_failure_reason"] = getattr(first, "shadow_failure_reason", None)
+                    pred = getattr(first, "predicted_next_state", None) or {}
+                    pred_grid = pred.get("p_grid")
+                failure["predicted_p_grid"] = pred_grid
+                if output_csv and rows:
+                    output_csv.parent.mkdir(parents=True, exist_ok=True)
+                    fieldnames = []
+                    seen: set[str] = set()
+                    for row in rows:
+                        for key in row:
+                            if key not in seen:
+                                seen.add(key)
+                                fieldnames.append(key)
+                    with output_csv.open("w", newline="", encoding="utf-8") as handle:
+                        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+                        writer.writeheader()
+                        writer.writerows(rows)
+                out = {
+                    "steps": len(rows),
+                    "valid_steps": sum(1 for r in rows if r.get("transition_valid")),
+                    "eval_status": "failed_no_safe_action",
+                    "eval_failed": True,
+                    "failure": failure,
+                    "episode_reward": weekly_reward,
+                    "metrics": metrics,
+                    "cost_terms": totals,
+                    "fmu_failure_count": sum(1 for r in rows if r.get("fmu_status") == "failure"),
+                    "forbidden_action_count": forbidden,
+                    "invalid_transition_count": invalid_transition,
+                }
+                _finalize_metric_rates(metrics)
+                return out
         # Prefer controller-reported solve time when present (MILP/linprog).
         solve_s = getattr(policy, "last_solve_s", None)
         if solve_s is None and hasattr(policy, "agent"):
@@ -233,12 +316,22 @@ def evaluate_policy(
                 mode_i = int(mode)
             except (TypeError, ValueError):
                 mode_i = 1
+            if previous_caes_mode is not None and mode_i != previous_caes_mode:
+                metrics["caes_mode_switches"] += 1.0
+            previous_caes_mode = mode_i
             if mode_i == 0:
                 metrics["caes_hours_discharge"] += 1.0
             elif mode_i == 2:
                 metrics["caes_hours_charge"] += 1.0
             else:
                 metrics["caes_hours_idle"] += 1.0
+            soc_g = current.get("caes_gas_soc")
+            if soc_g is not None:
+                sg = float(soc_g)
+                lo = metrics["caes_gas_soc_min"]
+                hi = metrics["caes_gas_soc_max"]
+                metrics["caes_gas_soc_min"] = sg if lo is None else min(float(lo), sg)
+                metrics["caes_gas_soc_max"] = sg if hi is None else max(float(hi), sg)
             metrics["thermal_generation_mwh"] += abs(float(current.get("p_thermal", 0))) * 1e-6 * dt_hours
             # Generation channels are negative watts in the FMU; report positive MWh.
             w_av = abs(float(current.get("p_wind_available", 0))) * 1e-6 * dt_hours
@@ -295,9 +388,26 @@ def evaluate_policy(
     if shell is not None:
         soft_shell_count = max(soft_shell_count, int(shell.recovery_count))
     _finalize_metric_rates(metrics)
+    lo = metrics.get("caes_gas_soc_min")
+    hi = metrics.get("caes_gas_soc_max")
+    if lo is not None and hi is not None:
+        metrics["caes_gas_soc_range"] = float(hi) - float(lo)
+    else:
+        metrics["caes_gas_soc_range"] = None
+    init_soc = info0.get("initial_soc") or {}
+
+    def _soc(block: dict[str, Any] | None, key: str) -> float:
+        raw = (block or {}).get(key)
+        return float(raw) if raw is not None else float("nan")
+
+    e_terminal = abs(_soc(last, "battery_soc") - _soc(init_soc, "battery_soc")) + abs(
+        _soc(last, "caes_gas_soc") - _soc(init_soc, "caes_gas_soc")
+    )
     return {
         "steps": len(rows),
         "valid_steps": sum(1 for r in rows if r.get("transition_valid")),
+        "eval_status": "ok",
+        "eval_failed": False,
         "soft_shell": bool(soft_shell),
         "soft_shell_count": int(soft_shell_count),
         "soft_shell_hours": int(soft_shell_count),
@@ -311,6 +421,7 @@ def evaluate_policy(
         "metrics": metrics,
         "terminal_soc": {name: float(last.get(name, float("nan"))) for name in ("battery_soc", "caes_gas_soc", "caes_hot_soc", "caes_cold_soc")},
         "initial_soc": info0.get("initial_soc"),
+        "e_terminal": float(e_terminal),
         "fmu_failure_count": sum(1 for r in rows if r.get("fmu_status") == "failure"),
         "forbidden_action_count": forbidden,
         "invalid_transition_count": invalid_transition,

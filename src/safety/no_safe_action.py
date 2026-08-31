@@ -10,7 +10,15 @@ class NoSafeActionFoundError(ConstraintFailure):
 
     failure_type = "NoSafeActionFound"
 
-    def __init__(self, reason: str, *, attempts: int = 0, rejected: list | None = None):
+    def __init__(
+        self,
+        reason: str,
+        *,
+        attempts: int = 0,
+        rejected: list | None = None,
+        first_check=None,
+        reasons: list | None = None,
+    ):
         """构造未找到安全动作异常。
 
         Args:
@@ -23,4 +31,6 @@ class NoSafeActionFoundError(ConstraintFailure):
         """
         self.attempts = attempts
         self.rejected = rejected or []
+        self.first_check = first_check
+        self.reasons = reasons or []
         super().__init__(reason)

@@ -1,26 +1,24 @@
 #!/usr/bin/env python
-"""Unified seasonal suite: FS-HSAC / SAC / TD3 / HMSD (RL) + PSO / linprog / milp.
+"""Unified seasonal suite: PC-HybridTD3 / projection TD3 + classical baselines.
 
-Same env reward and explicit week protocol for all methods.
+Paper mainline:
+  --method td3 --season all            PC-HybridTD3 on A_f(s)
+  --method td3 --ablation projection   continuous box + clamp
+  --method td3 --ablation static-support   hybrid heads on static CAES bands
+  --method milp                        rolling MILP (optimise surrogate, eval on FMU)
 
-Paper mainline (when the results gate opens):
-  --method fs_hsac --support   (or FS_HSAC_NO_FEAS=1)   → fs_hsac_support
-  --method sac                 (parameterized_caes=True) → sac_param
-Same GiveSafe; soft_shell OFF. Full residual-feasibility FS-HSAC is appendix only
-(``--method fs_hsac`` without --support / --no-feas).
-
-RL:
-  multi-week train + held-out eval week (default)
-
-PSO / linprog / milp:
-  optimize or control on eval week (and PSO may search on that week); same KPI dump
-  milp: binary CAES commitment + min-load bands on the same energy surrogate as linprog
+Train weeks come only from the 36/8/8 split (9/2/2 per quarter). Tables use TEST.
+FS-HSAC / HMSD remain in the tree as archive methods, not the paper identity.
+GiveSafe on; soft_shell OFF; storage_use off.
 
 Examples:
-  python scripts/train_seasonal.py --method fs_hsac --support --season winter --episodes 5000 --seed 0
-  python scripts/train_seasonal.py --method sac --season winter --episodes 5000 --seed 0
-  python scripts/train_seasonal.py --method fs_hsac --season winter --episodes 5000 --seed 0
-  python scripts/train_seasonal.py --method pso --season winter --seed 0
+  python scripts/train_seasonal.py --method td3 --season winter --stage A
+  python scripts/train_seasonal.py --method td3 --season all --stage B --seed 0
+  python scripts/train_seasonal.py --method td3 --season all --stage D --seed 0
+  python scripts/train_seasonal.py --method td3 --ablation projection --season all --stage D --seed 0
+  python scripts/train_seasonal.py --method milp --season winter --seed 0
+  python scripts/train_seasonal.py --method rule --season winter --seed 0
+  python scripts/train_seasonal.py --method td3 --season all --forecast-mode noisy --annual-eval
 """
 from __future__ import annotations
 
@@ -39,6 +37,7 @@ from seasonal_cli import (  # noqa: E402
     EPISODE_HOURS,
     RL_METHODS,
     SEASON_WEEKS,
+    STAGE_STEPS,
     parse_args,
 )
 from config.paths import apply_process_cache_env, resolve_run_dir  # noqa: E402
@@ -143,7 +142,9 @@ def run_milp_job(run_dir: Path, eval_start: float) -> dict:
         "eval_start_time_seconds": eval_start,
         "wall_s": wall,
         "baseline_notes": {
-            "forecast": "perfect horizon from forecast_provider (same as linprog/PSO)",
+            "forecast": "24 h rolling horizon from forecast_provider; first hour applied to the same FMU",
+            "horizon_hours": 24,
+            "evaluate_on": "same Sysplorer FMU as RL (surrogate is used only to propose a_t)",
             "caes": "binary commitment + min-load bands; energy SoC only (no hot/cold/pressure DAE)",
             "min_run_steps": 1,
         },
@@ -154,24 +155,92 @@ def run_milp_job(run_dir: Path, eval_start: float) -> dict:
     return out
 
 
+def run_rule_job(run_dir: Path, eval_start: float, forecast_mode: str | None) -> dict:
+    from controllers.price_aware_rule import PriceAwareRuleController
+
+    env = PowerSystemEnv(
+        run_id=run_dir.name,
+        forecast_enabled=True,
+        forecast_mode=forecast_mode,
+    )
+    try:
+        pol = PriceAwareRuleController(env)
+        t0 = time.perf_counter()
+        ev = evaluate_policy(
+            env,
+            pol,
+            run_dir / "trajectories" / "eval.csv",
+            reset_options={"start_time": eval_start},
+        )
+        wall = time.perf_counter() - t0
+    finally:
+        env.close()
+    out = {
+        "status": "completed",
+        "method": "rule",
+        "eval": ev,
+        "kpi": kpi_from_eval(ev),
+        "eval_start_time_seconds": eval_start,
+        "wall_s": wall,
+        "forecast_mode": forecast_mode,
+    }
+    (run_dir / "train_result.json").write_text(
+        json.dumps(out, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
+    )
+    return out
+
+
+def run_stage_a(run_dir: Path, seed: int) -> dict:
+    from training.hybrid_td3.stage_a import run_stage_a_support
+
+    out = run_stage_a_support(n=10_000, seed=seed)
+    (run_dir / "train_result.json").write_text(
+        json.dumps(out, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
+    )
+    return out
+
+
 def main() -> None:
     args = parse_args()
+
+    if args.stage == "A":
+        method_tag = "pc_hybrid_td3_stageA"
+        run_dir = args.run_dir or f"runs/seasonal/{args.season}/{method_tag}_s{args.seed}"
+        run_dir = str(resolve_run_dir(run_dir))
+        Path(run_dir).mkdir(parents=True, exist_ok=True)
+        result = run_stage_a(Path(run_dir), args.seed)
+        print("status", result.get("status"), "run_dir", run_dir, flush=True)
+        if result.get("status") != "completed":
+            raise SystemExit(2)
+        return
 
     meta = SEASON_WEEKS[args.season]
     if args.single_week:
         train_weeks = [meta["train"][0]]
+        val_weeks = train_weeks
+        test_weeks = train_weeks
         eval_week = train_weeks[0]
     else:
         train_weeks = parse_weeks(args.train_weeks, meta["train"])
-        eval_week = int(args.eval_week) if args.eval_week is not None else int(meta["eval"])
+        val_weeks = parse_weeks(args.val_weeks, meta.get("val", meta["train"][-2:]))
+        test_weeks = parse_weeks(args.test_weeks, meta.get("test", [meta["eval"]]))
+        eval_week = int(args.eval_week) if args.eval_week is not None else int(test_weeks[0])
 
     train_starts = [week_start_seconds(w) for w in train_weeks]
     eval_start = week_start_seconds(eval_week)
 
     steps = int(args.episodes) * EPISODE_HOURS if args.method in RL_METHODS else 0
+    if args.stage:
+        steps = int(STAGE_STEPS[args.stage])
     method_name = args.method
     if args.method == "fs_hsac" and args.support_only:
         method_name = "fs_hsac_support"
+    if args.method == "td3" and args.ablation == "projection":
+        method_name = "td3_proj"
+    elif args.method == "td3" and args.ablation == "static-support":
+        method_name = "td3_static"
+    elif args.method == "td3":
+        method_name = "pc_hybrid_td3"
     method_tag = f"{method_name}_lockcaes" if args.lock_caes else method_name
     run_dir = args.run_dir or f"runs/seasonal/{args.season}/{method_tag}_s{args.seed}"
     run_dir = str(resolve_run_dir(run_dir))
@@ -179,10 +248,14 @@ def main() -> None:
     (Path(run_dir) / "trajectories").mkdir(parents=True, exist_ok=True)
 
     protocol = {
-        "protocol": "fair_seasonal_v1",
+        "protocol": "pc_hybridtd3_36_8_8",
         "method": args.method,
+        "method_tag": method_name,
+        "ablation": args.ablation if args.method == "td3" else None,
         "season": args.season,
         "train_weeks": train_weeks,
+        "val_weeks": val_weeks,
+        "test_weeks": test_weeks,
         "eval_week": eval_week,
         "train_start_seconds": train_starts,
         "eval_start_seconds": eval_start,
@@ -196,9 +269,12 @@ def main() -> None:
             (not bool(args.support_only)) if args.method == "fs_hsac" else None
         ),
         "soft_shell": False,
-        "paper_mainline": (
-            args.method == "fs_hsac" and bool(args.support_only)
-        ) or args.method == "sac",
+        "paper_mainline": args.method == "td3" and args.ablation == "none",
+        "parameterized_caes": (args.ablation != "projection") if args.method == "td3" else None,
+        "use_dynamic_support": (args.ablation == "none") if args.method == "td3" else None,
+        "forecast_mode": args.forecast_mode,
+        "stage": args.stage,
+        "annual_eval": bool(args.annual_eval),
         "story": "A_grid_contract",
     }
     (Path(run_dir) / "protocol.json").write_text(json.dumps(protocol, indent=2), encoding="utf-8")
@@ -207,6 +283,12 @@ def main() -> None:
     os.environ["OPTIMAL_DEMO_SEASON"] = args.season
     os.environ["OPTIMAL_DEMO_TRAIN_WEEK_STARTS"] = ",".join(str(s) for s in train_starts)
     os.environ["OPTIMAL_DEMO_EVAL_EPISODE_START"] = str(eval_start)
+    os.environ["OPTIMAL_DEMO_VAL_WEEK_STARTS"] = ",".join(
+        str(week_start_seconds(w)) for w in val_weeks
+    )
+    os.environ["OPTIMAL_DEMO_TEST_WEEK_STARTS"] = ",".join(
+        str(week_start_seconds(w)) for w in test_weeks
+    )
     os.environ["OPTIMAL_DEMO_JOB_ID"] = (
         f"seasonal_{args.season}_{method_tag}_s{args.seed}"
     )
@@ -239,6 +321,11 @@ def main() -> None:
             run_dir=run_dir,
             seed=args.seed,
             enable_shadow=False,
+            parameterized_caes=args.ablation != "projection",
+            use_dynamic_support=args.ablation == "none",
+            forecast_mode=args.forecast_mode,
+            require_gas_swing=0.05 if args.stage == "B" else None,
+            annual_evaluation=bool(args.annual_eval),
         )
     elif args.method == "sac":
         result = run_hybrid_sac_training(
@@ -263,6 +350,8 @@ def main() -> None:
         result = run_pso_job(Path(run_dir), eval_start, args.seed, args.pso_iters, args.pso_particles)
     elif args.method == "milp":
         result = run_milp_job(Path(run_dir), eval_start)
+    elif args.method == "rule":
+        result = run_rule_job(Path(run_dir), eval_start, args.forecast_mode)
     else:
         result = run_linprog_job(Path(run_dir), eval_start)
 

@@ -6,7 +6,15 @@ from typing import Any, Callable
 
 import numpy as np
 
-from actions.caes_u import mode_from_u
+from actions.caes_u import (
+    CHARGE_HI,
+    CHARGE_LO,
+    DISCHARGE_HI,
+    DISCHARGE_LO,
+    feasible_bound_dict,
+    mag_from_u,
+    mode_from_u,
+)
 from actions.validator import physical_from_dict
 from replay.hybrid_replay_buffer import HybridGiveSafeReplayBuffer
 from safety import GiveSafeController, NoSafeActionFoundError, ShadowFmuValidator
@@ -75,18 +83,36 @@ class GiveSafeTransitionCollector:
         _ = sim_time_before
         assert env.valid_episode_steps == valid_steps_before + 1
         physical = info.get("physical_action") or physical_from_dict(action).as_dict()
-        mode = int(mode_from_u(float(physical["u_caes"])))
+        u_c = float(physical["u_caes"])
+        mode = int(mode_from_u(u_c))
+        physical = dict(physical)
+        physical["caes_mode"] = mode
+        physical["caes_magnitude"] = float(mag_from_u(u_c))
         self.stats["caes_mode_counts"][mode] = self.stats["caes_mode_counts"].get(mode, 0) + 1
         self.stats["physical_transition_count"] += 1
         self.stats["valid_transition_count"] += 1
         if self.shadow is not None:
             self.shadow.on_physical_success(physical)
-        bounds = {
-            "u_tp_low": float(info.get("u_tp_dynamic_low", 1 / 3)),
-            "u_tp_high": float(info.get("u_tp_dynamic_high", 1.0)),
-            "u_battery_low": float(info.get("u_battery_dynamic_low", -1.0)),
-            "u_battery_high": float(info.get("u_battery_dynamic_high", 1.0)),
-        }
+        spec = info.get("feasible_action_spec")
+        if spec is not None and hasattr(spec, "u_tp_low"):
+            bounds = feasible_bound_dict(spec)
+        else:
+            d = spec if isinstance(spec, dict) else {}
+
+            def _f(key: str, default: float) -> float:
+                v = d.get(key, info.get(key, default))
+                return float(default if v is None else v)
+
+            bounds = {
+                "u_tp_low": _f("u_tp_dynamic_low", 1.0 / 3.0),
+                "u_tp_high": _f("u_tp_dynamic_high", 1.0),
+                "u_battery_low": _f("u_battery_dynamic_low", -1.0),
+                "u_battery_high": _f("u_battery_dynamic_high", 1.0),
+                "u_caes_discharge_low": _f("u_caes_discharge_low", DISCHARGE_LO),
+                "u_caes_discharge_high": _f("u_caes_discharge_high", DISCHARGE_HI),
+                "u_caes_charge_low": _f("u_caes_charge_low", CHARGE_LO),
+                "u_caes_charge_high": _f("u_caes_charge_high", CHARGE_HI),
+            }
         next_feasible = env.get_feasible_action_spec()
         mask = np.asarray(
             [
@@ -111,12 +137,7 @@ class GiveSafeTransitionCollector:
             valid_mode_mask=mask,
             dynamic_action_bounds=bounds,
             next_valid_mode_mask=next_feasible.mode_mask.as_bool_array(),
-            next_dynamic_action_bounds={
-                "u_tp_low": next_feasible.u_tp_low,
-                "u_tp_high": next_feasible.u_tp_high,
-                "u_battery_low": next_feasible.u_battery_low,
-                "u_battery_high": next_feasible.u_battery_high,
-            },
+            next_dynamic_action_bounds=feasible_bound_dict(next_feasible),
             reward_terms=terms,
             constraint_metadata={"soft_shell": bool(info.get("soft_shell_applied"))},
             physically_valid=True,
