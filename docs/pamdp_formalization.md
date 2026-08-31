@@ -1,8 +1,8 @@
 # PAMDP / PC-HybridTD3 formalization for multi-mode CAES plant dispatch
 
-文档更新：2026-08-30 22:40 (+08:00)
+文档更新：2026-08-31 08:30 (+08:00)
 
-Status: paper §4 draft for **PC-HybridTD3** (physics-constrained parameterized hybrid TD3).  
+Status: paper §3–§4 aligned with **PC-HybridTD3** joint support \(\mathcal A_f=\mathcal A_{\mathrm{dev}}\cap\mathcal A_{\mathrm{grid}}\).  
 Code: `src/training/hybrid_td3/` with `parameterized_caes=True` and dynamic \(\mathcal A_f(s)\).  
 Live entry: `scripts/train_seasonal.py --method td3`. Projection ablation: `--ablation projection`. Static-support ablation: `--ablation static-support`. FS-HSAC remains in `src/training/fs_hsac/` as archive.
 
@@ -15,21 +15,22 @@ Weekly plant dispatch is a finite-horizon MDP with hybrid actions
 a_t=(u^{\mathrm{th}}_t,u^{\mathrm{bat}}_t,m_t,z_t),
 \qquad m_t\in\{D,I,C\},\quad z_t\in[0,1],
 \]
-and a **state-dependent action support**
+and a **state-dependent action support**. Device topology is
 \[
-\mathcal A_f(s)=
+\mathcal A_{\mathrm{dev}}(s)=
 \mathcal A_{\mathrm{tp}}(s)\times
 \mathcal A_{\mathrm{bat}}(s)\times
 \bigcup_{k\in\mathcal K(s)}
 \{k\}\times\mathcal M_k(s).
 \]
+The legal set is the interchange intersection, not the cartesian product:
+\[
+\mathcal A_f(s)=\mathcal A_{\mathrm{dev}}(s)\cap\mathcal A_{\mathrm{grid}}(s).
+\]
 
 - \(\mathcal K(s)\subseteq\{\mathrm{dis},\mathrm{idle},\mathrm{chg}\}\) is a mode mask from FeasibilityOracle.
 - \(\mathcal M_k(s)=[\underline u_k(s),\overline u_k(s)]\) is the current magnitude interval (twin physics plus oracle margins).
-- Device boxes \(\mathcal A_T\times\mathcal A_B\times\mathcal A_C\) are **not** \(\mathcal A_f(s)\). Interchange couples the commands:
-\[
-\mathcal A_f(s)=(\mathcal A_T\times\mathcal A_B\times\mathcal A_C)\cap\mathcal A_{\mathrm{grid}}.
-\]
+- Device boxes \(\mathcal A_T\times\mathcal A_B\times\mathcal A_C\) are **not** \(\mathcal A_f(s)\). Interchange couples the commands via \(P_{\mathrm{grid}}=P_T u_T-P_B u_B-P_C u_C-R\).
 Analytic decoder: CAES interval \(\cap\) grid window (drop empty modes) \(\to u_C\) \(\to\) tighten thermal \(\to u_T\) \(\to\) conditional battery. GiveSafe is a residual screen; greedy evaluation tries the actor **once**.
 - The actor must satisfy \(a_t\in\mathcal A_f(s_t)\), **not** \(a_t=\Pi_{\mathcal A_f}(\pi(s_t))\) and **not** a cartesian product followed by 64 GiveSafe draws.
 - Idle is a point mass.

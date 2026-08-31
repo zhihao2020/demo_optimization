@@ -1,6 +1,6 @@
 # Paper outline and figure checklist
 
-文档更新：2026-08-30 22:40 (+08:00)
+文档更新：2026-08-31 08:30 (+08:00)
 
 **Working title:** *Feasible-Support Hybrid TD3 for Multi-Energy Scheduling with Nonconvex Compressed Air Energy Storage Actions*
 
@@ -14,13 +14,13 @@
 
 ---
 
-## 0. Status snapshot（2026-08-30）
+## 0. Status snapshot（2026-08-31）
 
 | 项 | 现状 |
 |----|------|
 | 代码 `src/training/hybrid_td3/` | **P0 已落地**：动态 \(\mathcal A_f(s)\) 解码、6-D critic、target \(\arg\max m'\)+只噪 \(z\)、physical-only replay |
 | 训练入口 | `scripts/train_seasonal.py --method td3 --season all`；36/8/8 |
-| `Paper/main.tex` | 身份改为 PC-HybridTD3（摘要/引言/§4/算法/表头）；经济表仍空 |
+| `Paper/main.tex` | 非实验正文已齐：联合 \(\mathcal A_f=\mathcal A_{\mathrm{dev}}\cap\mathcal A_{\mathrm{grid}}\)、解析 decoder 窗、无最短运行锁、graphical abstract、利益声明。§5 表图仍空 |
 | 购电 | 2026 月度 110 kV 两部制；`tab:tou-monthly` + `tab:tou-windows`；09–12 顺延 8 月（S） |
 | PAMDP 形式化 | `docs/pamdp_formalization.md` |
 | 主数字源 | Stage D TEST weeks（尚未跑） |

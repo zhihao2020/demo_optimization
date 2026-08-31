@@ -40,6 +40,11 @@ Weekly price-taker dispatch of a thermal--battery--compressed-air (CAES) plant m
 \item FMU-in-the-loop PC-HybridTD3: physical-only economic replay, 36/8/8 weekly split, rule / rolling MILP / projection TD3, noisy-forecast and 8760~h deployment checks.
 \end{highlights}
 
+\begin{graphicalabstract}
+\centering
+\includegraphics[width=0.95\textwidth]{fig_algorithm}
+\end{graphicalabstract}
+
 \begin{keywords}
 Multi-energy system \sep hybrid-action reinforcement learning \sep parameterized hybrid TD3 \sep feasible action support \sep comprehensive cost \sep carbon pricing \sep time-of-use tariff \sep Modelica \sep FMU \sep CAES
 \end{keywords}
@@ -64,10 +69,12 @@ Multi-energy system \sep hybrid-action reinforcement learning \sep parameterized
     \midrule
     $t$ & hour index in a weekly episode, $t=0,\ldots,T-1$ ($T=168$) &
     $i$ & device / inventory index \\
-    $\mathcal{S},\mathcal{A}(s)$ & state space and state-dependent hybrid action support &
+    $\mathcal{S},\mathcal{A}_f(s)$ & state space and joint feasible hybrid support &
     $\mathcal{K}(s),\mathcal{M}_k(s)$ & admissible CAES modes and magnitude interval for mode $k$ \\
-    $\mathcal{F}(s)$ & dynamic feasible set used to build $\mathcal{A}(s)$ &
-    $k_t,\,z_t$ & CAES mode and normalised magnitude ($\mu_t\equiv z_t$) \\
+    $\mathcal{A}_{\mathrm{dev}},\mathcal{A}_{\mathrm{grid}}$ & device product and interchange slice &
+    $\mathcal{F}(s)$ & Oracle+GiveSafe set (grid, predicted next state, locks) \\
+    $k_t,\,z_t$ & CAES mode and normalised magnitude ($\mu_t\equiv z_t$) &
+    $R_t$ & twin residual $P^{\mathrm{w}}+P^{\mathrm{pv}}+P^{\mathrm{load}}$ (FMU signs) \\
     \midrule
     \multicolumn{4}{@{}l}{\textit{Plant and market variables}} \\
     \midrule
@@ -128,16 +135,22 @@ Deep decarbonisation and China's national carbon market couple electricity tarif
 
 Model-based programmes remain useful baselines, but they typically convexify CAES thermodynamics or face tight budgets on hybrid spaces~\cite{cui2025ghtd3}. Deep reinforcement learning (DRL)~\cite{sutton2018rl,fujimoto2018td3,haarnoja2018sac} learns closed-loop policies by interaction. In multi-energy DRL the training environment is often an algebraic energy balance or a fitted map, including off-design quadratic $\dot m(P)$ CAES surrogates~\cite{zhou2023iesdrl,wu2024pricing}. Closed-loop evaluation on an FMI-exported multi-physics Modelica model of multi-tank CAES thermo-gas DAEs is less common. That object, rather than the FMI file format, is why the legal command is a state-dependent hybrid support instead of a box. Parameterized-action actor--critics already exist in the RL literature~\cite{fan2019hybrid,haarnoja2018sac}. Cui and co-authors have shown that storage in multi-energy dispatch has a genuine cross-timescale coordination problem; GHTD3 realises long-horizon inventory planning through a high-level SMDP, a low-level goal-conditioned MDP and historical relabeling~\cite{cui2025ghtd3,cui2024caesbess}. Multi-agent hierarchical energy managers follow a related path~\cite{jendoubi2023hier,ochoa2024bidding}. However, CAES introduces an \emph{orthogonal} challenge that is not captured by a standard continuous control space: its compression, idle and expansion regimes form a disconnected hybrid action domain, while the admissible magnitude of each mode further varies with thermodynamic states. This work therefore focuses on feasible hybrid action learning rather than introducing an additional temporal hierarchy. Option initiation sets can restrict when a mode may start; they do not, by themselves, put a same-hour policy on $\mathcal{K}(s)$ and $\mathcal{M}_k(s)$.
 
-On the Sysplorer twin used here the CAES command is disconnected and further restricted by state. The policy is therefore defined on
+On the Sysplorer twin used here the CAES command is disconnected and further restricted by state, and interchange capacity couples thermal, battery and CAES commands. Device boxes
 \begin{equation*}
-\mathcal{A}_f(s)
+\mathcal{A}_{\mathrm{dev}}(s)
 =
 \mathcal{A}_{\mathrm{tp}}(s)\times
 \mathcal{A}_{\mathrm{bat}}(s)\times
 \bigcup_{k\in\mathcal{K}(s)}
-\bigl(\{k\}\times\mathcal{M}_k(s)\bigr),
+\bigl(\{k\}\times\mathcal{M}_k(s)\bigr)
 \end{equation*}
-where $\mathcal{K}(s)$ is the set of currently admissible modes and $\mathcal{M}_k(s)$ the allowable magnitude interval for mode~$k$~\cite{garcia2015safe,sun2024constrained}. We develop \emph{physics-constrained parameterized hybrid TD3} (PC-HybridTD3): a same-timescale deterministic actor that emits $(u^{\mathrm{th}},u^{\mathrm{bat}},m,z)$ already decoded onto $\mathcal{A}_f(s)$, a twin critic on the same hybrid packing, and an economic Bellman update that uses only FMU-executed transitions. GiveSafe is the final execution screen; we do not present it as a new shield. The distinction from post-hoc projection is
+are therefore not the legal set. The policy is defined on the joint support
+\begin{equation*}
+\mathcal{A}_f(s)
+=
+\mathcal{A}_{\mathrm{dev}}(s)\cap\mathcal{A}_{\mathrm{grid}}(s),
+\end{equation*}
+where $\mathcal{K}(s)$ is the set of currently admissible modes, $\mathcal{M}_k(s)$ the allowable magnitude interval for mode~$k$, and $\mathcal{A}_{\mathrm{grid}}(s)$ the interchange slice~\cite{garcia2015safe,sun2024constrained}. We develop \emph{physics-constrained parameterized hybrid TD3} (PC-HybridTD3): a same-timescale deterministic actor that emits $(u^{\mathrm{th}},u^{\mathrm{bat}},m,z)$ already decoded onto $\mathcal{A}_f(s)$, a twin critic on the same hybrid packing, and an economic Bellman update that uses only FMU-executed transitions. GiveSafe is the final residual screen (predicted next-state inventories and twin hard constraints not written as interval arithmetic); we do not present it as a new shield. The distinction from post-hoc projection is
 \[
 a_t\sim\pi_\theta(s_t)\;\Rightarrow\; a_t\in\mathcal{A}_f(s_t),
 \qquad\text{not}\qquad
@@ -389,7 +402,7 @@ u_{\mathrm{caes},t}
 [-1,-0.33]\cup\{0\}\cup[0.86,1]
 \label{eq:caes-legal}
 \end{equation}
-encoding minimum compressor/expander loading. Mode locks and minimum-run dwell constraints further restrict admissible transitions of $m_{\mathrm{caes}}$. Electric power is realised as planned ($P^{\mathrm{act}}=P^{\mathrm{plan}}$); mass-flow set-points of air and thermal fluid scale with $|P_t^{\mathrm{caes}}|$ and reverse direction between compression and expansion.
+encoding minimum compressor/expander loading. Inventory margins and mode locks further restrict $\mathcal{K}(s)$ and $\mathcal{M}_k(s)$. The live stack does \emph{not} impose a consecutive-run dwell (\texttt{min\_run=1}); start-up events are priced in $C_t^{\mathrm{su}}$ following Cui et al.~\cite{cui2024caesbess}. Electric power is realised as planned ($P^{\mathrm{act}}=P^{\mathrm{plan}}$); mass-flow set-points of air and thermal fluid scale with $|P_t^{\mathrm{caes}}|$ and reverse direction between compression and expansion.
 
 \subsection{Energy storage units}
 
@@ -500,7 +513,20 @@ Here $P_t^{\mathrm{curt}}$ is residual surplus after wind-then-PV curtailment an
 P_{\mathrm{grid}}^{\min}\le P_t^{\mathrm{grid}}\le P_{\mathrm{grid}}^{\max},
 \label{eq:grid}
 \end{equation}
-with $(P_{\mathrm{grid}}^{\min},P_{\mathrm{grid}}^{\max})=(-500,500)$~MW. Actions that would violate~\eqref{eq:balance}--\eqref{eq:grid},~\eqref{eq:caes-legal} or CAES mode locks lie outside the dynamic feasible set $\mathcal{F}(s_t)$.
+with $(P_{\mathrm{grid}}^{\min},P_{\mathrm{grid}}^{\max})=(-500,500)$~MW. The feasibility oracle uses the signed command identity (grid buy positive; battery and CAES charge positive)
+\begin{equation}
+P_t^{\mathrm{grid}}
+=
+P_{\mathrm{cap}}^{\mathrm{th}} u_t^{\mathrm{th}}
+-
+P_{\mathrm{cap}}^{\mathrm{bat}} u_t^{\mathrm{bat}}
+-
+P_{\mathrm{cap}}^{\mathrm{caes}} u_t^{\mathrm{CAES}}
+-
+R_t,
+\label{eq:pgrid-u}
+\end{equation}
+where $R_t$ is the twin residual $P^{\mathrm{w}}+P^{\mathrm{pv}}+P^{\mathrm{load}}$ under FMU signs (load positive, renewable generation negative). Equation~\eqref{eq:pgrid-u} is the interchange slice used by the joint decoder;~\eqref{eq:balance} remains the bus accounting used in $J^{\mathrm{gen}}$. Actions that would violate~\eqref{eq:balance}--\eqref{eq:grid},~\eqref{eq:caes-legal} or CAES mode locks lie outside $\mathcal{F}(s_t)$. The analytic decoder enumerates $\mathcal{A}_{\mathrm{dev}}\cap\mathcal{A}_{\mathrm{grid}}$; predicted next-state inventory and residual twin constraints remain in GiveSafe.
 
 Weekly operation records an optional energy-SoC recovery score on primary inventories, following the soft indicator of~\cite{cui2025ghtd3} rather than a hard action override or feasibility veto,
 \begin{equation}
@@ -579,7 +605,7 @@ C_t^{\mathrm{grid}},
 \max_{\{a_t\}}\; J^{\mathrm{gen}} = \sum_{t=0}^{T-1} \Delta J_t^{\mathrm{gen}}
 \quad\text{s.t.}\quad
 \eqref{eq:pv}\text{--}\eqref{eq:grid},\
-a_t\in\mathcal{F}(s_t).
+a_t\in\mathcal{A}_f(s_t)\subseteq\mathcal{F}(s_t).
 \label{eq:J}
 \end{equation}
 Primary economic ranking uses the full-week comprehensive cost $CC=-J^{\mathrm{gen}}$ (equivalently maximising $J^{\mathrm{gen}}$). Hour-scale hybrid actions thus couple to week-scale inventory motion, carbon exposure, renewable spill, storage wear, CAES startups and contracted interchange. Policies are ranked by calibrated episode reward under~\eqref{eq:J} (Section~\ref{sec:reward});~\eqref{eq:soc} is a soft bonus diagnostic only.
@@ -602,17 +628,24 @@ m_t\in\{D,I,C\},\quad
 z_t\in[0,1],
 \label{eq:action-hyb}
 \end{equation}
-with support
+Device-level hybrid support (CAES topology only) is
 \begin{equation}
-\mathcal{A}_f(s)
+\mathcal{A}_{\mathrm{dev}}(s)
 =
 \mathcal{A}_{\mathrm{tp}}(s)\times
 \mathcal{A}_{\mathrm{bat}}(s)\times
 \bigcup_{k\in\mathcal{K}(s)}
 \bigl(\{k\}\times\mathcal{M}_k(s)\bigr).
+\label{eq:adev}
+\end{equation}
+Here $\mathcal{K}(s)\subseteq\{\mathrm{dis},\mathrm{idle},\mathrm{chg}\}$ is the admissible mode set from mode locks and inventory margins, and $\mathcal{M}_k(s)=[\underline{u}_k(s),\overline{u}_k(s)]$ is the dynamic magnitude interval for mode~$k$ returned by the feasibility oracle (twin physics plus engineered margins; sensitivity in Section~\ref{sec:results} separates the two). Idle is a point mass. Interchange couples the three physical commands through~\eqref{eq:pgrid-u}. Writing $\mathcal{A}_{\mathrm{grid}}(s)$ for the slice of $(u^{\mathrm{th}},u^{\mathrm{bat}},u^{\mathrm{CAES}})$ that meets~\eqref{eq:grid}, the legal hybrid support is the intersection, not the cartesian product of device boxes:
+\begin{equation}
+\mathcal{A}_f(s)
+=
+\mathcal{A}_{\mathrm{dev}}(s)\cap\mathcal{A}_{\mathrm{grid}}(s).
 \label{eq:support}
 \end{equation}
-Here $\mathcal{K}(s)\subseteq\{\mathrm{dis},\mathrm{idle},\mathrm{chg}\}$ is the admissible mode set from mode locks and inventory margins, and $\mathcal{M}_k(s)=[\underline{u}_k(s),\overline{u}_k(s)]$ is the dynamic magnitude interval for mode~$k$ returned by the feasibility oracle (twin physics plus engineered margins; sensitivity in Section~\ref{sec:results} separates the two). Idle is a point mass (no continuous magnitude). The physical FMU command is the continuous triple
+The physical FMU command is the continuous triple
 \begin{equation}
 a_t = \bigl(u_{\mathrm{tp},t},\, u_{\mathrm{bat},t},\, u_{\mathrm{caes},t}\bigr),
 \label{eq:action}
@@ -628,7 +661,7 @@ l_C(s_t)+z_t\bigl[h_C(s_t)-l_C(s_t)\bigr], & m=C.
 \end{cases}
 \label{eq:decode}
 \end{equation}
-When margins vanish,~\eqref{eq:decode} collapses to the device envelope~\eqref{eq:caes-legal}. Boolean mask $M(s)\in\{0,1\}^3$ encodes $\mathcal{K}(s)$. Transitions integrate~\eqref{eq:pv}--\eqref{eq:tank-bal} for one plant hour under $a_t\in\mathcal{F}(s_t)$ only. Figure~\ref{fig:caes-legal} places the disconnected device envelope in the main text as an operating constraint, not as a methodological discovery.
+When margins vanish,~\eqref{eq:decode} collapses to the device envelope~\eqref{eq:caes-legal}. Boolean mask $M(s)\in\{0,1\}^3$ encodes $\mathcal{K}(s)$. After $u^{\mathrm{CAES}}$ is fixed, thermal then battery heads are remapped onto the residual interchange intervals (Section~\ref{sec:hybrid-sac}). Predicted next-state inventory and residual twin constraints that are not interval-enumerated remain in GiveSafe. Transitions integrate~\eqref{eq:pv}--\eqref{eq:tank-bal} for one plant hour under $a_t\in\mathcal{A}_f(s_t)\subseteq\mathcal{F}(s_t)$ only. Figure~\ref{fig:caes-legal} places the disconnected device envelope in the main text as an operating constraint, not as a methodological discovery.
 
 \begin{figure}[!htbp]
 \centering
@@ -662,7 +695,7 @@ B, & L_1^{\mathrm{e}}\le\varepsilon,\\
 \end{cases}
 \label{eq:term}
 \end{equation}
-with $B=15$. Missing~\eqref{eq:soc} costs the bonus only; it does not apply a proportional fail penalty, does not rewrite actions and does not invalidate the week. The extrinsic reward is the sum of the three terms
+with $B=15$. Missing~\eqref{eq:soc} costs the bonus only; it does not apply a proportional fail penalty, does not rewrite actions and does not invalidate the week. No utilisation bonus $R^F$ is added: \texttt{storage\_use.enabled} is off. The extrinsic reward is the sum of the three terms
 \begin{equation}
 r_t^{\mathrm{ext}}
 = r_t^{\mathrm{econ}}+r_t^{\mathrm{shape}}+r_t^{\mathrm{term}}.
@@ -733,7 +766,43 @@ u^{\mathrm{CAES}}
 \end{cases}
 \label{eq:affine}
 \end{equation}
-which is~\eqref{eq:decode}. Idle is a point mass. Device boxes are then coupled through interchange. With $P_{\mathrm{grid}}=P_T u^{\mathrm{th}}-P_B u^{\mathrm{bat}}-P_C u^{\mathrm{CAES}}-R_t$, empty CAES modes after intersecting $\mathcal{M}_k(s)$ with the grid window are masked; thermal is remapped onto the residual interval given $u^{\mathrm{CAES}}$; battery is remapped given $(u^{\mathrm{th}},u^{\mathrm{CAES}})$. GiveSafe is a last residual check: greedy evaluation attempts the actor once and records \texttt{failed\_no\_safe\_action} instead of repeating $a^\star$ sixty-four times. A post-hoc clamp on $u^{\mathrm{CAES}}$ is an audit, not the policy.
+which is~\eqref{eq:decode}. Idle is a point mass. Device boxes are then coupled through~\eqref{eq:pgrid-u}. Let $(u^{\mathrm{th}}_{\mathrm{lo}},u^{\mathrm{th}}_{\mathrm{hi}})$ and $(u^{\mathrm{bat}}_{\mathrm{lo}},u^{\mathrm{bat}}_{\mathrm{hi}})$ be the current thermal and battery boxes, $P_T,P_B,P_C$ the device ratings and $(G_{\min},G_{\max})$ the interchange band (oracle margins included). The CAES grid window is
+\begin{equation}
+\begin{aligned}
+\underline{u}_C^{\mathrm{g}}
+&=
+\bigl(P_T u^{\mathrm{th}}_{\mathrm{lo}}-P_B u^{\mathrm{bat}}_{\mathrm{hi}}-R_t-G_{\max}\bigr)/P_C,\\
+\overline{u}_C^{\mathrm{g}}
+&=
+\bigl(P_T u^{\mathrm{th}}_{\mathrm{hi}}-P_B u^{\mathrm{bat}}_{\mathrm{lo}}-R_t-G_{\min}\bigr)/P_C.
+\end{aligned}
+\label{eq:caes-window}
+\end{equation}
+Each mode interval $\mathcal{M}_k(s)$ is intersected with $[\underline{u}_C^{\mathrm{g}},\overline{u}_C^{\mathrm{g}}]$; empty modes are masked. After $u^{\mathrm{CAES}}$ is decoded, thermal is remapped onto the residual interval for which some battery command still meets the band,
+\begin{equation}
+\begin{aligned}
+\underline{u}^{\mathrm{th}\star}
+&=
+\bigl(G_{\min}+P_B u^{\mathrm{bat}}_{\mathrm{lo}}+P_C u^{\mathrm{CAES}}+R_t\bigr)/P_T,\\
+\overline{u}^{\mathrm{th}\star}
+&=
+\bigl(G_{\max}+P_B u^{\mathrm{bat}}_{\mathrm{hi}}+P_C u^{\mathrm{CAES}}+R_t\bigr)/P_T,
+\end{aligned}
+\label{eq:th-window}
+\end{equation}
+and battery is remapped given $(u^{\mathrm{th}},u^{\mathrm{CAES}})$,
+\begin{equation}
+\begin{aligned}
+\underline{u}^{\mathrm{bat}\star}
+&=
+\bigl(P_T u^{\mathrm{th}}-P_C u^{\mathrm{CAES}}-R_t-G_{\max}\bigr)/P_B,\\
+\overline{u}^{\mathrm{bat}\star}
+&=
+\bigl(P_T u^{\mathrm{th}}-P_C u^{\mathrm{CAES}}-R_t-G_{\min}\bigr)/P_B.
+\end{aligned}
+\label{eq:bat-window}
+\end{equation}
+No online quadratic programme is solved. GiveSafe is a last residual check (predicted next-state inventories and twin hard constraints): greedy evaluation attempts the actor once and records \texttt{failed\_no\_safe\_action} instead of repeating $a^\star$ sixty-four times. A post-hoc clamp on $u^{\mathrm{CAES}}$ is an audit, not the policy.
 
 The discrete mode is not differentiable. Actor updates therefore use Straight-Through Gumbel--Softmax: a hard one-hot in the forward pass and a soft gradient in the backward pass, with temperature annealed $\tau_{\mathrm{G}}:1.0\to 0.2$. No extra entropy temperatures, option policies or hierarchical initiation sets are introduced.
 
@@ -1001,10 +1070,15 @@ Present limitations: results pending Stage~D; dynamic magnitude intervals mix tw
 Weekly thermal--battery--CAES dispatch under monthly Shandong agency-purchase TOU and a National ETS carbon price is a comprehensive monetary problem whose hybrid actions live on a state-dependent support $\mathcal{A}_f(s)$ induced by a DAE plant twin. The main conclusions, without ranking cash on incomplete weeks, are as follows.
 \begin{enumerate}
 \item The plant is a first-principles Sysplorer Modelica object (thermal ramps, battery SoC, multi-tank CAES gas--thermal DAEs) exported as an FMI FMU for one-hour closed-loop interaction. FMI is the exchange standard, not a methodological novelty; algebraic energy-balance environments hide the support the twin actually accepts.
-\item That object induces a hybrid support $\mathcal{A}_f(s)$ with admissible modes $\mathcal{K}(s)$ and mode-conditioned intervals $\mathcal{M}_k(s)$. The legal CAES envelope~\eqref{eq:caes-legal} and mode locks are operating constraints, not a claimed discovery.
+\item That object induces a joint hybrid support $\mathcal{A}_f(s)=\mathcal{A}_{\mathrm{dev}}(s)\cap\mathcal{A}_{\mathrm{grid}}(s)$ with admissible modes $\mathcal{K}(s)$ and mode-conditioned intervals $\mathcal{M}_k(s)$. Device boxes are not the legal set: interchange capacity couples the three commands, and the actor uses the analytic decoder~\eqref{eq:caes-window}--\eqref{eq:bat-window}. The legal CAES envelope~\eqref{eq:caes-legal} and mode locks are operating constraints, not a claimed discovery.
 \item PC-HybridTD3 is a same-timescale parameterized hybrid TD3 on that support: the actor decodes $(m,z)$ onto $\mathcal{A}_f(s)$, the critic scores $(e_m,z)$, the target keeps $\arg\max m'$ and noises only $z'$, and rejected GiveSafe hours never enter the economic replay $\mathcal{D}_{\mathrm{B}}$. Conventional continuous DRL cannot express CAES's disconnected modes; this work keeps a single-layer receding policy and embeds the FMU feasible set in the actor. It is not a $c$-step inventory hierarchy.
+\item The numerical protocol is a fair weekly study on the 2026 monthly 110~kV two-part path (Tables~\ref{tab:tou-monthly}--\ref{tab:tou-windows}), a 36/8/8 split, and four methods (price-aware rule, rolling MILP on a linear surrogate evaluated on the same FMU, continuous-projection TD3, PC-HybridTD3). Ranking uses full-week $CC=-J^{\mathrm{gen}}$ only when $\texttt{valid\_steps}=168$. Numerical cells in Section~\ref{sec:results} remain empty until that campaign completes.
 \end{enumerate}
-Hierarchical RL remains applicable to inventory-timescale plants, and RL need not dominate MILP on cash. The one-sentence claim is: feasible hybrid action learning for CAES topology, not a more complex hierarchy than Cui et al. Limitations of the present draft are pending Stage~D numbers, oracle margins inside $\mathcal{M}_k(s)$, a weekly-reset main protocol, and September--December buy levels that remain carry-forwards until official monthly tables appear.
+Hierarchical RL remains applicable to inventory-timescale plants, and RL need not dominate MILP on cash. The one-sentence claim is: feasible hybrid action learning for CAES topology, not a more complex hierarchy than Cui et al. Limitations of the present draft are pending Stage~D numbers, oracle margins inside $\mathcal{M}_k(s)$, a weekly-reset main protocol, GiveSafe as an adopted residual screen, and September--December buy levels that remain carry-forwards until official monthly tables appear. If CAES stays idle after the support-consistent actor, the diagnosis is the plant and the tariff, not a missing utilisation bonus $R^F$.
+
+\section*{Declaration of competing interest}
+
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
 
 \section*{Acknowledgments}
 
@@ -1033,7 +1107,7 @@ Figure~\ref{fig:caes-set} recalls a schematic continuous projection onto the cha
 \end{figure}
 
 \paragraph{Cold-tank transition guard.}
-A sign error in the cold-tank mass balance of the one-step feasibility oracle caused continuous annual rollouts to assert-fail near $1276$~h for learning agents. After flipping the cold-tank guard and re-fitting transition coefficients, a rule / B0-style policy can complete $8760$~h (Fig.~\ref{fig:cold}). That fact is a twin-viability check; it is not evidence that hybrid SAC or projected TD3 already delivers annual closed-loop optimality.
+A sign error in the cold-tank mass balance of the one-step feasibility oracle caused continuous annual rollouts to assert-fail near $1276$~h for learning agents. After flipping the cold-tank guard and re-fitting transition coefficients, a rule / B0-style policy can complete $8760$~h (Fig.~\ref{fig:cold}). That fact is a twin-viability check; it is not evidence that PC-HybridTD3 or projected TD3 already delivers annual closed-loop optimality. Figures~\ref{fig:cont-soc}--\ref{fig:reject} are protocol schematics and must not be read as Stage~D TEST scores.
 
 \begin{figure}[!htbp]
 \centering
@@ -1083,7 +1157,7 @@ The Python economic layer can accumulate an intensity allowance $A_t=\beta E^{\m
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.78\textwidth]{fig_givesafe_reject}
-\caption{Safety--learning coupling: reject rate versus held-out reward across learning agents (archive / schematic).}
+\caption{Protocol schematic of GiveSafe rejection versus held-out reward (not a Stage~D TEST score).}
 \label{fig:reject}
 \end{figure}
 
