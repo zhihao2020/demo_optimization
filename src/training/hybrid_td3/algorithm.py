@@ -15,6 +15,7 @@ from actions.caes_u import (
     DISCHARGE_HI,
     DISCHARGE_LO,
     apply_mode_mask_to_u_torch,
+    idle_fill_empty_mode_mask,
     project_u_caes_torch,
     u_from_mode_onehot_dynamic,
     u_from_mode_onehot_torch,
@@ -140,6 +141,13 @@ class HybridTD3:
         done = _t("done")
         next_mask = torch.as_tensor(batch["next_mode_mask"], device=dev)
         mask = torch.as_tensor(batch["mode_mask"], device=dev)
+        next_mask, next_empty = idle_fill_empty_mode_mask(next_mask)
+        mask, _ = idle_fill_empty_mode_mask(mask)
+        done = torch.clamp(
+            done.reshape(-1) + next_empty.to(dtype=done.dtype).reshape(-1),
+            0.0,
+            1.0,
+        )
 
         with torch.no_grad():
             next_act = self.actor_target.act(

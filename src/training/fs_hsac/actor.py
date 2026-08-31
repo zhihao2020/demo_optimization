@@ -84,8 +84,12 @@ class FSHSACActor(nn.Module):
             legal = legal.view(1, -1)
         if legal.size(0) == 1 and logits.size(0) > 1:
             legal = legal.expand(logits.size(0), -1)
-        empty = ~legal.any(dim=-1, keepdim=True)
-        legal = torch.where(empty, torch.ones_like(legal), legal)
+        if not bool(legal.any(dim=-1).all()):
+            from actions.caes_u import EmptyModeMaskError
+
+            raise EmptyModeMaskError(
+                "CAES mode mask is empty; do not reopen all modes"
+            )
         return logits.masked_fill(~legal, -1.0e9), legal
 
     def masked_probs(

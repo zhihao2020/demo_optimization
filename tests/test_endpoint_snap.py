@@ -4,7 +4,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from actions.caes_u import ENDPOINT_SNAP_HARD_FAIL, snap_to_interval_endpoint
+from actions.caes_u import (
+    ENDPOINT_SNAP_HARD_FAIL,
+    EmptyModeMaskError,
+    idle_fill_empty_mode_mask,
+    interval_outside_abs,
+    legalize_mode_mask,
+    snap_to_interval_endpoint,
+)
 from actions.feasibility_oracle import FeasibilityOracle
 from actions.feasible_set import DynamicFeasibleActionSet
 from actions.mode_mask import ModeMask
@@ -132,3 +139,81 @@ def test_oracle_accepts_float32_endpoint_after_snap():
         PhysicalFmuAction(1.0, 0.0, u), outputs, feasible=feasible
     )
     assert ok, reason
+
+
+def test_oracle_grid_uses_canonical_u_caes():
+    oracle = FeasibilityOracle.from_root()
+    outputs = _base()
+    feasible = oracle.compute(outputs)
+    if feasible.u_caes_charge is None:
+        pytest.skip("charge interval empty on mid state")
+    lo, hi = feasible.u_caes_charge
+    u = float(np.float32(hi))
+    seen = []
+    orig = oracle.predict_p_grid
+
+    def spy(obs, physical):
+        seen.append(float(physical.u_caes))
+        return orig(obs, physical)
+
+    oracle.predict_p_grid = spy  # type: ignore[method-assign]
+    action = PhysicalFmuAction(1.0, 0.0, u)
+    canonical = oracle.canonicalize_physical(action, feasible)
+    ok, reason = oracle.check_action_executable(action, outputs, feasible=feasible)
+    assert seen, reason
+    assert seen[0] == canonical.u_caes
+    if abs(u - hi) <= 1e-7:
+        assert canonical.u_caes == hi
+
+
+def test_legalize_empty_mode_mask_raises():
+    import torch
+
+    with pytest.raises(EmptyModeMaskError):
+        legalize_mode_mask(torch.zeros(1, 3, dtype=torch.bool))
+    with pytest.raises(EmptyModeMaskError):
+        legalize_mode_mask(torch.tensor([False, False, False]))
+    kept = torch.tensor([[True, False, False]])
+    assert legalize_mode_mask(kept).equal(kept)
+
+
+def test_idle_fill_empty_mode_mask_does_not_reopen_all():
+    import torch
+
+    empty = torch.zeros(2, 3, dtype=torch.bool)
+    empty[0, 0] = True
+    safe, rows = idle_fill_empty_mode_mask(empty)
+    assert bool(rows[1])
+    assert not bool(rows[0])
+    assert bool(safe[1, 1])
+    assert not bool(safe[1, 0])
+    assert not bool(safe[1, 2])
+
+
+def test_raw_endpoint_miss_trips_hard_fail_without_snap_flag():
+    from unittest.mock import MagicMock
+
+    from training.hybrid_td3.givesafe_collector import GiveSafeTransitionCollector
+
+    collector = GiveSafeTransitionCollector(MagicMock(), MagicMock())
+    with pytest.raises(RuntimeError, match="decoder bug"):
+        collector._record_endpoint_snap(
+            {
+                "caes_endpoint_snapped": False,
+                "caes_raw_endpoint_miss_abs": 2.0e-3,
+            }
+        )
+    collector._record_endpoint_snap(
+        {
+            "caes_endpoint_snapped": True,
+            "caes_raw_endpoint_miss_abs": 1.0e-9,
+            "caes_numerical_snap_abs": 1.0e-9,
+        }
+    )
+    assert collector.stats["numerical_endpoint_snap_count"] == 1
+
+
+def test_interval_outside_abs():
+    assert interval_outside_abs(0.93, 0.86, 0.93) == 0.0
+    assert interval_outside_abs(0.93000000715, 0.86, 0.93) == pytest.approx(7.15e-9)
+    assert interval_outside_abs(0.93 + 1e-3, 0.86, 0.93) == pytest.approx(1e-3)

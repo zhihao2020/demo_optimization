@@ -1,531 +1,326 @@
-可以。下面这版我建议你**原样发给 agent**。目标不是重新调算法，而是针对 Stage C 暴露出的两个确定问题做最小、可验证的修复：**Oracle idle false-safe** 和 **CAES 动态区间端点的 float32/float64 数值不一致**。在这两个问题修完并通过回归前，禁止 Stage D。
+## 但我发现第一个需要继续修的地方：snap 的顺序还差一步
 
-当前代码证据是明确的：CAES 动态动作已经由 mode+magnitude 映射到状态相关区间，但 Actor 内部是 `float32`；Oracle 对动态 CAES 区间的执行检查目前只给 `1e-9` 容差，因此 `0.93000000715` 对 `[0.86, 0.9299999999999999]` 会被误拒。  同时，Oracle 的 idle 判定目前只是“当前状态没越物理界就允许 idle”，而 `predict_next_state()` 在 `u_caes=0` 时预测压力不变；这和 FMU 已观测到的 idle 压力漂移不一致。  配置中实际上已经有 idle 的压力、SOC、温度 residual 和 margin，但目前没有进入 idle mask。
+这是我认为**必须在正式 Stage D 前补掉**的小 P0。
 
-## 给 Agent 的修改任务
+当前 `FeasibilityOracle.check_action_executable()` 的顺序实际上是：
 
-> **Goal：修复 PC-HybridTD3 Stage C 的两个确定性安全/数值问题，在不改变 TD3 算法结构、reward、超参数和论文主线的情况下，使 deterministic 168 h held-out evaluation 能正确使用联合动态可行域，并将 GiveSafe false-safe 降到 0。修复完成并重新通过 Stage C 前，禁止启动 Stage D。**
+```python
+physical = action
 
-1. **先冻结算法，不进行任何“训练补救”。** 不修改 TD3 的 \(\gamma,\tau,\) actor/critic learning rate、网络宽度、reward 权重、exploration schedule、Gumbel 结构，不重新启用 GHTD3/SAC，不增加 storage-use reward，不把 deterministic GiveSafe 从 1 次改回 64 次，也不要通过开启 Shadow FMU 来掩盖一级 Oracle 的错误。正式 seasonal 主线目前明确 `enable_shadow=False`，保持这个设定。 当前任务是修复 safety/action interface，而不是调参。
+pred = self.predict_p_grid(outputs, physical)
 
-2. **建立统一的动态动作“数值端点契约”，解决 `0.93000000715 > 0.9299999999999999`。** 当前 `HybridActor` 的动态 CAES 解码使用 Torch `float32`，然后在 `act_numpy()` 中转为 Python float；Oracle 区间来自 Python/NumPy double。 当前 `check_action_executable()` 对 CAES 动态区间使用 `1e-9`：
+# 先检查 grid
+if pred > ...:
+    reject
 
-   ```python
-   if not (lo - 1e-9 <= physical.u_caes <= hi + 1e-9):
-   ```
+# 后面才根据 CAES interval 做 endpoint snap
+u_checked, snapped = snap_to_interval_endpoint(...)
+```
 
-   这与项目其他动作校验使用的 `_EPS=1e-6` 也不一致。
-   在 `src/actions/caes_u.py` 新增统一常量，例如：
+也就是说，**CAES 的 FP32 endpoint correction 发生在 grid constraint 检查之后**。
 
-   ```python
-   DYNAMIC_ENDPOINT_ATOL = 1.0e-7
-   ```
+这留下一个很细的漏洞。
 
-   并新增纯数值函数：
+例如：
 
-   ```python
-   def snap_to_interval_endpoint(
-       value: float,
-       low: float,
-       high: float,
-       *,
-       atol: float = DYNAMIC_ENDPOINT_ATOL,
-   ) -> tuple[float, bool]:
-       lo, hi = min(float(low), float(high)), max(float(low), float(high))
-       x = float(value)
+$$
+u_C^{FP32}=0.93000000715
+$$
 
-       if lo <= x <= hi:
-           return x, False
+理论端点：
 
-       if lo - atol <= x < lo:
-           return lo, True
+$$
+u_C^\star=0.93
+$$
 
-       if hi < x <= hi + atol:
-           return hi, True
+差：
 
-       return x, False
-   ```
+$$
+7.15\times10^{-9}.
+$$
 
-   注意这个函数**只能修正 ULP/float32 表示误差**，绝不能把一般越界动作投影回来。例如：
+如果 CAES 额定功率约为 \(150\) MW，这个差异映射到联络线预测就是大约：
 
-   ```text
-   hi = 0.93
-   0.930000007 → 0.93     合法数值 snap
-   0.9301      → 0.9301   不允许 snap，后续必须拒绝
-   ```
+$$
+150\times10^6
+\times7.15\times10^{-9}
+\approx1.07\text{ W}.
+$$
 
-   这和原来的 `clamp_u_caes_to_spec()` 概念必须分开。不能把真正策略越界静默修正成可行动作。
+而你当前 grid checker 恰好只有约 1 W 的数值 tolerance。
 
-3. **在 Actor 最终物理动作打包前执行一次 endpoint snap。** 修改 `src/training/hybrid_td3/actor.py::act_numpy()`。当前代码已经通过 `u_from_mode_onehot_dynamic()` 在动态区间上解码 CAES。 在得到：
+所以极端靠近联络线边界时仍可能出现：
 
-   ```python
-   u_caes = float(out["u_caes"][0].cpu())
-   ```
+> CAES interval 检查不会误拒了，但 **grid 检查先一步因为同一个 FP32 endpoint artifact 拒绝。**
 
-   之后，根据实际选择的 mode 取：
+正确顺序应该改成：
 
-   ```python
-   feasible.u_caes_discharge
-   feasible.u_caes_charge
-   ```
+```text
+raw physical action
+        ↓
+确定 CAES mode
+        ↓
+根据当前 feasible interval
+执行 endpoint canonicalization
+        ↓
+canonical physical action
+        ↓
+predict_p_grid
+        ↓
+grid check
+        ↓
+next-state check
+```
 
-   对该方向调用 `snap_to_interval_endpoint()`。idle 不处理。然后才进入 `physical_dict(...)`。同时增加诊断字段：
+即在 `check_action_executable()` 开头就先生成：
 
-   ```python
-   packed["caes_endpoint_snapped"] = bool(snapped)
-   packed["caes_endpoint_snap_delta"] = float(snapped_value - original_value)
-   ```
+```python
+checked_physical
+```
 
-   这些字段仅用于 audit，不进入 FMU 控制三元组。
+后面所有：
 
-4. **Oracle 的动态区间比较必须使用同一个数值契约。** 修改 `src/actions/feasibility_oracle.py::check_action_executable()`，禁止继续硬编码 `1e-9`。将：
+```python
+predict_p_grid()
+predict_next_state()
+```
 
-   ```python
-   lo - 1e-9 <= u <= hi + 1e-9
-   ```
+统一使用这个 canonicalized physical action。
 
-   改成统一 helper/constant，例如：
-
-   ```python
-   u_checked, snapped = snap_to_interval_endpoint(
-       physical.u_caes, lo, hi
-   )
-   if not (lo <= u_checked <= hi):
-       return False, ...
-   ```
-
-   或至少使用同一 `DYNAMIC_ENDPOINT_ATOL`。推荐调用同一个 helper，避免以后 Actor、Validator、Oracle 再产生三套 epsilon。真正超过 `atol` 的动作仍必须拒绝。
-
-5. **不要修改 static legal set。** CAES 物理合法集合仍然严格保持：
-
-   $$
-   [-1,-0.33]\cup\{0\}\cup[0.86,1]
-   $$
-
-   `project_u_caes()`、静态 band 定义和 mode/magnitude 结构不要因为这次 0.93 问题修改。 这次 bug 发生在**动态 interval endpoint**，不是静态动作集合定义错误。
-
-6. **为 CAES idle 建立独立的 robust one-step safety guard。** 当前 `_caes_mode_mask_base()` 的逻辑是：
-
-   ```python
-   idle_ok, _ = self.post_step_hard_ok(outputs, use_safe=False)
-   ```
-
-   即只要“现在”没越界就允许 idle。 但真实 FMU 已经证明 idle 一小时仍可能发生 pressure/SOC/temperature drift。因此新增：
-
-   ```python
-   def _caes_idle_step_ok(
-       self,
-       outputs: Mapping[str, float],
-   ) -> tuple[bool, str | None]:
-   ```
-
-   这个函数**不依赖当前错误的 `predict_next_state(u_caes=0)`**，而直接利用 probe 标定的 idle residual + margin 构造 robust invariant envelope。
-
-7. **idle guard 对 gas/hot/cold SOC 使用“双边距离”判据。** `feasibility_margins.yaml` 当前已有：
-
-   ```yaml
-   idle:
-     residual_p99_gas: 0.02
-     residual_p99_hot: 0.005
-     residual_p99_cold: 0.01
-     margin_gas: 0.01
-     margin_hot: 0.01
-     margin_cold: 0.01
-   ```
-
-   因为 idle drift 未区分正负方向，应该保守使用绝对残差：
-
-   $$
-   \delta_i^{idle}
-   =
-   r_{i,P99}^{idle}
-   +
-   m_i^{idle}
-   $$
-
-   然后要求：
-
-   $$
-   x_i-x_{i,min}>\delta_i^{idle}
-   $$
-
-   且
-
-   $$
-   x_{i,max}-x_i>\delta_i^{idle}.
-   $$
-
-   例如 gas SOC：
-
-   ```python
-   gas_guard = residual_p99_gas + margin_gas
-   gas_ok = (
-       gas >= gas_SOC_min + gas_guard
-       and gas <= gas_SOC_max - gas_guard
-   )
-   ```
-
-   hot/cold 同理。不要只保护下界。
-
-8. **idle pressure 必须真正使用现有 65 kPa residual + 120 kPa margin。** 配置已有：
-
-   ```yaml
-   residual_p99_pressure: 6.5e4
-   margin_pressure_Pa: 1.2e5
-   ```
-
-   定义：
-
-   $$
-   \delta_p^{idle}
-   =
-   65\,000+120\,000
-   =
-   185\,000\ {\rm Pa}.
-   $$
-
-   则：
-
-   $$
-   P_{\min}+\delta_p^{idle}
-   \le P_t
-   \le
-   P_{\max}-\delta_p^{idle}.
-   $$
-
-   按当前 6.5 MPa 下界，压力约低于：
-
-   $$
-   6.685\ {\rm MPa}
-   $$
-
-   时 idle 应被 mask。**6.685 MPa 不要硬编码**；代码必须从 `device_params + feasibility_margins` 计算。
-
-9. **idle temperature 同样使用 robust envelope。** 配置有：
-
-   ```yaml
-   residual_p99_temp_abs: 2.8
-   margin_temp_K: 3.0
-   ```
-
-   因此：
-
-   $$
-   \delta_T^{idle}=5.8K.
-   $$
-
-   对每个真实温度硬界使用：
-
-   $$
-   T_{\min}+\delta_T^{idle}
-   \le T_t
-   \le
-   T_{\max}-\delta_T^{idle}.
-   $$
-
-   对 `_temp_bounds()` 中因为 Modelica 数值 clamp 被定义为 `-inf` 的 gas temperature lower bound，不要人为恢复一个不存在的物理下界；只检查有限的一侧。当前 `_temp_bounds()` 已有该处理。
-
-10. **替换 `_caes_mode_mask_base()` 中现有的 idle 判定。** 把：
-
-    ```python
-    idle_ok, _ = self.post_step_hard_ok(outputs, use_safe=False)
-    ```
-
-    改成：
-
-    ```python
-    idle_ok, idle_reason = self._caes_idle_step_ok(outputs)
-    ```
-
-    并在 metadata/debug 信息中能够记录：
-
-    ```text
-    idle_forbidden_reason
-    idle_pressure_margin
-    idle_gas_margin
-    idle_hot_margin
-    idle_cold_margin
-    idle_temperature_margin
-    ```
-
-    不要改变 charge/discharge 当前已经存在的 mode-specific interval 扫描和 survival filtering。当前 `_caes_mask_and_intervals()` 已经对 charge/discharge 做 33 点区间扫描和一步可逆性检查，这部分不要重写。
-
-11. **idle 被禁止时，优先让已有 mode mask 自然选择恢复模式，而不是增加 fallback。** 如果压力接近下界而 charge 仍合法，则：
-
-    ```text
-    idle = false
-    charge = true
-    ```
-
-    deterministic actor 的 masked argmax 应自然从剩余合法模式选择。如果 charge、idle、discharge 三个模式都不可行，则 `DynamicFeasibleActionSet` 应成为 empty，继续走现有：
-
-    ```text
-    FeasibleSetEmpty / NoSafeActionFound
-    ```
-
-    逻辑。绝对不能因为“没有动作”又临时允许 idle。`compute()` 当前已经用“无合法 mode → feasible_set_empty”表示空集。
-
-12. **不要用 Shadow FMU 代替上述修复。** `ShadowFmuValidator` 本身能够在候选动作执行前用第二个 FMU 做真实一步检查。 但论文 seasonal 主线当前明确关闭 Shadow。 此次目标是让：
-
-    $$
-    \mathcal A_f(s)
-    $$
-
-    和一级 GiveSafe 本身成为可信的动态安全支撑。Shadow 可以保留作为开发期对照测试，但不能通过 `shadow_validation=true` 让 C2 人为变成 0。
-
-13. **保留 deterministic GiveSafe `n_try=1`。** 这是部署性定义，不是 bug。评估时同一个 greedy actor 重采样 64 次没有意义。现在的论文和代码都已经定义 evaluation single attempt。 如果一个 deterministic 动作在修复 endpoint precision 后仍然被拒绝，应计为真实 `failed_no_safe_action`，不能重试掩盖。
-
-14. **新增端点数值单元测试。** 至少覆盖：
-
-    ```python
-    hi = 0.9299999999999999
-
-    # float32 representation artifact
-    u = float(np.float32(0.93))
-    assert u == approx(0.93000000715)
-
-    snapped, flag = snap_to_interval_endpoint(u, 0.86, hi)
-    assert flag
-    assert snapped == hi
-    ```
-
-    以及：
-
-    ```python
-    u = hi + 1e-4
-    snapped, flag = snap_to_interval_endpoint(u, 0.86, hi)
-    assert not flag
-    # Oracle 必须 reject
-    ```
-
-    同时对下端点和 discharge 负端点做等价测试。
-
-15. **新增 idle 压力边界测试。** 使用真实配置计算 guard，而不是在 test 里把 6.685 MPa 当逻辑常量。至少验证：
-
-    ```text
-    pressure > min + guard + margin_small
-        → idle allowed（其他状态正常时）
-
-    pressure < min + guard - margin_small
-        → idle forbidden
-
-    pressure near lower bound + charge feasible
-        → mode_mask.idle = False
-        → mode_mask.charge = True
-
-    all recovery modes infeasible
-        → feasible_set_empty = True
-    ```
-
-    再加 upper pressure 对称测试。
-
-16. **新增 idle SOC / temperature robust-bound 测试。** 分别人为把 gas/hot/cold SOC 或温度放到 `hard boundary + idle residual + margin` 内外，检查 idle mask 是否正确切换。这样可以避免今天修完 pressure，下一次 Stage C 又从 idle temperature 出现 false-safe。
-
-17. **新增“主 FMU 永不收到禁止 idle”集成测试。** 模拟一个当前 pressure 仍大于物理下界、但小于 idle robust lower bound 的状态：
-
-    ```text
-    current pressure = e.g. 6.60 MPa
-    physical bound   = 6.50 MPa
-    ```
-
-    旧逻辑会允许 idle；新逻辑必须：
-
-    ```text
-    mode_mask.idle == False
-    ```
-
-    如果 actor raw argmax 是 idle，masked actor 必须改选合法 mode；如果无合法 mode，应在 GiveSafe/feasible-set 层终止，`main_fmu_execution_count` 不增加。
-
-18. **增加一个数值审计计数器，但不要把 endpoint snap 当拒绝。** 例如 summary 中加入：
-
-    ```text
-    numerical_endpoint_snap_count
-    max_endpoint_snap_abs
-    ```
-
-    正常应该只在 \(10^{-8}\) 左右。如果未来看到：
-
-    ```text
-    max_endpoint_snap_abs = 1e-3
-    ```
-
-    就说明它已经不是浮点误差，而是 decoder bug，应硬失败。
-
-19. **Oracle version 升级。** 当前 `feasibility_margins.yaml` 是：
-
-    ```yaml
-    oracle_version: "d5.2-probe-calibrated"
-    ```
-
-    修改后建议升为例如：
-
-    ```yaml
-    oracle_version: "d5.3-idle-robust-endpoint"
-    ```
-
-    并在运行 summary 中继续记录 oracle version，确保旧 Stage C 与新 Stage C 不会混淆。
-
-20. **先不重新训练，直接用现有 30k checkpoint 做 deterministic regression。** 修代码后，先加载本次 Stage C checkpoint，在相同 TEST week 上执行完整 168 h greedy rollout。原因是策略权重本身不需要先变化：mode mask 和 endpoint contract 修复后，已有 actor 应该立即表现出新的安全行为。要求：
-
-    ```text
-    valid_steps = 168
-    eval_status = ok
-    NoSafeActionFound = 0
-    fmu_failure_count = 0
-    post_step_hard_constraint_violation = 0
-    main_fmu_unsafe_execution = 0
-    ```
-
-    如果这一步仍失败，先分析 failure JSON，不允许直接重新训练。
-
-21. **做针对 Oracle 的 boundary stress，而不是马上跑 30k。** 从靠近 battery SOC、CAES gas/hot/cold SOC、pressure、temperature、grid、thermal ramp 的状态采样候选动作。至少检查数千至 20k 次边界动作。现有配置本身已经定义 `boundary_stress_min_actions: 20000`。 最终要求：
-
-    $$
-    N_{\text{false-safe}}=0
-    $$
-
-    和：
-
-    $$
-    N_{\text{main-FMU unsafe}}=0.
-    $$
-
-22. **boundary regression 通过后，从头重新跑 Stage C 30k。** 不能把旧 Stage C 的 7 个 unsafe transition 在修代码后追认为“通过”。旧 run 仍保留作为 diagnosis。新 run 必须有新目录、新 Oracle version、新 summary。正式 C gate 仍为：
-
-    ```text
-    C1: NaN/Inf = 0
-    C2: training post-step hard = 0
-        main-FMU unsafe = 0
-        eval FMU failure = 0
-    C3: held-out deterministic NoSafeAction = 0
-    C4: 完整 168h 后 unserved ≈ 0
-    C5: 完整 168h 后 policy cost < random feasible
-    ```
-
-    CAES utilization 不是 gate。当前 `compute_stage_c_gates()` 已经遵循完整 168 h 才计算 C4/C5 的原则。
-
-23. **只有新 Stage C 五门全部通过才能解除 Stage D 阻断。** 不允许因为：
-
-    ```text
-    CAES D/I/C 很丰富
-    ΔSOCgas 很大
-    reward 在下降
-    ```
-
-    就绕过 C2/C3。此次 D/I/C 和 \(\Delta SOC_{gas}\) 已经足够说明动作表示能工作；现在的阻断原因是安全正确性，不是 CAES 活跃度。
-
-24. **同步修正文档的实现不一致，但不要借机改论文故事。** `Paper/main.tex` 当前已经正确写成 twin critics 输入实际物理三元组：
-
-    $$
-    Q(s,u^{th},u^{bat},u_{caes})
-    $$
-
-    并采用 `lr=3e-4`。 `src/training/hybrid_td3/critic.py` 实际也是 `obs_dim + 3`。 但 `docs/paper_outline_and_figures.md` 仍残留“6维 hybrid critic”等旧描述。 将文档统一到实际代码：3-D executed physical action critic；不要把 Critic 改回 6-D 来迎合旧文档。
-
-25. **最终输出一份中文修复报告。** 报告必须区分三种事件：
-
-    ```text
-    numerical endpoint snap
-    Oracle rejection
-    FMU post-step false-safe
-    ```
-
-    并给出修复前后对比：
-
-    ```text
-    endpoint false rejection count
-    idle forbidden count by pressure/SOC/temp
-    NoSafeAction count
-    GiveSafe proposal rejection rate
-    post-step hard count
-    main-FMU unsafe count
-    168h completion
-    unserved
-    operating cost
-    ```
-
-    不要把“endpoint snap”算成安全拒绝，也不要把被 Oracle 正确提前拒绝的动作算成 false-safe。
+这不是大改，但最好补掉，否则 numerical contract 还没有真正做到“单一入口”。
 
 ---
 
-### 两个修改背后的原理
+## 第二个我认为更值得修：`legalize_mode_mask()` 仍然会偷偷把空集变成全模式可行
 
-**第一处是数值分析问题，不是约束放松。** Actor 内部采用 FP32，因此即使理论输出恰好为 \(0.93\)，实际可能存成：
+现在 `caes_u.py` 还有这段：
+
+```python
+def legalize_mode_mask(mode_mask):
+    ...
+    fill = legal.any(dim=-1, keepdim=True)
+    return torch.where(fill, legal, torch.ones_like(legal))
+```
+
+它的 docstring 甚至明确写着：
+
+> `if a row is all-false, allow every mode.`
+
+这和我们现在的安全语义是冲突的。
+
+Oracle 现在已经专门支持：
+
+```text
+D=False
+I=False
+C=False
+→ feasible_set_empty=True
+```
+
+而新测试也要求：
+
+> 无合法 mode 时绝不重新打开 idle。
+
+可神经网络内部的 utility 却还有：
+
+```text
+[False, False, False]
+        ↓
+[True, True, True]
+```
+
+正常 online 路径理论上应该在 actor 被调用前就捕获 `FeasibleSetEmpty`，所以它**未必是这次 Stage C 失败原因**。
+
+但是现在 idle robust guard 加严之后，all-false state 出现概率会比以前更高。为了保持论文中：
 
 $$
-0.9300000071525574.
+a_t\in\mathcal A_f(s_t)
 $$
 
-而 Oracle 的 FP64 上界可能是：
+这个硬定义，我建议彻底取消这条 silent rescue。
 
-$$
-0.9299999999999999.
-$$
+至少改成：
 
-两者物理上是同一个端点。正确做法是定义：
+```python
+if not legal.any(dim=-1).all():
+    raise EmptyModeMaskError(...)
+```
 
-$$
-|u-\bar u|\le\varepsilon_{\rm num}
-$$
+在线控制路径：
 
-时把它视为同一个数值端点，而不是把真实可行集扩成：
+> empty → `FeasibleSetEmpty`，不调用 actor。
 
-$$
-[\underline u,\bar u+\varepsilon].
-$$
+对于 TD3 replay target，如果一个 next state 确实是 terminal/empty，可以用 `done=1` 避免 Bellman bootstrap，而不是把三个模式全部开放。
 
-所以需要的是 **endpoint canonicalization**，不是安全 margin。
+这个建议我认为很重要，因为否则你论文说：
+
+> “no feasible mode is never silently reopened”
+
+代码上还不是完全成立。
 
 ---
 
-**第二处是 robust feasibility 问题。** 现在 Oracle 对 charge/discharge 已经有：
+## 第三个小问题：`ENDPOINT_SNAP_HARD_FAIL` 目前实际上几乎触发不了
+
+现在：
+
+```python
+DYNAMIC_ENDPOINT_ATOL = 1e-7
+ENDPOINT_SNAP_HARD_FAIL = 1e-3
+```
+
+collector 只有当：
+
+```python
+caes_endpoint_snapped == True
+```
+
+时才检查 snap delta；但 helper 只有：
 
 $$
-x_{t+1}^{pred}
-+
-\text{residual margin}
-\in\mathcal X
+|\Delta|\le10^{-7}
 $$
 
-的思想，但 idle 仍相当于假设：
+才会设置 `snapped=True`。
+
+因此正常代码下：
 
 $$
-x_{t+1}=x_t.
+|\Delta_{\text{snap}}|\le10^{-7}
 $$
 
-真实 FMU 已经证明：
+永远不可能：
 
 $$
-x_{t+1}
-=
-x_t+w_t^{idle},
-\qquad
-w_t^{idle}\ne0.
+>10^{-3}.
 $$
 
-因此如果已知 probe 给出了：
+所以现在这个：
 
-$$
-|w_t^{idle}|\le \delta_{P99}+m,
-$$
+```python
+if delta > ENDPOINT_SNAP_HARD_FAIL:
+    raise RuntimeError(...)
+```
 
-那么 robust idle admissibility 应要求：
+更多是一个“理论保险丝”，而不是真正能发现 decoder 大越界的机制。
 
-$$
-x_t\oplus[-\delta,\delta]
-\subseteq\mathcal X.
-$$
+如果真想实现我们之前定义的审计逻辑，建议分别统计：
 
-这就是为什么当前压力虽然：
+```text
+raw_endpoint_miss_abs
+numerical_snap_abs
+```
 
-$$
-6.514\,{\rm MPa}>6.5\,{\rm MPa},
-$$
+如果 raw actor output 离所选 mode interval 超过例如 \(10^{-3}\)，直接报 decoder bug；只有 \(\le10^{-7}\) 才做 numerical snap。
 
-仍不应该允许 idle：它没有足够的一步鲁棒裕量抵抗真实 FMU 的 idle 漂移。
+这个不是安全阻塞项，可以排 P1。
 
 ---
 
-这次修复完，论文里的第二个贡献“**state-dependent joint feasible support**”也会更扎实：不是仅仅约束 charge/discharge，而是让所有模式——包括看似“不动作”的 idle——都满足**一步鲁棒物理可行性**。同时 0.93 的问题必须被明确归为数值接口误差，不能拿它来扩大物理安全域。
+## 实验流程目前还没有完全按要求完成
 
-**Agent 的最终完成条件只有一个：在不改变算法主结构和超参数的情况下，新 Oracle + endpoint contract 先让旧 checkpoint 完整、安全地跑过 168 h，再重新跑 30k Stage C；新 Stage C 的 C1–C5 全过之后，才允许 Stage D。**
+新提交自己也承认还没有做三件事：
+
+1. 用旧 30k checkpoint 跑新的 **168 h greedy regression**；
+2. 跑至少 **20,000 boundary stress actions**，要求 false-safe=0；
+3. 新目录重新跑 Stage C 30k。
+
+而当前 `pc_hybrid_queue.py` 实际流程仍是：
+
+```text
+Stage A
+→ Stage B d53
+→ Stage C d53ep
+→ C通过才D
+```
+
+它没有把：
+
+```text
+old-checkpoint regression
+boundary stress 20k
+```
+
+插到 Stage C 前面。
+
+所以如果 agent 下一步准备直接运行这个 queue，我建议先补两个任务：
+
+```text
+Stage B
+  ↓
+Regression-R:
+旧30k checkpoint + 新Oracle
+168h deterministic TEST
+  ↓
+Stress-S:
+20k boundary actions
+false-safe=0
+  ↓
+Stage C d53 30k fresh
+  ↓
+C1-C5
+  ↓
+Stage D
+```
+
+这里 Regression-R 很有价值：它能直接回答：
+
+> **修的是环境安全接口，还是必须重新学习策略？**
+
+如果旧 checkpoint 换上 d5.3 后已经可以完整走 168 h，就证明我们对根因的定位很准确。
+
+---
+
+## 文档还有一处证据口径建议修正
+
+新 `d5.3` 报告把 C3 失败写成：
+
+> discharge、`mag=1`、`-0.32999998` 被投成 idle。
+
+但你刚才给我的实际 Stage C `eval_failure.json` 口径是：
+
+> charge \(u_{caes}=0.93000000715\)，上界 \(0.9299999999999999\)。
+
+实际上这两个都是**同一类 FP32 endpoint bug**，而新增测试也确实同时覆盖了 charge 和 discharge。
+
+因此报告最好不要把其中一个重新写成“唯一 C3 根因”，而应该改成：
+
+> Two endpoint failures were reproduced: the charge-side upper endpoint and the discharge-side \(-0.33\) endpoint; both originate from float32 representation around dynamically decoded band boundaries.
+
+同样，新报告中写“C2 的 6 次 false-safe”，而你这次 Stage C 总表是 **7/7**。这也应该统一，或者明确：
+
+```text
+7 total unsafe transitions
+其中 6 条属于某 taxonomy
+1 条属于 endpoint→idle / 其他类别
+```
+
+不要以后论文/工程报告里出现 6 和 7 两套数字。
+
+---
+
+## 我现在的验收结论
+
+这次 commit 我会给：
+
+**代码方向：通过。核心修复：通过。正式训练放行：暂不通过。**
+
+具体来说：
+
+* endpoint FP32 bug：**基本修好**；
+* idle pressure/SOC/temp robust guard：**修好，单元测试设计也合理**；
+* d5.3 Oracle version：**正确**；
+* Stage D gate：**正确保持关闭**；
+* 论文 3-D critic / \(3\times10^{-4}\)：**文档重新对齐**；
+* 还需修：**Oracle 先 snap 再做 grid check**；
+* 建议修：**删除 all-false mode mask → all-true 的 silent fallback**；
+* 还需执行：**旧 checkpoint 168 h regression + 20k boundary stress + 新 Stage C**；
+* 当前 GitHub **没有远端 CI status**，56 passed 是提交文档记录的本地结果，不是 CI 证明。
+
+把前两个代码点再补一个很小的 commit 后，我认为就可以开始 **Regression → Stress → 新 Stage C 30k**。只有新 C 的：
+
+$$
+C1=C2=C3=C4=C5=\text{pass}
+$$
+
+之后，才开三个 seed 的 Stage D。

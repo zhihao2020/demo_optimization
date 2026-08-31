@@ -7,6 +7,7 @@ import torch.nn as nn
 
 from actions.caes_u import (
     apply_mode_mask_to_u_torch,
+    legalize_mode_mask,
     project_u_caes_torch,
     u_from_mode_onehot_torch,
 )
@@ -124,13 +125,9 @@ class LowLevelActor(nn.Module):
         soft_mode_for_grad: bool,
     ) -> torch.Tensor:
         logits = self.caes_mode_head(h)
-        legal = mode_mask.to(dtype=torch.bool)
-        if legal.dim() == 1:
-            legal = legal.view(1, -1)
-        if legal.size(-1) != 3:
-            raise ValueError(f"mode_mask last dim must be 3, got {tuple(legal.shape)}")
-        fill = legal.any(dim=-1, keepdim=True)
-        legal = torch.where(fill, legal, torch.ones_like(legal))
+        legal = legalize_mode_mask(mode_mask)
+        if legal.size(0) == 1 and logits.size(0) > 1:
+            legal = legal.expand(logits.size(0), -1)
         logits = logits.masked_fill(~legal, -1.0e9)
         mag = torch.sigmoid(self.caes_mag_head(h).squeeze(-1))
         if explore_noise_std > 0 and not deterministic:

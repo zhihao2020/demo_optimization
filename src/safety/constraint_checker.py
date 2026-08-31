@@ -27,6 +27,7 @@ class GiveSafeConstraintChecker:
             action if isinstance(action, PhysicalFmuAction) else physical_from_dict(action)
         )
         feasible = self.oracle.compute(observation_outputs, previous_thermal_w)
+        physical = self.oracle.canonicalize_physical(physical, feasible)
         predicted = self.oracle.predict_next_state(
             observation_outputs, physical, previous_thermal_w
         )

@@ -305,9 +305,15 @@ class GHTD3Agent:
             n_bat_lo = torch.minimum(n_bat_lo, n_bat_hi - min_span_bat).clamp(-1.0, 1.0)
             n_bat_hi = n_bat_hi.clamp(-1.0, 1.0)
         mask = torch.as_tensor(b["mode_mask"], device=self.device)
-        all_false = ~mask.any(dim=-1, keepdim=True)
-        mask = torch.where(all_false, torch.ones_like(mask), mask)
-        next_mask = torch.where(~next_mask.any(dim=-1, keepdim=True), torch.ones_like(next_mask), next_mask)
+        from actions.caes_u import idle_fill_empty_mode_mask
+
+        mask, _ = idle_fill_empty_mode_mask(mask)
+        next_mask, next_empty = idle_fill_empty_mode_mask(next_mask)
+        done = torch.clamp(
+            done.reshape(-1) + next_empty.to(dtype=done.dtype).reshape(-1),
+            0.0,
+            1.0,
+        )
 
         with torch.no_grad():
             na = self.lo_actor_t.act(

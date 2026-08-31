@@ -544,6 +544,7 @@ class PowerSystemEnv(gym.Env):
                     u_battery=physical.u_battery,
                     u_caes=u_caes_projected,
                 )
+            physical = self.oracle.canonicalize_physical(physical, feasible)
             self.action_validator.validate(physical, feasible)
             ok, reason = self.oracle.check_action_executable(
                 physical, self.last_outputs, feasible, self.previous_thermal

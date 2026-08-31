@@ -28,6 +28,17 @@ DYNAMIC_ENDPOINT_ATOL = 1.0e-7
 ENDPOINT_SNAP_HARD_FAIL = 1.0e-3
 
 
+def interval_outside_abs(value: float, low: float, high: float) -> float:
+    """Absolute distance outside ``[low, high]``; 0 if the value is inside."""
+    lo, hi = min(float(low), float(high)), max(float(low), float(high))
+    x = float(value)
+    if lo <= x <= hi:
+        return 0.0
+    if x < lo:
+        return lo - x
+    return x - hi
+
+
 def snap_to_interval_endpoint(
     value: float,
     low: float,
@@ -250,15 +261,46 @@ def u_from_mode_onehot_dynamic(
     return onehot[:, 0] * u_dis + onehot[:, 2] * u_chg
 
 
+class EmptyModeMaskError(ValueError):
+    """All-false CAES mode mask: never silently reopen discharge/idle/charge."""
+
+
 def legalize_mode_mask(mode_mask: torch.Tensor) -> torch.Tensor:
-    """(B,3) or (3,) bool mask; if a row is all-false, allow every mode."""
+    """(B,3) or (3,) bool mask. All-false rows raise; they are never reopened."""
     legal = mode_mask.to(dtype=torch.bool)
     if legal.dim() == 1:
         legal = legal.view(1, -1)
     if legal.size(-1) != 3:
         raise ValueError(f"mode_mask last dim must be 3, got {tuple(legal.shape)}")
-    fill = legal.any(dim=-1, keepdim=True)
-    return torch.where(fill, legal, torch.ones_like(legal))
+    if not bool(legal.any(dim=-1).all()):
+        raise EmptyModeMaskError(
+            "CAES mode mask is empty; do not reopen all modes"
+        )
+    return legal
+
+
+def idle_fill_empty_mode_mask(
+    mode_mask: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Replace all-false rows with idle-only for a forward pass.
+
+    Returns ``(safe_mask, empty_rows)``. Callers must treat empty rows as
+    terminal (``done=1``) and must not bootstrap through the dummy idle.
+    """
+    legal = mode_mask.to(dtype=torch.bool)
+    squeeze = legal.dim() == 1
+    if squeeze:
+        legal = legal.view(1, -1)
+    if legal.size(-1) != 3:
+        raise ValueError(f"mode_mask last dim must be 3, got {tuple(legal.shape)}")
+    empty = ~legal.any(dim=-1)
+    idle = legal.new_tensor([False, True, False])
+    safe = legal.clone()
+    if bool(empty.any()):
+        safe[empty] = idle
+    if squeeze:
+        return safe.view(-1), empty.view(-1)
+    return safe, empty
 
 
 def mask_mode_logits(logits: torch.Tensor, mode_mask: torch.Tensor) -> torch.Tensor:

@@ -316,6 +316,36 @@ class FeasibilityOracle:
         m = feasible.mode_mask
         return not (m.discharge or m.idle or m.charge)
 
+    def canonicalize_physical(
+        self,
+        action: PhysicalFmuAction,
+        feasible: DynamicFeasibleActionSet,
+    ) -> PhysicalFmuAction:
+        """Snap CAES ULP endpoint artifacts onto the current mode interval.
+
+        Mode is read from the raw command. Grid and next-state checks must use
+        the returned action so float32 band endpoints share one numerical door.
+        """
+        mode = mode_from_u(action.u_caes)
+        span = (
+            feasible.u_caes_charge
+            if mode == CaesMode.CHARGE
+            else feasible.u_caes_discharge
+            if mode == CaesMode.DISCHARGE
+            else None
+        )
+        if span is None:
+            return action
+        lo, hi = min(span), max(span)
+        u_checked, snapped = snap_to_interval_endpoint(action.u_caes, lo, hi)
+        if not snapped:
+            return action
+        return PhysicalFmuAction(
+            u_tp=action.u_tp,
+            u_battery=action.u_battery,
+            u_caes=u_checked,
+        )
+
     def check_action_executable(
         self,
         action: PhysicalFmuAction,
@@ -327,7 +357,7 @@ class FeasibilityOracle:
         feasible = feasible or self.compute(outputs, previous_thermal_w)
         if self.is_feasible_set_empty(feasible):
             return False, "可行集为空"
-        physical = action
+        physical = self.canonicalize_physical(action, feasible)
         pred = self.predict_p_grid(outputs, physical)
         g = self.params["grid"]
         gm = float(self.margins.get("grid", {}).get("margin_W", 0.0))
@@ -358,16 +388,9 @@ class FeasibilityOracle:
         )
         if span is not None:
             lo, hi = min(span), max(span)
-            u_checked, snapped = snap_to_interval_endpoint(physical.u_caes, lo, hi)
-            if not (lo <= u_checked <= hi):
+            if not (lo <= physical.u_caes <= hi):
                 return False, (
                     f"u_caes={physical.u_caes} 超出该方向安全幅值区间 [{lo}, {hi}]"
-                )
-            if snapped:
-                physical = PhysicalFmuAction(
-                    u_tp=physical.u_tp,
-                    u_battery=physical.u_battery,
-                    u_caes=u_checked,
                 )
         predicted = self.predict_next_state(outputs, physical, previous_thermal_w)
         ok, reason = self.post_step_hard_ok(predicted, use_safe=False)

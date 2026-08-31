@@ -13,6 +13,7 @@ from actions.caes_u import (
     apply_mode_mask_to_u_torch,
     caes_intervals_from_feasible,
     gumbel_mode_onehot,
+    interval_outside_abs,
     legalize_mode_mask,
     mask_mode_logits,
     mode_from_u,
@@ -223,6 +224,7 @@ class HybridActor(nn.Module):
         u_bat = float(out["u_battery"][0].cpu())
         original_u = float(u_caes)
         snapped = False
+        raw_miss = 0.0
         mode = mode_from_u(u_caes)
         if "caes_mode_onehot" in out:
             oh = out["caes_mode_onehot"][0].detach().cpu().numpy()
@@ -234,6 +236,7 @@ class HybridActor(nn.Module):
             span = feasible.u_caes_charge
         if span is not None:
             lo, hi = min(float(span[0]), float(span[1])), max(float(span[0]), float(span[1]))
+            raw_miss = interval_outside_abs(u_caes, lo, hi)
             u_caes, snapped = snap_to_interval_endpoint(u_caes, lo, hi)
         ctx = coupling_from_feasible(feasible)
         if ctx is not None:
@@ -250,6 +253,10 @@ class HybridActor(nn.Module):
         packed = physical_dict(u_tp, u_bat, float(u_caes))
         packed["caes_endpoint_snapped"] = bool(snapped)
         packed["caes_endpoint_snap_delta"] = float(u_caes - original_u)
+        packed["caes_raw_endpoint_miss_abs"] = float(raw_miss)
+        packed["caes_numerical_snap_abs"] = (
+            abs(float(u_caes) - original_u) if snapped else 0.0
+        )
         if "caes_mode_onehot" in out:
             packed["caes_mode_onehot"] = out["caes_mode_onehot"][0].detach().cpu().numpy()
             packed["caes_magnitude"] = float(out["caes_magnitude"][0].cpu())

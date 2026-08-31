@@ -61,25 +61,38 @@ class GiveSafeTransitionCollector:
             "fine_failure_counts": {},
             "numerical_endpoint_snap_count": 0,
             "max_endpoint_snap_abs": 0.0,
+            "max_raw_endpoint_miss_abs": 0.0,
         }
 
     def _record_endpoint_snap(self, action: Any) -> None:
         if not isinstance(action, dict):
             return
+        raw_miss = abs(float(action.get("caes_raw_endpoint_miss_abs", 0.0) or 0.0))
+        prev_raw = float(self.stats.get("max_raw_endpoint_miss_abs", 0.0) or 0.0)
+        if raw_miss > prev_raw:
+            self.stats["max_raw_endpoint_miss_abs"] = raw_miss
+        if raw_miss > float(ENDPOINT_SNAP_HARD_FAIL):
+            raise RuntimeError(
+                f"raw endpoint miss {raw_miss} exceeds {ENDPOINT_SNAP_HARD_FAIL}; "
+                "this is a decoder bug, not float32 ULP"
+            )
         if not bool(action.get("caes_endpoint_snapped")):
             return
         self.stats["numerical_endpoint_snap_count"] = (
             int(self.stats.get("numerical_endpoint_snap_count", 0)) + 1
         )
-        delta = abs(float(action.get("caes_endpoint_snap_delta", 0.0) or 0.0))
+        delta = abs(
+            float(
+                action.get(
+                    "caes_numerical_snap_abs",
+                    action.get("caes_endpoint_snap_delta", 0.0),
+                )
+                or 0.0
+            )
+        )
         prev = float(self.stats.get("max_endpoint_snap_abs", 0.0) or 0.0)
         if delta > prev:
             self.stats["max_endpoint_snap_abs"] = delta
-        if delta > float(ENDPOINT_SNAP_HARD_FAIL):
-            raise RuntimeError(
-                f"endpoint snap {delta} exceeds {ENDPOINT_SNAP_HARD_FAIL}; "
-                "this is a decoder bug, not float32 ULP"
-            )
 
     def on_episode_reset(self, start_time: float = 0.0) -> None:
         if self._shell is not None:
