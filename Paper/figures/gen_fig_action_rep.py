@@ -76,7 +76,7 @@ def main() -> Path:
 
     ax = axes[0]
     _number_line(ax)
-    ax.set_title("(a) Projection TD3", loc="left", fontsize=10, color=C_INK, pad=4)
+    ax.set_title("(a) Continuous-projection TD3", loc="left", fontsize=8.5, color=C_INK, pad=4)
     _arrow(ax, 0.28, 0.48, 0.0, 0.18, C_EX)
     ax.plot(0.28, 0.48, "o", ms=4.5, color=C_EX, zorder=6)
     ax.plot(0.0, 0.16, "o", ms=5.5, color=C_EX, zorder=6)
@@ -84,13 +84,13 @@ def main() -> Path:
 
     ax = axes[1]
     _number_line(ax)
-    ax.set_title("(b) Static-band hybrid", loc="left", fontsize=10, color=C_INK, pad=4)
+    ax.set_title("(b) Component-support Hybrid TD3", loc="left", fontsize=8.5, color=C_INK, pad=4)
     _arrow(ax, -0.665, 0.52, -0.665, 0.18, C_DIS)
     _arrow(ax, 0.93, 0.52, 0.93, 0.18, C_CHG)
 
     ax = axes[2]
     _number_line(ax)
-    ax.set_title(r"(c) PC-HybridTD3", loc="left", fontsize=10, color=C_INK, pad=4)
+    ax.set_title(r"(c) PC-HybridTD3", loc="left", fontsize=8.5, color=C_INK, pad=4)
     lo, hi = -0.72, -0.40
     ax.add_patch(Rectangle((DIS_LO, -0.14), DIS_HI - DIS_LO, 0.28, facecolor="#FFFFFF", alpha=0.62, lw=0, zorder=4))
     ax.add_patch(Rectangle((lo, -0.16), hi - lo, 0.32, facecolor=C_DIS, alpha=1.0, lw=0, zorder=5))

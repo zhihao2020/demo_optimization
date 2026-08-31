@@ -1,25 +1,21 @@
 # Figure set (genre checklist)
 
-文档更新：2026-08-31 10:45 (+08:00)
+文档更新：2026-08-31 18:30 (+08:00)
 
-Aligned with 检查.txt Fig.1–6 (system scheduling, not CAES-only). Full paths under `Paper/figures/`. Result panels are empty placeholders until the PC-HybridTD3 TEST campaign; archived GHTD3/HMSD/FS-HSAC plots have been deleted.
+IEEE conference live paper `Paper/main.tex`. Frozen to **five** main-text figures. Result panels are LaTeX comments until Stage D; `fig_placeholder` is not rendered.
 
 ## Main text
 
 | Fig | Basename | Content | Script | Data gate |
 |-----|----------|---------|--------|-----------|
 | 1 | `fig_topology` | Wind/PV/Thermal/BESS/CAES/Grid/Load | labeled schematic | none |
-| 2 | `fig_algorithm` | Forecast → hybrid actor → joint support → GiveSafe → FMU | `Paper/figures/gen_fig_algorithm.py` | none |
-| 3 | `fig_placeholder` | Training curves (empty) | — | Stage D |
-| 4 | `fig_placeholder` | Typical TEST week dispatch (empty) | — | full-week TEST traj |
-| 5 | `fig_placeholder` | Battery SoC + CAES SoC + TOU (empty) | — | full-week traj |
-| 6 | `fig_placeholder` | System KPI (empty) | — | `tab:kpi` |
+| 2 | `fig_algorithm` | Forecast → hybrid actor → \(\widehat{\mathcal A}_f\) → GiveSafe → FMU | `Paper/figures/gen_fig_algorithm.py` | none |
+| 3 | `fig_action_rep` | (a) Continuous-projection TD3; (b) Component-support Hybrid TD3; (c) PC-HybridTD3 | `Paper/figures/gen_fig_action_rep.py` | none |
+| 4 | `fig_training` | Validation operating cost, 3 seeds | — | Stage D |
+| 5 | `fig_dispatch_week` | 4-panel week: exogenous / dispatch / price+net load / inventories | — | full-week TEST traj |
 
-## Auxiliary (footnote / appendix)
+## Dropped from the live manuscript (deleted)
 
-- TOU clocks / seasonal boundaries / CAES legal envelope / action-rep: schematics, kept
-- Cold-tank, annual SoC, carbon settlement, GiveSafe reject bars: **empty placeholders** (old numeric plots deleted)
-
-## Dropped from narrative
-
-- `fig_cstep`, HMSD algorithm figures, hierarchical mechanism bars, GHTD3 weekly balance, HMSD training curves, B0/linprog/PSO/HMSD carbon bars
+- `fig_placeholder`, `fig_caes_legal`, `fig_caes_feasible_set`, `fig_aux_obs`, `fig_seasonal_boundary`
+- KPI bar, cold-tank guard, annual-reset, carbon-position / settlement, GiveSafe reject
+- Graphical abstract, highlights, nomenclature (CAS leftovers)

@@ -93,9 +93,9 @@ def main() -> None:
     _box(ax, 7.00, 5.68, 3.85, 1.12, r"state $s_t$", "inventories, powers, 24 h TOU/forecast", tc=C_NAVY)
 
     _band(ax, 3.55, 1.72)
-    ax.text(0.32, 5.08, "Actor on " + r"$\mathcal{A}_f(s)$", fontsize=7.2, fontweight="bold", color=C_TEAL, va="top")
+    ax.text(0.32, 5.08, "Actor", fontsize=7.2, fontweight="bold", color=C_TEAL, va="top")
     _box(ax, 0.70, 3.68, 3.20, 1.32, "Feasibility oracle", r"$\mathcal{K}(s)$, $\mathcal{M}_k(s)$, grid slice", tc=C_TEAL)
-    _box(ax, 4.35, 3.68, 3.30, 1.32, "PC-HybridTD3 actor", r"$(u^{\mathrm{th}},u^{\mathrm{bat}},m,z)$ decoded on $\mathcal{A}_f(s)$", tc=C_TEAL)
+    _box(ax, 4.35, 3.68, 3.30, 1.32, "PC-HybridTD3 actor", r"$(u^{\mathrm{th}},u^{\mathrm{bat}},m,z)$ on $\widehat{\mathcal{A}}_f(s)$", tc=C_TEAL)
     _box(ax, 8.10, 3.68, 3.10, 1.32, "Greedy inference", r"$m=\arg\max$ mode logits", tc=C_TEAL)
 
     _band(ax, 1.95, 1.35)
@@ -123,7 +123,7 @@ def main() -> None:
     _arr(ax, (8.92, 5.68), (8.92, 5.42), head=False)
     _arr(ax, (8.92, 5.42), (2.30, 5.42), head=False)
     _arr(ax, (2.30, 5.42), (2.30, 5.00))
-    _label(ax, 5.60, 5.55, r"build $\mathcal{A}_f(s)$", C_TEAL)
+    _label(ax, 5.60, 5.55, r"build $\widehat{\mathcal{A}}_f(s)$", C_TEAL)
 
     _arr(ax, (3.90, 4.34), (4.35, 4.34))
     _arr(ax, (7.65, 4.34), (8.10, 4.34))

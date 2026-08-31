@@ -1,14 +1,14 @@
 # Paper outline and figure checklist
 
-文档更新：2026-08-31 12:00 (+08:00)
+文档更新：2026-08-31 18:30 (+08:00)
 
-**Working title:** *Physics-Constrained Hybrid TD3 for Forecast-Aware Economic Scheduling of Multi-Energy Systems*
+**Working title:** *Physics-Constrained Hybrid TD3 for Safe Economic Scheduling of an FMU-Based Multi-Energy System*
 
 **短标题:** *Physics-constrained hybrid TD3 for multi-energy scheduling*
 
-**主方法:** **PC-HybridTD3**（Physics-Constrained Hybrid TD3：预测感知状态 → 异构 Actor → 联合 \(\mathcal A_f(s)\) → GiveSafe → FMU；经济 Bellman 只用真转移）。研究对象是多能源安全经济协同调度。投影连续 TD3 与分量支撑 hybrid TD3 为仅有的两组消融。FS-HSAC 不再作为论文身份。
+**主方法:** **PC-HybridTD3**（预测感知状态 → 异构 Actor → 联合 \(\widehat{\mathcal A}_f(s)\) → GiveSafe → FMU；经济 Bellman 只用真转移）。\(\widehat{\mathcal A}_f\) 是可计算 feasible-support 近似，\(\mathcal A_{\mathrm{FMU}}\) 才是孪生可执行集。研究对象是多能源安全经济协同调度。投影连续 TD3 与分量支撑 hybrid TD3 为仅有的两组消融。FS-HSAC 不再作为论文身份。
 
-**体裁:** Applied Energy 能源调度 + DRL（对标 OCTD3 / GHTD3）。
+**体裁:** IEEE conference（唯一正式稿 `Paper/main.tex`）。Elsevier CAS / highlights / graphical abstract / 大 nomenclature 已退出正文。FS-HSAC 会议稿 `Paper/icpre2026/` 已删除。
 
 **单一源（数字）:** Stage D 之后主表取 `runs/seasonal_tou2026/**/pc_hybrid_td3_s*`。**禁止**把 year-constant `seasonal_v1` 或归档 `fs_hsac_*` 现金混入月度代理购电正文。投影消融 = `--ablation projection`；静态支撑消融 = `--ablation static-support`。
 
@@ -22,23 +22,23 @@
 | Stage C 过门 | `compute_stage_c_gates`：NaN/Inf、FMU hard、held-out NoSafeAction、缺供、成本优于 random。CAES 使用不是过门 |
 | 队列 | `logs/pc_hybrid_queue.py`：A→B→C；`stage_c_passed` 前 SKIP Stage D |
 | 训练入口 | `scripts/train_seasonal.py --method td3 --season all`；36/8/8 |
-| `Paper/main.tex` | 检查.txt Fig.1–6 已对齐：拓扑、算法、训练曲线占位、典型周占位、SoC+电价占位、系统 KPI 占位。结果顺序：经济 → 消纳/可靠性 → 安全 → 机制。主表以 \(CC=\sum C_t\) 为首。已编译 `Paper/main.pdf`。§5 数字仍空 |
-| 购电 | 2026 月度 110 kV 两部制；`tab:tou-monthly` + `tab:tou-windows`；09–12 顺延 8 月（S） |
+| `Paper/main.tex` | **IEEE conference 重置完成**：I Intro → II Problem → III Method → IV Case study（四陈述小节）→ V Conclusion。图冻结 Fig.1–5。弃用图在 `Paper/figures/_dropped/`。月度 TOU 全表在 `Paper/supplementary_tou.tex`。数字仍空 |
+| 购电 | 正文一句 + Table I TOU range；完整月度表在仓库，不进会议正文 |
 | PAMDP 形式化 | `docs/pamdp_formalization.md` |
 | 主数字源 | Stage D TEST weeks（C 过门前不启动） |
 | 消融对照 | 投影 TD3；静态支撑 hybrid TD3；rule / rolling MILP |
 
 **写作门槛:** Stage D 前 **§5 表图占位不填假数**；不声称 RL 现金优于 MILP。FS-HSAC 不再是论文身份。
 
-文档更新：2026-08-27 22:10 (+08:00)。`Paper/main.tex` 摘要、highlights、引言分段、`tab:lit`（+Jendoubi/Ochoa/Fan 2019）、§5 实验协议与 §6 已改成期刊口径；内部 “results gate” 字样已从正文去掉。空表保留。`pdflatex`+`bibtex` 通过（24 页）。
+文档更新：2026-08-31 18:30 (+08:00)。按 `论文修改.txt` 做 conference reset：单一 IEEE 稿、5 张图、TOU/碳/CAES 调试段落退出正文。Stage D 前不填假数。
 
 ---
 
 ## 0.5 三条贡献（不超过三条）
 
 1. **异构设备混合动作** — 火电/电池连续；CAES 模式–幅值。避免连续投影死区。
-2. **系统级联合 \(\mathcal A_f(s)\)** — 设备界 + 联络线耦合写入 actor；GiveSafe 最后验证。
-3. **预测感知 FMU 闭环** — 24 h 前瞻；物理-only Bellman；36/8/8 TEST；rule / rolling MILP / projection TD3；8760 h 部署。
+2. **系统级联合 \(\widehat{\mathcal A}_f(s)\)** — 可计算动态 feasible-support；GiveSafe 最后验证。不把 \(\widehat{\mathcal A}_f\) 写成 \(\mathcal A_{\mathrm{FMU}}\)。
+3. **FMU 闭环学习** — 24 h 前瞻作为输入（不进标题）；物理-only Bellman；36/8/8 TEST；rule / rolling MILP / projection TD3；8760 h 部署。
 
 **勿写**
 
@@ -62,74 +62,45 @@
 
 ---
 
-## 0.6 推荐期刊
+## 0.6 体裁
 
-| 档 | 期刊 | 条件 |
-|----|------|------|
-| **主攻** | **Applied Energy** | 系统+支撑形式化+PC-HybridTD3+TEST 分项成本表写干净 |
-| **同等** | **Energy** | 更挤（GHTD3 同刊）；强调多模态压空 + FMU |
-| **备选** | ECM；IEEE TII | 孪生与工业可执行性作辅线 |
-| **不优先** | IEEE TPWRS；NeurIPS/ICML | 不是电网出清，也不是新 RL 家族论文 |
+**当前唯一正式稿：IEEE conference**（`Paper/main.tex`）。期刊 Applied Energy / Energy 路线已冻结，不并行维护第二份 CAS 稿。
 
 ---
 
-## 1. Paper outline（六章，照 GHTD3）
+## 1. Paper outline（五节，IEEE conference）
 
-### 1. Introduction（已写入 `main.tex`）
+### I. Introduction（约 1 页）
 
-- 厂级 price-taker：山东 TOU + 国家 ETS；多模态压空与火电—电池协同。
-- 文献三类：凸/启发式优化 / 盒动作或投影 DRL / option 或库存分层 DRL（OCTD3、GHTD3）。
-- 三个 gap（可辩护口径）：
-  1. **模型与验证**：多能 DRL 调度多用代数/简化环境；针对多罐 CAES 热—气耦合、并在 FMI 封装多物理模型上做闭环策略验证的工作有限（不写“仿真很少用 FMI”）。
-  2. **形式化**：需把 \(\mathcal K(s)\)（当前可选模式）与 \(\mathcal M_k(s)\)（模式条件幅值区间）统一为状态相关混合支撑 \(\mathcal A(s)\)；option initiation set 也可限制模式，但不能替代本对象的模式—幅值参数化写进策略密度。
-  3. **方法需求**：在每小时同时决定模式与幅值、且仅有三个模式时可精确枚举时，需要同时间尺度最大熵混合策略；不宣称 HRL 无法处理。
-- 四条贡献见 §0.5。
-- **表：** `tab:lit`。
+只讲四件事：多能源为何协同调度；MILP/DRL 各自问题；continuous / hierarchical DRL 的 gap；PC-HybridTD3 与 3 条贡献。Cui 放 related-work 段落。山东 110 kV 电价不在引言展开。
 
-### 2. System description（物理章保留）
+### II. Multi-Energy Scheduling Problem（约 1.5 页）
 
-- 拓扑：风光、火电、电池、多罐 CAES、母线、电网。
-- Sysplorer → FMI FMU，通信间隔 1 h。
-- 三季边界与 **月度** 110 kV TOU、ETS。Held-out 周对应 2 月 / 5 月 / 8 月。
-- **图：** Fig.1 `fig_topology`；Fig.2 `fig_price_tou`（冬评日 + 1 月 vs 8 月）；Fig.3 `fig_seasonal_boundary`（周 5/18/31 真实月度价，非 tile 1 月）。
-- **表：** `tab:params`；`tab:tou-monthly`；`tab:tou-windows`。
+- A. Topology：`fig_topology`。
+- B. Dispatch-level constraints：功率平衡、火电箱与爬坡、电池 SoC、CAES 包线与状态、电网限。PV 温度方程、风机 cubic、冷热罐 ODE **不**进会议正文。
+- C. \(C_t\) 七项 + MDP：\(s_t=[x_t,f_{t:t+23},\lambda_{t:t+23},z_t]\)，\(\widehat{\mathcal A}_f=\mathcal A_{\mathrm{dev}}\cap\mathcal A_{\mathrm{grid}}\)。
+- **表：** `tab:params`（含 TOU range）。月度电价全表、碳账户图退出正文。
 
-### 3. Problem formulation
+### III. PC-HybridTD3（约 2 页，全文重点）
 
-- 3.1–3.3 发电 / 转换 / 储能物理（保留）
-- 3.4 系统运行约束：min-load 带、模式锁——**写在约束里，不当发现**；断开合法集作设备包线；无最短运行锁（崔 2024 启停费）
-- 3.5 优化目标 \(J^{\mathrm{gen}}\) 分项 + 周末库存软加分
-- 3.6 **状态相关混合 MDP**：\(\mathcal A(s)=\mathcal A_{\mathrm{tp}}\times\mathcal A_{\mathrm{bat}}\times\bigcup_k\{k\}\times\mathcal M_k(s)\)；解码进动态区间；奖励 \(r^{\mathrm{ext}}\)
-- **图：** Fig.4 `fig_caes_legal`。
+- 联合 \(\widehat{\mathcal A}_f\) 顺序解码；GiveSafe 残差；physical-only TD3。
+- 消融：Continuous-projection TD3 → Component-support Hybrid TD3 → PC-HybridTD3。
+- **图 / 算法 / 表：** `fig_algorithm`；`fig_action_rep`；Alg. PC-HybridTD3；`tab:hyper`。
 
-### 4. Solution methodology（已按 PC-HybridTD3 重写）
+### IV. Case study（约 2.5–3 页；数字 Stage D 后填）
 
-- 4.0 **为何同时间尺度、而非库存 HRL**（已成小节）
-- 4.1 孪生闭环：Actor 解码已在 \(\mathcal A_f(s)\)；拒绝不进 \(\mathcal D_B\)；季节栈 shadow off
-- 4.2 动作表示对照：投影 vs 静态带 vs 动态支撑；`fig_action_rep`
-- 4.3 PC-HybridTD3 actor：掩码分类、单一幅值头、动态区间仿射
-- 4.4 3 维 executed physical critic \(Q(s,u^{\mathrm{th}},u^{\mathrm{bat}},u_{\mathrm{caes}})\) + TD3 target（\(\arg\max m'\)，只噪 \(z'\)）
-- 4.5 网络：256-ReLU 双层；lr \(3\times10^{-4}\)；batch 64
-- 4.6 物理-only 经济 replay + 采用 GiveSafe；拒绝进安全审计
-- 4.7 两组消融：连续 vs 混合；静态 vs 动态。主方法：rule / rolling MILP / projection TD3 / PC-HybridTD3
-- **图 / 算法框 / 表：** `fig_algorithm`；`fig_action_rep`；Alg. PC-HybridTD3；`tab:hyper`
+四小节（标题用陈述句，不用疑问句）：
 
-### 5. Simulation results（数字过门后再填）
+1. Training convergence → Fig.~4 training（Stage D 生成）。
+2. System-level scheduling performance → `tab:kpi`（cost / grid / carbon / curt / uns / viol / runtime）。
+3. Coordinated weekly dispatch → Fig.~5 四联 dispatch+SOC+price（Stage D 生成）。
+4. Ablation and robustness → 消融链 + noisy forecast + 8760 h 部署检查。
 
-- 5.1 设置：硬件、超参、三季、基线；**统一结算**见 `docs/comprehensive_cost_terms.md`；**参数出处**见 `docs/parameter_evidence.md`（profile `official-2024-ets-sd-grid-v1`）
-- **5.2a 经济：** `tab:main` / `tab:econ` — 仅 `valid_steps=168`；主列 \(CC=-J^{\mathrm{gen}}\) 与分项（cash / CO₂ / CUT / deg / su / grid）
-- **5.2b 消纳与灵活性：** 弃电 MWh/率、可再生利用率；合同越限 MWh/小时、\(|P_{\mathrm{grid}}|_{\max}\)、峰谷差/爬坡（1 h，不写快速瞬态）
-- **5.2c 机制消融（多能协同）：** 完整 thermal+BESS+CAES vs **lock-CAES**（及已有储能受限对照）；报告 \(\Delta CC\)、\(\Delta E_{\mathrm{curt}}\)、越限/峰谷、BESS/CAES 分时功率与启停——用轨迹+分项说明互补，**不**造单一“协同指数”
-- **5.2d 可靠与在线计算：** unserved、有效步、FMU 失败、GiveSafe 拒绝、\(E_{\mathrm{terminal}}\)；PC-HybridTD3 推理时延 vs rolling MILP 每步求解（mean/p95/max/超时率）
-- 5.3 灵敏度：官方碳价带、β/η、可行性裕度、压空容量、弃电/缺供、合同价、**启停缩放模式**、TOU 构造基价（见 `docs/sensitivity_section.md`）
-- **声明规则：** 最低 CC 只称经济最优；更低弃电/越限只称对应维；仅当 CC+弃电+可靠性均不差时才写“总体更优”，否则 Pareto；价格参数分 O/M/L/S 四级，禁止把情景价写成监管价
-- **辅助：** `tab:run` 作脚注，不是主经济 KPI
+不写 cold-tank 调试、碳账户、annual-reset debug、GiveSafe reject 主文图。KPI bar 与 Table 重复则删图留表。
 
-### 6. Conclusions
+### V. Conclusion（约 0.3 页）
 
-- 编号四点：DAE 对象；\(\mathcal A_f(s)\)；同时间尺度 PC-HybridTD3；月度 110 kV 结算。无现金排名。
-- 限制：Stage D 前无数；动态区间含 oracle 余量；周重置；09–12 为 S 级顺延
-- 若 MILP 更便宜：按价格/约束权衡与代理模型近似解释（文献路径），不改论文身份，不写“RL 预判更聪明”
+协同调度 + \(\widehat{\mathcal A}_f\) + physical-only TD3。限制：oracle 余量、周重置、09–12 顺延。不声称 RL 优于 MILP。
 
 ---
 
@@ -180,29 +151,19 @@
 
 ---
 
-## 2. Figures（体裁标配）
+## 2. Figures（冻结 5 张）
 
-Basename 均在 `Paper/figures/`。
-
-### A. 主文
+Basename 均在 `Paper/figures/`。会议正文只保留下列主文图。
 
 | ID | File | 作用 | 状态 |
 |----|------|------|------|
-| Fig.1 | `fig_topology` | 厂级拓扑 | 有 |
-| Fig.2 | `fig_price_tou` | 月度 TOU：冬评日 + 1 月 vs 8 月 | 有（`gen_fig_price_tou.py`） |
-| Fig.3 | `fig_seasonal_boundary` | 三季 held-out 周风光荷 + 月度价 | 有（`gen_fig_seasonal_boundary.py`；周 5/18/31） |
-| Fig.4 | `fig_caes_legal` | CAES 合法包线 + 模式锁 | 有 |
-| Fig.5 | `fig_action_rep` | 投影 vs 固定带 vs \(\mathcal M_k(s)\) | 有（三栏 matplotlib） |
-| Fig.6 | `fig_algorithm` | PC-HybridTD3 闭环（\(\mathcal D_B\) 物理 / \(\mathcal D_S\) 审计） | 有（`gen_fig_algorithm.py`） |
-| Fig.7+ | 功率平衡 / SoC / 成本条 | §5 | 待数据 |
+| Fig.1 | `fig_topology` | 多能源拓扑 | 有 |
+| Fig.2 | `fig_algorithm` | PC-HybridTD3 闭环 | 有；caption 已按 \(\widehat{\mathcal A}_f\) 重写 |
+| Fig.3 | `fig_action_rep` | 消融用 CAES 子动作表示 | 有；面板标题对齐 baseline 名 |
+| Fig.4 | `fig_training` | 三方法验证成本收敛 | Stage D 生成；正文 comment，不渲染 placeholder |
+| Fig.5 | `fig_dispatch_week` | 典型周：外生 / 调度 / 电价+净负荷 / 库存 | Stage D 生成；正文 comment |
 
-### B. 附录 / 补充
-
-| File | 作用 |
-|------|------|
-| `fig_aux_obs` | 观测栈示意 |
-| `fig_givesafe_reject` | 拒绝不进 Bellman |
-| `fig_caes_feasible_set` | \(\mathcal M_k(s)\) 动态收缩示意 |
+**删除（不进正式稿）：** `fig_placeholder`、`fig_caes_legal`、`fig_caes_feasible_set`（二者 SHA 相同）、`fig_aux_obs`、`fig_seasonal_boundary`、KPI bar、cold-tank guard、annual-reset、carbon-position / settlement、GiveSafe reject。完整月度 TOU 表移出正文。
 
 ---
 

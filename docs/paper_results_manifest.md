@@ -1,6 +1,8 @@
 # 论文结果清单（PC-HybridTD3）
 
-文档更新：2026-08-30 22:40 (+08:00)
+文档更新：2026-08-31 19:10 (+08:00)
+
+IEEE conference live paper only: `Paper/main.tex`. Stage D 前不渲染 `fig_placeholder`，不填假数。月度 TOU 全表见 `Paper/supplementary_tou.tex`。
 
 **提纲：** [`docs/paper_outline_and_figures.md`](paper_outline_and_figures.md)
 

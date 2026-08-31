@@ -1,512 +1,172 @@
-\documentclass[a4paper,fleqn]{cas-sc}
-
-\usepackage{amsmath,amssymb}
-\usepackage{booktabs}
+% Live PC-HybridTD3 IEEE conference manuscript (only maintained paper).
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
-\usepackage{float}
-\usepackage{placeins}
-\usepackage{multirow}
-\usepackage{siunitx}
+\usepackage{textcomp}
+\usepackage{booktabs}
+\usepackage{bm}
 \usepackage{array}
-\usepackage{tabularx}
-\usepackage{mdframed}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
-\usepackage{tikz}
-\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc,backgrounds,decorations.pathreplacing}
+\usepackage{url}
+\usepackage{flushend}
+\usepackage{placeins}
+\urlstyle{same}
 \graphicspath{{figures/}}
-\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
-\setlength{\floatsep}{8pt plus 2pt minus 2pt}
-\setlength{\intextsep}{8pt plus 2pt minus 2pt}
-\setlength{\abovecaptionskip}{4pt}
-\setlength{\belowcaptionskip}{0pt}
-\raggedbottom
+\newcommand{\Afhat}{\widehat{\mathcal{A}}_{f}}
+\newcommand{\AFMU}{\mathcal{A}_{\mathrm{FMU}}}
 
 \begin{document}
-\let\WriteBookmarks\relax
-\def\floatpagepagefraction{1}
-\def\textpagefraction{.001}
 
-\shorttitle{Physics-constrained hybrid TD3 for multi-energy scheduling}
-\title[mode=title]{Physics-Constrained Hybrid TD3 for Forecast-Aware Economic Scheduling of Multi-Energy Systems}
+\title{Physics-Constrained Hybrid TD3 for Safe Economic Scheduling\\of an FMU-Based Multi-Energy System}
 
-\begin{abstract}
-Rising shares of wind and photovoltaic generation tighten the coupling among thermal units, battery storage, compressed-air energy storage (CAES) and the grid. This paper studies weekly price-taker operation of a thermal--BESS--CAES plant under a monthly Shandong agency-purchase time-of-use (TOU) tariff and a national emissions-trading charge. The plant is represented by a first-principles Modelica model, compiled from MWORKS Sysplorer as a functional mock-up unit (FMU). Device dynamics, inventory limits and interchange capacity together define a state-dependent feasible set \(\mathcal{A}_f(s)\) that is strictly smaller than the product of device boxes. Physics-constrained hybrid TD3 (PC-HybridTD3) learns a forecast-aware policy whose actions---continuous thermal and battery set-points together with a CAES mode--magnitude pair---are generated already inside \(\mathcal{A}_f(s)\). Twin critics evaluate the executed physical commands, and only hours that the FMU actually advances enter the economic Bellman update; a residual safety screen (GiveSafe) is kept as a last physical check. Continuous-projection TD3 and a component-wise hybrid variant isolate the action representation and the joint support. The policy is compared with a price-aware heuristic and a rolling mixed-integer linear programme on the same FMU.
-\end{abstract}
-
-\begin{highlights}
-\item A hybrid policy coordinates thermal, battery and CAES commands on a shared timescale.
-\item Device limits and grid coupling are encoded as a joint, state-dependent feasible support.
-\item Forecast-aware FMU-in-the-loop learning is assessed against same-plant classical baselines.
-\end{highlights}
-
-\begin{graphicalabstract}
-\centering
-\includegraphics[width=0.95\textwidth]{fig_algorithm}
-\end{graphicalabstract}
-
-\begin{keywords}
-heterogeneous scheduling \sep joint physical feasibility \sep forecast-aware economic dispatch \sep hybrid-action reinforcement learning \sep time-of-use \sep Modelica \sep FMU
-\end{keywords}
+\author{
+\IEEEauthorblockN{Anonymous Authors}
+}
 
 \maketitle
 
-% =====================================================================
-% Nomenclature (framed two-column symbol table)
-% =====================================================================
-\begin{table}[H]
-\centering
-\small
-\setlength{\tabcolsep}{4pt}
-\renewcommand{\arraystretch}{1.1}
-\begin{mdframed}[linewidth=0.7pt,linecolor=black,
-  innerleftmargin=6pt,innerrightmargin=6pt,
-  innertopmargin=4pt,innerbottommargin=4pt]
-  \centering\textbf{Nomenclature}\par\medskip
-  \begin{tabularx}{\linewidth}{@{}l X @{\quad} l X @{}}
-    \toprule
-    \multicolumn{4}{@{}l}{\textit{Indices and sets}} \\
-    \midrule
-    $t$ & hour index in a weekly episode, $t=0,\ldots,T-1$ ($T=168$) &
-    $i$ & device / inventory index \\
-    $\mathcal{S},\mathcal{A}_f(s)$ & state space and joint feasible hybrid support &
-    $\mathcal{K}(s),\mathcal{M}_k(s)$ & admissible CAES modes and magnitude interval for mode $k$ \\
-    $\mathcal{A}_{\mathrm{dev}},\mathcal{A}_{\mathrm{grid}}$ & device product and interchange slice &
-    $\mathcal{F}(s)$ & Oracle+GiveSafe set (grid, predicted next state, locks) \\
-    $k_t,\,z_t$ & CAES mode and normalised magnitude ($\mu_t\equiv z_t$) &
-    $R_t$ & twin residual $P^{\mathrm{w}}+P^{\mathrm{pv}}+P^{\mathrm{load}}$ (FMU signs) \\
-    \midrule
-    \multicolumn{4}{@{}l}{\textit{Plant and market variables}} \\
-    \midrule
-    $P_t^{\mathrm{th/bat/caes}}$ & thermal / battery / CAES electric power &
-    $P_t^{\mathrm{w/pv}},P_t^{\mathrm{load/grid}}$ & wind / PV / load / grid power \\
-    $P_t^{\mathrm{curt}},P_t^{\mathrm{uns}}$ & curtailment and unserved power &
-    $G_t,v_t,T_t^{\mathrm{air}}$ & irradiance, wind speed, ambient temperature \\
-    $s_{t,\mathrm{bat/gas}}$ & battery and CAES gas SoC &
-    $s_{t,\mathrm{hot/cold}}$ & CAES hot/cold thermal inventories \\
-    $p_t,T_t^{\mathrm{gas}}$ & CAES gas pressure and temperature &
-    $\eta,E_{\mathrm{cap}},p_{\mathrm{norm}}$ & battery efficiency, energy capacity, gas rating \\
-    $\lambda_t^{\mathrm{buy/sell}}$ & TOU purchase / sale prices &
-    $E_t^{\mathrm{buy/sell}}$ & grid purchase / sale energy \\
-    $\Delta J_t^{\mathrm{cash}},J^{\mathrm{cash}}$ & cash-flow increment and weekly cash objective &
-    $\Delta m_t,\pi_{\mathrm{CO_2}},J^{\mathrm{gen}}$ & CO$_2$ mass, ETS price, comprehensive objective \\
-    $C_t^{CUT},C_t^{\mathrm{deg}}$ & curtailment/unserved cost, battery cycle cost &
-    $C_t^{\mathrm{su}},C_t^{\mathrm{grid}}$ & CAES startup cost, soft interchange-contract cost \\
-    $C_t^{\mathrm{op}}$ & device O\&M / fuel cash cost &
-    $CC$ & comprehensive operating cost $CC=\sum_t C_t=-J^{\mathrm{gen}}$ \\
-    $u_{\mathrm{tp}},u_{\mathrm{bat}},u_{\mathrm{caes}}$ & thermal / battery / CAES dispatch commands &
-    $T,\,o_t$ & episode length (168~h) and 166-dimensional observation \\
-    \midrule
-    \multicolumn{4}{@{}l}{\textit{Physics-constrained hybrid TD3}} \\
-    \midrule
-    $s_t,\,a_t$ & MDP state and physical FMU action &
-    $e_m\in\{0,1\}^3$ & one-hot CAES mode (discharge / idle / charge) \\
-    $M(s)$ & Boolean mode mask from $\mathcal{K}(s)$ &
-    $\pi_{\theta}$ & parameterized actor $(u^{\mathrm{th}},u^{\mathrm{bat}},m,z)$ on $\mathcal{A}_f(s)$ \\
-    $Q_{\phi_{1,2}}$ & twin critics on the executed physical action &
-    $\tau_{\mathrm{G}}$ & Gumbel--Softmax temperature ($1.0\to 0.2$) \\
-    $r^{\mathrm{ext}}$ & extrinsic plant reward from $-C_t$ ($J^{\mathrm{gen}}$) &
-    $\Pi_{\mathcal{F}}$ & GiveSafe acceptance onto $\mathcal{F}(s)$ \\
-    $\gamma$ & discount factor &
-    $\mathcal{D}_{\mathrm{B}},\mathcal{D}_{\mathrm{S}}$ & economic replay / safety audit set \\
-    \midrule
-    \multicolumn{4}{@{}l}{\textit{Abbreviations}} \\
-    \midrule
-    PC-HybridTD3 & physics-constrained hybrid TD3 &
-    TD3 & twin delayed DDPG \\
-    MILP & mixed-integer linear programme (rolling surrogate) &
-    TOU & time-of-use \\
-    CAES & compressed-air energy storage &
-    FMU & functional mock-up unit (FMI) \\
-    ETS & emissions trading scheme &
-    GHTD3 & goal-conditioned hierarchical TD3 \\
-    \bottomrule
-  \end{tabularx}
-\end{mdframed}
-\end{table}
-\FloatBarrier
+\begin{abstract}
+Rising shares of wind and photovoltaic generation require coordinated hourly dispatch of thermal units, battery storage, compressed-air energy storage (CAES) and the grid. This paper considers weekly price-taker scheduling of a multi-energy plant whose nonlinear dynamics are given by a Modelica functional mock-up unit (FMU). Device limits, inventories and interchange capacity induce a state-dependent hybrid action region that cannot be written in closed form. Physics-constrained hybrid TD3 (PC-HybridTD3) generates continuous thermal and battery set-points together with a CAES mode--magnitude pair already inside a computable joint feasible-support model \(\Afhat(s)\), applies GiveSafe as a residual physical check, and updates the critics only on executed transitions. The method is evaluated against a heuristic, a rolling mixed-integer linear programme, continuous-projection TD3 and a component-support hybrid ablation on eight held-out test weeks.
+% Stage D: On eight held-out test weeks, PC-HybridTD3 reduces operating cost by \(x\%\) relative to continuous TD3 and by \(y\%\) relative to the rule-based controller, while maintaining zero unserved energy and zero hard-constraint violations. The policy achieves \ldots{}~ms per scheduling step.
+\end{abstract}
 
-% =====================================================================
+\begin{IEEEkeywords}
+multi-energy system, economic scheduling, hybrid-action reinforcement learning, physics-constrained TD3, functional mock-up unit
+\end{IEEEkeywords}
+
 \section{Introduction}
 \label{sec:introduction}
-% =====================================================================
 
-High shares of wind and photovoltaic generation make plant-level multi-energy scheduling a coupled problem of heterogeneous dynamics, temporal inventory, operational constraints and nonlinear plant behaviour~\cite{zhou2023iesdrl,yang2024planning}. Thermal generation, battery energy storage (BESS), compressed-air energy storage (CAES) and the grid interchange must be coordinated under ramping, inventory and capacity limits. This paper studies weekly price-taker operation of a thermal--BESS--CAES facility~\cite{emmanuel2020market,pei2024pricetaker} that settles a monthly Shandong agency-purchase time-of-use (TOU) tariff~\cite{ndrc2021tou,shandong2023tou} together with a national emissions-trading charge~\cite{icap2025chinaets}. The objective is the expected sum of hourly operating cost
+Wind and photovoltaic (PV) variability couple thermal generation, battery energy storage (BESS), compressed-air energy storage (CAES) and grid interchange through a shared bus and shared inventories~\cite{zhou2023iesdrl,yang2024planning}. A thermal ramp, a battery charge and a CAES mode switch all change the same power balance. This paper studies weekly price-taker operation of a thermal--BESS--CAES plant~\cite{emmanuel2020market,pei2024pricetaker} under a time-of-use (TOU) tariff and an emissions-trading charge. The objective is the expected operating cost
 \begin{equation}
+\begin{aligned}
 \min_{\pi}\;
 \mathbb{E}\Biggl[\sum_{t=0}^{T-1} C_t\Biggr],
 \quad
-C_t=
+C_t
+&=
 C_t^{\mathrm{grid}}
 +C_t^{\mathrm{thermal}}
-+C_t^{\mathrm{carbon}}
++C_t^{\mathrm{carbon}}\\
+&\quad
 +C_t^{\mathrm{curt}}
 +C_t^{\mathrm{uns}}
 +C_t^{\mathrm{deg}}
 +C_t^{\mathrm{su}}.
+\end{aligned}
 \label{eq:C}
 \end{equation}
-Wind, photovoltaic generation and load enter as exogenous boundaries. The decision problem is therefore plant-wide coordination rather than the isolated scheduling of any one storage device.
+Wind, PV and load are exogenous, so the controller must coordinate the dispatchable assets rather than schedule any one of them in isolation.
 
-Model-based programmes remain natural baselines. Mixed-integer linear programmes and receding-horizon control make constraints explicit and the optimiser predictable~\cite{cui2025ghtd3}, yet on a first-principles multi-physics twin they typically convexify thermodynamics, incur a non-trivial online solve, or both. Deep reinforcement learning (DRL)~\cite{sutton2018rl,fujimoto2018td3,haarnoja2018sac} instead learns a closed-loop policy from interaction and, once trained, can be evaluated on the same FMU after a single forward pass.
+Mixed-integer linear programmes (MILP) and model-predictive control make constraints explicit~\cite{cui2025ghtd3,ceusters2021mpcrl}, but on a nonlinear multi-physics plant they typically convexify thermodynamics or incur a non-trivial online solve. Deep reinforcement learning (DRL)~\cite{sutton2018rl,lillicrap2016ddpg,fujimoto2018td3,haarnoja2018sac} learns a closed-loop policy and, once trained, evaluates a command in a single forward pass. Continuous DRL schedulers for integrated energy and CAES--PV plants~\cite{zhou2023iesdrl,li2025iesdrl,wu2024pricing,sun2024constrained,dolatabadi2023caes} typically act in a regular box, or restore feasibility by clipping after the fact. Parameterized-action methods factor a discrete choice and a continuous magnitude~\cite{hausknecht2016pas,masson2016paa,fan2019hybrid}, yet they do not place a same-hour policy on a plant-wide, state-dependent support. Constrained RL has been applied to integrated energy dispatch~\cite{sun2024constrained}, and a CAES energy hub has been scheduled with safe RL~\cite{garmroodi2023caes}. Hierarchical option and goal methods plan across time scales~\cite{cui2024caesbess,cui2025ghtd3,jendoubi2023hier,ochoa2024bidding}. The remaining gap is heterogeneous device actions generated on a joint feasible region and executed on a nonlinear FMU.
 
-Most DRL schedulers still assume a regular continuous action box, or restore feasibility by clipping and penalties after the fact~\cite{zhou2023iesdrl,wu2024pricing,sun2024constrained}. Hierarchical methods address a different difficulty. Cui et al.\ use GHTD3 with high-level state-of-charge increment goals and low-level execution to plan across time scales, together with retrospective goal relabeling~\cite{cui2025ghtd3,cui2024caesbess}; multi-agent hierarchical managers follow a related path~\cite{jendoubi2023hier,ochoa2024bidding}. Option initiation sets can restrict when a mode may start, but they do not by themselves place a same-hour policy on a joint, state-dependent feasible set. The gap treated here is therefore distinct: heterogeneous device actions, a nonlinear FMU, and a coupled dynamic region in which safe economic dispatch must take place.
-
-We propose physics-constrained hybrid TD3 (PC-HybridTD3), a forecast-aware actor on a single time scale that emits
-$a_t=(u_t^{\mathrm{th}},u_t^{\mathrm{bat}},m_t^{\mathrm{CAES}},z_t^{\mathrm{CAES}})$
-already decoded onto $\mathcal{A}_f(s_t)$, with GiveSafe kept as a residual physical check~\cite{garcia2015safe,sun2024constrained,fan2019hybrid}. In contrast to post-hoc projection,
-\[
-a_t\sim\pi_\theta(s_t)\;\Rightarrow\; a_t\in\mathcal{A}_f(s_t),
-\qquad\text{rather than}\qquad
-a_t=\Pi_{\mathcal{A}_f}\bigl(\pi_\theta(s_t)\bigr).
-\]
-Only hours executed by the FMU enter the economic Bellman update. Table~\ref{tab:lit} situates the work among related studies.
-
-\begin{table}[!htbp]
-\centering
-\caption{Comparison of related scheduling studies (selected).}
-\label{tab:lit}
-\scriptsize
-\begin{tabular}{@{}p{2.15cm}cccccp{1.55cm}@{}}
-\toprule
-Study & Hybrid act. & Safety & High-fid.\ twin & State supp. & Market & Method \\
-\midrule
-Zhou et al.~\cite{zhou2023iesdrl} & -- & -- & -- & -- & tariff / cost & flat DRL \\
-Sun et al.~\cite{sun2024constrained} & -- & $\checkmark$ & -- & -- & multi-energy & constr.\ RL \\
-Jendoubi and Bouffard~\cite{jendoubi2023hier} & -- & -- & -- & -- & energy mgmt & multi-agent HRL \\
-Cui et al.~\cite{cui2024caesbess} & option & -- & -- & -- & TOU / cost & OCTD3 \\
-Cui et al.~\cite{cui2025ghtd3} & -- & -- & -- & -- & TOU / cost & GHTD3 \\
-Ochoa et al.~\cite{ochoa2024bidding} & -- & -- & -- & -- & DA / RT bidding & multi-agent DRL \\
-Pei et al.~\cite{pei2024pricetaker} & -- & -- & -- & -- & spot PT & optimisation \\
-\textbf{This work} & $\checkmark$ & $\checkmark$ & $\checkmark$ (DAE/FMU) & $\checkmark$ & monthly TOU PT + ETS & PC-HybridTD3 \\
-\bottomrule
-\end{tabular}
-\end{table}
+The set of commands the FMU will execute, \(\AFMU(s)\), is not available analytically. A computable oracle supplies a joint support \(\Afhat(s)\) that approximates it. Physics-constrained hybrid TD3 (PC-HybridTD3) emits
+\(a_t=(u_t^{\mathrm{th}},u_t^{\mathrm{bat}},m_t,z_t)\)
+already on \(\Afhat(s_t)\), with GiveSafe as a residual physical check~\cite{garcia2015safe,sun2024constrained}:
+\begin{equation}
+a_t\sim\pi_\theta(s_t)\;\Rightarrow\; a_t\in\Afhat(s_t),
+\label{eq:support-gen}
+\end{equation}
+rather than \(a_t=\Pi(\pi_\theta(s_t))\). Only transitions advanced by the FMU enter the economic Bellman update.
 
 The paper makes three contributions.
 \begin{enumerate}
-\item \textbf{Heterogeneous hybrid action.} Thermal generation and battery storage are regulated continuously, while CAES is represented by a discrete operating mode and a continuous loading level. The same policy therefore avoids the degeneration that arises when a conventional continuous projection is applied to a disconnected operating region.
-\item \textbf{Joint feasible support.} Device limits and system coupling---thermal ramping, storage inventories, CAES thermodynamic restrictions and interchange capacity---are assembled into a state-dependent support $\mathcal{A}_f(s)$ and written into action generation, so that the policy acts inside a dynamically admissible region. GiveSafe remains a residual physical check.
-\item \textbf{Forecast-aware closed-loop evaluation.} Real-time plant state, day-ahead resource and load forecasts, and the TOU path are presented to the actor under a single operating-cost objective. Held-out weeks and an 8760~h rollout compare the learned policy with a heuristic, a rolling MILP and continuous-action TD3 on the same FMU.
+\item A hybrid action that treats thermal generation and BESS as continuous commands and CAES as a mode--magnitude pair, avoiding projection of a disconnected envelope onto idle.
+\item A joint feasible-support model \(\Afhat(s)\) that encodes ramps, inventories, CAES restrictions and interchange capacity in action generation, with GiveSafe as the last physical screen.
+\item Closed-loop evaluation on the FMU, with a 24~h forecast in the state, against a heuristic, a rolling MILP and continuous-action TD3 on held-out weeks.
 \end{enumerate}
 
-Section~\ref{sec:system} introduces the plant and the monthly TOU setting. Section~\ref{sec:problem} states the physics, the operating cost and the hybrid MDP. Section~\ref{sec:method} develops PC-HybridTD3. Section~\ref{sec:results} reports the numerical study. Section~\ref{sec:conclusion} concludes.
+Section~\ref{sec:problem} formulates the scheduling problem. Section~\ref{sec:method} presents PC-HybridTD3. Section~\ref{sec:results} reports the case study. Section~\ref{sec:conclusion} concludes.
 
-% =====================================================================
-\section{System description}
-\label{sec:system}
-% =====================================================================
+\section{Multi-Energy Scheduling Problem}
+\label{sec:problem}
 
-\subsection{Plant topology and modelling workflow}
+\subsection{System configuration}
+\label{sec:topology}
 
-Figure~\ref{fig:topology} summarises the multi-energy plant. The supply layer comprises wind, photovoltaic (PV) generation and a grid interface under TOU buy/sell prices. The conversion layer centres on a thermal unit commanded by a continuous load rate $u_{\mathrm{tp}}$ and a CAES train commanded by discrete mode and continuous magnitude. The storage layer comprises a battery with continuous power command $u_{\mathrm{bat}}$ and CAES gas and thermal inventories (gas tank, hot and cold tanks). The demand layer balances electric load and grid exchange.
+Fig.~\ref{fig:topology} shows the plant. Wind and PV inject at the electric bus; a thermal unit, a BESS and a multi-tank adiabatic CAES train share that bus with a grid interface and the load. Detailed nonlinear component dynamics are evaluated by a Modelica model exported as an FMI functional mock-up unit (FMU)~\cite{blochwitz2012fmi}, while the equations below specify the dispatch-level states and constraints exposed to the controller.
 
-\begin{figure}[H]
+\begin{figure}[!t]
 \centering
-\includegraphics[width=\textwidth]{fig_topology}
-\caption{Topology of the thermal--BESS--CAES multi-energy plant (wind, PV, thermal, battery, CAES, grid and load). Device physics are modelled in MWORKS Sysplorer and exported as an FMI FMU.}
+\includegraphics[width=\columnwidth]{fig_topology}
+\caption{Topology of the FMU-based multi-energy system, including wind/PV generation, thermal generation, BESS, CAES, grid exchange, and load.}
 \label{fig:topology}
 \end{figure}
 
-Plant dynamics follow first-principles multi-physics: thermal ramping and fuel use; electrochemical battery SoC with round-trip efficiency; multi-tank CAES gas storage with thermo-mechanical coupling and mode locks; renewable availability; and nodal power balance with curtailment and unserved residual. The complete Modelica model is constructed and parameterised in MWORKS Sysplorer and exported as an FMI-compliant FMU. Closed-loop optimisers and learning agents interact with this object at a one-hour communication interval, reading plant states and writing hybrid set-points. Exogenous TOU prices and resource profiles set the market and weather boundary; they do not replace the internal gas--thermal DAEs.
+Table~\ref{tab:params} lists the ratings. The plant is a price-taker on the 2026 Shandong 110-kV TOU purchasing tariff~\cite{shandong2023tou,shandong2026tou}. Hourly buy prices follow the official monthly schedule; the export price is a fixed scenario parameter. A national ETS carbon price enters~\eqref{eq:C} as one cost component~\cite{mee2025etsnews,mee2024quota}.
 
-\subsection{Price-taker TOU market}
-
-The plant is a price-taker on the Shandong industrial and commercial TOU tariff. Relative to the flat energy price, peak hours are raised by 70\% and valley hours are lowered by 70\%; a sharp-peak uplift of 100\% and a deep-valley discount of 90\% apply on designated hours, following the 2026 State Grid Shandong clock and Shandong DRC Price [2023] No.~914~\cite{ndrc2021tou,shandong2023tou,shandong2026tou}. Table~\ref{tab:tou-windows} lists the five month-groups of that clock. Delivered 110~kV buy prices in Table~\ref{tab:tou-monthly} are taken from the monthly agency-purchase notices for January through August; September through December repeat the August table until later monthly notices appear. TOU-floating adders (capacity compensation, line loss and system operation) follow that month's energy base, whereas T\&D energy and funds do not float~\cite{ndrc2023td}. The two-part 110~kV T\&D energy charge is $0.1191$~CNY/kWh through July (third regulatory cycle) and $0.106$~CNY/kWh from 1~August~2026 (fourth cycle; Shandong DRC Price [2026] No.~556)~\cite{shandong2026td}. The hourly series used by the twin unfolds this monthly path on the official clocks. The export price $0.1875$~CNY/kWh is a flat case-study assumption, not a published monthly sell tariff. Figure~\ref{fig:boundary} shows wind, irradiance and load on the three held-out weeks, together with the corresponding purchase TOU. Table~\ref{tab:params} lists plant ratings and the remaining market operating points.
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{fig_seasonal_boundary}
-\caption{Held-out weekly boundaries: wind speed, plane-of-array irradiance and electric load on the February, May and August test weeks (2026 calendar), with the matching 110~kV purchase TOU.}
-\label{fig:boundary}
-\end{figure}
-
-\begin{table}[!htbp]
-\centering
-\caption{2026 Shandong 110~kV two-part agency-purchase delivered TOU (CNY/kWh). January--August follow the published monthly tables; September--December repeat August until later notices appear.}
-\label{tab:tou-monthly}
-\scriptsize
-\begin{tabular}{@{}crrrrrr@{}}
-\toprule
-Month & Sharp $S$ & Peak $P$ & Flat $F$ & Valley $V$ & Deep $D$ & T\&D \\
-\midrule
-1 & 1.1873 & 1.0257 & 0.6488 & 0.2720 & 0.1643 & 0.1191 \\
-2 & 1.1479 & 0.9936 & 0.6330 & 0.2726 & 0.1696 & 0.1191 \\
-3 & 1.0648 & 0.9206 & 0.5841 & 0.2477 & 0.1515 & 0.1191 \\
-4 & 1.0759 & 0.9275 & 0.5811 & 0.2349 & 0.1359 & 0.1191 \\
-5 & 1.0489 & 0.9090 & 0.5824 & 0.2559 & 0.1626 & 0.1191 \\
-6 & 1.0303 & 0.8946 & 0.5776 & 0.2608 & 0.1703 & 0.1191 \\
-7 & 1.1037 & 0.9584 & 0.6190 & 0.2797 & 0.1827 & 0.1191 \\
-8 & 1.0180 & 0.8844 & 0.5727 & 0.2611 & 0.1720 & 0.1060 \\
-9--12 & 1.0180 & 0.8844 & 0.5727 & 0.2611 & 0.1720 & 0.1060 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[!htbp]
-\centering
-\caption{2026 Shandong industrial/commercial TOU windows by month-group (local hour $h=0,\ldots,23$). Ratios: $S/P/F/V/D=2.0/1.7/1.0/0.3/0.1$~\cite{shandong2023tou,shandong2026tou}.}
-\label{tab:tou-windows}
-\scriptsize
-\begin{tabular}{@{}llp{8.4cm}@{}}
-\toprule
-Group & Months & Local-hour bands \\
-\midrule
-Winter-type & Jan, Feb, Dec & $2$--$5$~V; $7$--$8$~P; $10$~V; $11$--$13$~D; $14$~V; $16$--$18$~S; $19$--$20$~P; else F \\
-Shoulder & Mar--May & $10$~V; $11$--$13$~D; $14$~V; $17$--$19$~S; $20$--$21$~P; else F \\
-June & Jun & $7$--$11$~V; $16$~P; $17$--$21$~S; $22$~P; else F \\
-Summer & Jul--Aug & $1$--$5$~V; $16$~P; $17$--$21$~S; $22$~P; else F \\
-Autumn & Sep--Nov & $10$~V; $11$--$13$~D; $14$~V; $16$~P; $17$--$18$~S; $19$--$20$~P; else F \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[!htbp]
-\centering
-\caption{Plant and market parameters used in the weekly case study.}
+\begin{table}[!t]
+\caption{Plant and market parameters.}
 \label{tab:params}
+\centering
 \scriptsize
+\setlength{\tabcolsep}{3.2pt}
 \begin{tabular}{@{}lll@{}}
 \toprule
 Quantity & Value & Note \\
 \midrule
-Wind / PV nameplate & 300 / 260~MW & Resource-limited injection \\
-Thermal \(P_{\min}\)--\(P_{\mathrm{cap}}\) & 50--150~MW & Load rate \(u_{\mathrm{tp}}\in[1/3,1]\); no shut-down \\
-Battery power / energy & 100~MW / 500~MWh & \(\eta=0.85\) on discharge \\
-CAES electric rating & 150~MW & Legal \(u_{\mathrm{caes}}\in[-1,-0.33]\cup\{0\}\cup[0.86,1]\) \\
-Grid hard / contract limits & \(\pm500\) / \(\pm200\)~MW & Soft contract priced in \(C_t^{\mathrm{grid}}\) \\
-TOU buy & monthly 110~kV two-part, Table~\ref{tab:tou-monthly} & Unfolded on the clocks of Table~\ref{tab:tou-windows} \\
-TOU sell & 0.1875~CNY/kWh & Flat export price in the case study \\
-ETS price \(\pi_{\mathrm{CO_2}}\) & 97.49~CNY/tCO\(_2\) & 2024 YE national CEA close~\cite{mee2025etsnews,mee2025etsreport} \\
-Thermal EF / grid EF / benchmark \(\beta\) & 0.85 / 0.6191 / 0.8049~t/MWh & Scenario EF; Shandong 2023 EF; Class~II 2024 \(\beta\)~\cite{mee2023ef,mee2024quota} \\
-Curtailment / unserved & 300 / 1000~CNY/MWh & Objective penalties; \(\approx\)GHTD3 \(\nu_{\mathrm{res}}\)~\cite{cui2025ghtd3} \\
-CAES startup (scaled) & \(\approx 4617\)~CNY/event & Cui 2024 \(3.42\)~USD@800~kW + linear \(P\) extrapolation~\cite{cui2024caesbess} \\
-Grid-contract excess & 600~CNY/MWh beyond \(\pm200\)~MW & Scenario soft band (not statutory) \\
-Episode length \(T\) & 168~h & Weekly MDP; calendar only rotates week starts \\
+Wind / PV nameplate & 300 / 260 MW & Resource-limited \\
+Thermal \(P_{\min}\)--\(P_{\mathrm{cap}}\) & 50--150 MW & \(u_{\mathrm{tp}}\in[1/3,1]\) \\
+Battery power / energy & 100 MW / 500 MWh & \(\eta=0.85\) on discharge \\
+CAES electric rating & 150 MW & Envelope~\eqref{eq:legal} \\
+Grid hard / contract limits & \(\pm500\) / \(\pm200\) MW & Soft band in \(C_t^{\mathrm{grid}}\) \\
+TOU buy range & \(0.14\)--\(1.19\) CNY/kWh & Monthly 110 kV schedule \\
+TOU sell & 0.1875 CNY/kWh & Flat export price \\
+Carbon price \(\pi\) & 97.49 CNY/t & 2024 year-end CEA close \\
+Curtailment / unserved & 300 / 1000 CNY/MWh & Objective penalties \\
+Episode length \(T\) & 168 h & Weekly horizon \\
 \bottomrule
 \end{tabular}
 \end{table}
-\FloatBarrier
 
-% =====================================================================
-\section{Problem formulation}
-\label{sec:problem}
-% =====================================================================
+\subsection{Scheduling model and constraints}
+\label{sec:constraints}
 
-The weekly problem (\(T=168\)~h) is defined by the plant physics, the operating constraints and the market objective. Continuous-time DAEs of the thermal unit, battery, multi-tank CAES, renewables and grid interface are integrated in the Sysplorer FMU with communication interval $\tau_s=1$~h; the relations below are the dispatch-level models realised by that twin. The 8760~h calendar rotates weekly start times. Signs are as follows: renewable and thermal generation are non-negative when injecting power; battery and CAES charge is positive and discharge is negative; grid import is positive. Component sets are
+Let \(t=0,\ldots,T-1\) with \(T=168\). Renewable and thermal injection are non-negative; battery and CAES charge is positive and discharge is negative; grid import is positive. The electric bus closes with curtailment and unserved residual,
 \begin{equation}
-\begin{aligned}
-I_1&=\{\mathrm{w},\mathrm{pv}\},\quad
-I_2=\{\mathrm{th},\mathrm{caes}\},\quad
-I_3=\{\mathrm{bat},\mathrm{gas},\mathrm{hot},\mathrm{cold}\},\\
-I&=I_1\cup I_2\cup I_3.
-\end{aligned}
-\label{eq:sets}
-\end{equation}
-
-\subsection{Energy generation units}
-
-\subsubsection{Photovoltaics}
-
-PV available power depends on plane-of-array irradiance $G_t$, module surface temperature $T_t^{\mathrm{pv}}$ and nameplate capacity $P_n^{\mathrm{pv}}=260$~MW. With standard irradiance $G_{\mathrm{stc}}=1000$~W/m$^2$, standard temperature $T_{\mathrm{stc}}=298.15$~K, temperature coefficient $K_T=0.005$~K$^{-1}$ and conversion efficiency $\eta^{\mathrm{pv}}=0.95$,
-\begin{equation}
-P_t^{\mathrm{pv,avail}}
-=
-\max\Bigl(
-P_n^{\mathrm{pv}}
-\frac{G_t}{G_{\mathrm{stc}}}
-\bigl[1-K_T\bigl(T_t^{\mathrm{pv}}-T_{\mathrm{stc}}\bigr)\bigr]
-\eta^{\mathrm{pv}},\,0\Bigr).
-\label{eq:pv}
-\end{equation}
-Module temperature is obtained from ambient temperature $T_t^{\mathrm{air}}$, wind speed $v_t$ and irradiance by the twin correlation
-\begin{equation}
-T_t^{\mathrm{pv}}
-=
-T_t^{\mathrm{air}}
-+
-0.0138\bigl(1+0.031(T_t^{\mathrm{air}}-273.15)\bigr)
-\bigl(1-0.042\,v_t\bigr)G_t.
-\label{eq:pv-temp}
-\end{equation}
-Actual injected PV power after bus curtailment satisfies $0\le P_t^{\mathrm{pv}}\le P_t^{\mathrm{pv,avail}}$.
-
-\subsubsection{Wind turbines}
-
-Wind available power follows a cubic power curve with cut-in, rated and cut-out speeds $v_{\mathrm{ci}}=3$~m/s, $v_{\mathrm{r}}=10$~m/s and $v_{\mathrm{co}}=15$~m/s on capacity $P_n^{\mathrm{w}}=300$~MW:
-\begin{equation}
-P_t^{\mathrm{w,avail}}
-=
-\begin{cases}
-0, & 0\le v_t < v_{\mathrm{ci}}\ \text{or}\ v_t\ge v_{\mathrm{co}},\\[2pt]
-P_n^{\mathrm{w}}\,\dfrac{v_t^{3}-v_{\mathrm{ci}}^{3}}{v_{\mathrm{r}}^{3}-v_{\mathrm{ci}}^{3}},
-& v_{\mathrm{ci}}\le v_t < v_{\mathrm{r}},\\[6pt]
-P_n^{\mathrm{w}}, & v_{\mathrm{r}}\le v_t < v_{\mathrm{co}}.
-\end{cases}
-\label{eq:wt}
-\end{equation}
-Turbine pitch is not a free decision variable. Actual wind injection obeys $0\le P_t^{\mathrm{w}}\le P_t^{\mathrm{w,avail}}$.
-
-\subsection{Energy conversion units}
-
-\subsubsection{Thermal generation}
-
-Thermal electric power is commanded by the continuous load rate $u_{\mathrm{tp},t}$:
-\begin{equation}
-P_t^{\mathrm{th}} = u_{\mathrm{tp},t}\, P_{\mathrm{cap}}^{\mathrm{th}},
-\qquad
-u_{\min}\le u_{\mathrm{tp},t}\le u_{\max},
-\label{eq:th}
-\end{equation}
-with $P_{\mathrm{cap}}^{\mathrm{th}}=150$~MW, $P_{\min}^{\mathrm{th}}=50$~MW, $u_{\min}=P_{\min}^{\mathrm{th}}/P_{\mathrm{cap}}^{\mathrm{th}}=1/3$ and $u_{\max}=1$ (no shut-down). Inter-hour ramping is enforced on the actual thermal power,
-\begin{equation}
-\bigl|P_t^{\mathrm{th}}-P_{t-1}^{\mathrm{th}}\bigr|
-\le
-\Delta_{\mathrm{th}}^{\max}
-=
-r_{\max}\,P_{\mathrm{cap}}^{\mathrm{th}}\,\tau_s,
-\label{eq:th-ramp}
-\end{equation}
-where $r_{\max}=0.0025/60$~s$^{-1}$ is the Modelica load-rate limit (equivalently $0.15$~p.u.\ per hour). Fuel and O\&M costs enter $C_t^{\mathrm{op}}$ in~\eqref{eq:dJ}.
-
-\subsubsection{CAES conversion}
-
-CAES is a hybrid conversion--storage plant. The hybrid command comprises a discrete mode and continuous magnitude
-\begin{equation}
-m_{\mathrm{caes},t}\in\{\mathrm{charge},\mathrm{idle},\mathrm{discharge}\},\qquad
-\mu_{\mathrm{caes},t}\in[0,1],
-\label{eq:caes-cmd}
-\end{equation}
-mapped to a signed electric power command on capacity $P_{\mathrm{cap}}^{\mathrm{caes}}=150$~MW,
-\begin{equation}
-P_t^{\mathrm{caes}}
-=
-\begin{cases}
-+\mu_{\mathrm{caes},t}\,P_{\mathrm{cap}}^{\mathrm{caes}}, & m=\mathrm{charge},\\
-0, & m=\mathrm{idle},\\
--\mu_{\mathrm{caes},t}\,P_{\mathrm{cap}}^{\mathrm{caes}}, & m=\mathrm{discharge},
-\end{cases}
-\label{eq:caes-p}
-\end{equation}
-or equivalently $P_t^{\mathrm{caes}}=u_{\mathrm{caes},t}P_{\mathrm{cap}}^{\mathrm{caes}}$ with the non-convex legal set
-\begin{equation}
-u_{\mathrm{caes},t}
-\in
-[-1,-0.33]\cup\{0\}\cup[0.86,1]
-\label{eq:caes-legal}
-\end{equation}
-encoding minimum compressor/expander loading. Inventory margins and mode locks further restrict $\mathcal{K}(s)$ and $\mathcal{M}_k(s)$. The live stack does \emph{not} impose a consecutive-run dwell (\texttt{min\_run=1}); start-up events are priced in $C_t^{\mathrm{su}}$ following Cui et al.~\cite{cui2024caesbess}. Electric power is realised as planned ($P^{\mathrm{act}}=P^{\mathrm{plan}}$); mass-flow set-points of air and thermal fluid scale with $|P_t^{\mathrm{caes}}|$ and reverse direction between compression and expansion.
-
-\subsection{Energy storage units}
-
-\subsubsection{Battery}
-
-Battery power is commanded by $u_{\mathrm{bat},t}\in[-1,1]$ on $P_{\mathrm{cap}}^{\mathrm{bat}}=100$~MW:
-\begin{equation}
-P_t^{\mathrm{bat}} = u_{\mathrm{bat},t}\, P_{\mathrm{cap}}^{\mathrm{bat}}.
-\label{eq:bat-p}
-\end{equation}
-With energy capacity $E_{\mathrm{cap}}=500$~MWh and discharge efficiency $\eta=0.85$ (charge path lossless as in the twin), the SoC dynamics are
-\begin{equation}
-\frac{\mathrm{d}s_{\mathrm{bat}}}{\mathrm{d}t}
-=
-\begin{cases}
-P^{\mathrm{bat}}/E_{\mathrm{cap}}, & P^{\mathrm{bat}}\ge 0,\\[2pt]
-P^{\mathrm{bat}}/(E_{\mathrm{cap}}\,\eta), & P^{\mathrm{bat}}<0,
-\end{cases}
-\label{eq:bat-soc}
-\end{equation}
-or, in hourly form with $[x]_+=\max(x,0)$ and $[x]_-=\max(-x,0)$,
-\begin{equation}
-s_{t+1,\mathrm{bat}}
-=
-s_{t,\mathrm{bat}}
-+
-\tau_s\frac{[P_t^{\mathrm{bat}}]_+ - [P_t^{\mathrm{bat}}]_-/\eta}{E_{\mathrm{cap}}}.
-\label{eq:bat-soc-d}
-\end{equation}
-Inventory bounds are $s_{\mathrm{bat}}\in[0.1,0.9]$.
-
-\subsubsection{CAES inventories}
-
-CAES energy is stored as compressed air and two thermal fluid tanks. Gas SoC is pressure-based with rating $p_{\mathrm{norm}}=100$~bar,
-\begin{equation}
-s_{t,\mathrm{gas}}
-=
-\frac{p_t}{p_{\mathrm{norm}}},
-\qquad
-\underline{s}_{\mathrm{gas}}\le s_{t,\mathrm{gas}}\le \overline{s}_{\mathrm{gas}},
-\label{eq:gas-soc}
-\end{equation}
-with $(\underline{s}_{\mathrm{gas}},\overline{s}_{\mathrm{gas}})=(0.6,1.0)$. Fixed-volume gas-tank mass and energy balances (ideal-air medium) evolve pressure $p$ and specific enthalpy $h$ under port mass flows $\dot m_{\mathrm{a}},\dot m_{\mathrm{b}}$ and wall heat $q_{\mathrm{w}}$,
-\begin{align}
-V\bigl(\partial_p\rho\,\dot p+\partial_h\rho\,\dot h\bigr)
-&=
-\dot m_{\mathrm{a}}+\dot m_{\mathrm{b}},
-\label{eq:gas-mass}\\
-V\bigl(-\dot p+\partial_p\rho\,\dot p\,h+\partial_h\rho\,\dot h\,h+\rho\dot h\bigr)
-&=
-\dot m_{\mathrm{a}}h_{\mathrm{a}}^{\mathrm{in}}
-+
-\dot m_{\mathrm{b}}h_{\mathrm{b}}^{\mathrm{out}}
-+
-q_{\mathrm{w}},
-\label{eq:gas-energy}
-\end{align}
-with $q_{\mathrm{w}}=\alpha_{\mathrm{w}}S(T_{\mathrm{w}}-T)$ and gas temperature $T=T(p,h)$ (clipped at $253$~K). Hot and cold tanks store water at fixed pressure with free surface area $A$ and total volume $V_0=1.5\times10^{4}$~m$^3$. Level-based inventories
-\begin{equation}
-s_{t,i}
-=
-\frac{\ell_{t,i}}{V_0/A},
-\qquad
-i\in\{\mathrm{hot},\mathrm{cold}\},
-\label{eq:thermal-soc}
-\end{equation}
-obey mass and enthalpy balances when within $(\underline{s}_i,\overline{s}_i)=(0.05,0.95)$,
-\begin{equation}
-\dot m_i=\dot m_{\mathrm{a},i}+\dot m_{\mathrm{b},i},\qquad
-m_i\dot h_i
-=
-\dot m_{\mathrm{a},i}h_{\mathrm{a},i}^{\mathrm{in}}
-+
-\dot m_{\mathrm{b},i}h_{\mathrm{b},i}^{\mathrm{out}}+Q_{\mathrm{gen},i}.
-\label{eq:tank-bal}
-\end{equation}
-Compression ($P^{\mathrm{caes}}>0$) charges the gas inventory and drives the thermal circuit one way; expansion ($P^{\mathrm{caes}}<0$) reverses the flows. Primary weekly recovery inventories are $s_{\mathrm{bat}}$ and $s_{\mathrm{gas}}$; hot/cold SoCs and temperatures $(T^{\mathrm{hot}},T^{\mathrm{cold}})$ are process states used in soft shaping. All inventories obey~\eqref{eq:socbox}.
-
-\subsection{System operation constraints}
-
-The electric bus closes the power balance with curtailment and unserved load. Let $P_t^{\mathrm{w,avail}},P_t^{\mathrm{pv,avail}}$ be renewable availability and $P_t^{\mathrm{load,plan}}$ the scheduled demand. Residual power after dispatchable assets is absorbed first by curtailing wind, then PV; residual deficit is met by demand response down to $20\%$ of plan, with remainder counted as unserved:
-\begin{equation}
-\begin{aligned}
-&P_t^{\mathrm{th}}+P_t^{\mathrm{bat}}+P_t^{\mathrm{caes}}
+P_t^{\mathrm{th}}+P_t^{\mathrm{bat}}+P_t^{\mathrm{caes}}
 +P_t^{\mathrm{w}}+P_t^{\mathrm{pv}}+P_t^{\mathrm{grid}}
 =
-P_t^{\mathrm{load}},\\
-&0\le P_t^{\mathrm{w}}\le P_t^{\mathrm{w,avail}},\quad
-0\le P_t^{\mathrm{pv}}\le P_t^{\mathrm{pv,avail}},\\
-&P_t^{\mathrm{curt}}\ge 0,\quad
-P_t^{\mathrm{uns}}\ge 0,\quad
-0.2\,P_t^{\mathrm{load,plan}}\le P_t^{\mathrm{load}}\le P_t^{\mathrm{load,plan}}.
-\end{aligned}
+P_t^{\mathrm{load}}.
 \label{eq:balance}
 \end{equation}
-Here $P_t^{\mathrm{curt}}$ is residual surplus after wind-then-PV curtailment and $P_t^{\mathrm{uns}}$ is residual shortfall after load reduction. Box and ramp limits, inventory bounds and grid exchange limits are
+Thermal power \(P_t^{\mathrm{th}}=u_t^{\mathrm{th}}P_{\mathrm{cap}}^{\mathrm{th}}\) obeys
 \begin{equation}
-\underline{P}_{i}\le P_t^{i}\le \overline{P}_{i},\qquad
-\bigl|P_t^{i}-P_{t-1}^{i}\bigr|\le \Delta_i^{\max},
-\quad i\in\{\mathrm{th},\mathrm{bat}\},
-\label{eq:box}
+P_{\mathrm{th}}^{\min}\le P_t^{\mathrm{th}}\le P_{\mathrm{th}}^{\max},
+\qquad
+\bigl|\Delta P_t^{\mathrm{th}}\bigr|\le R^{\mathrm{th}},
+\label{eq:th}
 \end{equation}
+with \(P_{\mathrm{th}}^{\min}=50\)~MW, \(P_{\mathrm{th}}^{\max}=150\)~MW and \(R^{\mathrm{th}}=0.15\)~p.u.\ per hour. Battery power \(P_t^{\mathrm{bat}}=u_t^{\mathrm{bat}}P_{\mathrm{cap}}^{\mathrm{bat}}\) updates SoC with discharge efficiency \(0.85\), subject to
 \begin{equation}
-\underline{s}_{i}\le s_{t,i}\le \overline{s}_{i},\qquad i\in\{\mathrm{bat},\mathrm{gas},\mathrm{hot},\mathrm{cold}\},
-\label{eq:socbox}
+SOC_{\mathrm{bat}}^{\min}\le SOC_{\mathrm{bat},t}\le SOC_{\mathrm{bat}}^{\max},
+\label{eq:batsoc}
 \end{equation}
+with bounds \((0.1,0.9)\).
+
+The CAES electric command occupies the disconnected envelope
+\begin{equation}
+u_{\mathrm{caes}}
+\in
+[-1,-0.33]\;\cup\;\{0\}\;\cup\;[0.86,1],
+\label{eq:legal}
+\end{equation}
+which encodes minimum compressor and expander loading. Mode locks and inventory margins shrink the set further. The CAES state exposed to the controller is
+\begin{equation}
+x_t^{\mathrm{CAES}}
+=
+[s_{\mathrm{gas}},\,s_{\mathrm{hot}},\,s_{\mathrm{cold}},\,p,\,T,\,\ldots].
+\label{eq:caes-x}
+\end{equation}
+Grid exchange satisfies
 \begin{equation}
 P_{\mathrm{grid}}^{\min}\le P_t^{\mathrm{grid}}\le P_{\mathrm{grid}}^{\max},
 \label{eq:grid}
 \end{equation}
-with $(P_{\mathrm{grid}}^{\min},P_{\mathrm{grid}}^{\max})=(-500,500)$~MW. The feasibility oracle uses the signed command identity (grid buy positive; battery and CAES charge positive)
+with limits \(\pm500\)~MW. Interchange couples the three physical commands,
 \begin{equation}
 P_t^{\mathrm{grid}}
 =
@@ -519,238 +179,77 @@ P_{\mathrm{cap}}^{\mathrm{caes}} u_t^{\mathrm{CAES}}
 R_t,
 \label{eq:pgrid-u}
 \end{equation}
-where $R_t$ is the twin residual $P^{\mathrm{w}}+P^{\mathrm{pv}}+P^{\mathrm{load}}$ under FMU signs (load positive, renewable generation negative). Equation~\eqref{eq:pgrid-u} is the interchange slice used by the joint decoder;~\eqref{eq:balance} remains the bus accounting used in $J^{\mathrm{gen}}$. Actions that would violate~\eqref{eq:balance}--\eqref{eq:grid},~\eqref{eq:caes-legal} or CAES mode locks lie outside $\mathcal{F}(s_t)$. The analytic decoder enumerates $\mathcal{A}_{\mathrm{dev}}\cap\mathcal{A}_{\mathrm{grid}}$; predicted next-state inventory and residual twin constraints remain in GiveSafe.
+where \(R_t\) is the residual of wind, PV and load. Equation~\eqref{eq:pgrid-u} is the interchange slice of the decoder;~\eqref{eq:balance} is the bus used in~\eqref{eq:C}.
 
-Weekly operation records an optional energy-SoC recovery score on primary inventories, following the soft indicator of~\cite{cui2025ghtd3} rather than a hard action override or feasibility veto,
-\begin{equation}
-L_1^{\mathrm{e}}
-= \bigl|s_{T,\mathrm{bat}}-s_{0,\mathrm{bat}}\bigr|
-+ \bigl|s_{T,\mathrm{gas}}-s_{0,\mathrm{gas}}\bigr|
-\le \varepsilon,
-\label{eq:soc}
-\end{equation}
-with $\varepsilon=0.06$. Operating boxes remain $s_{\mathrm{bat}}\in[0.1,0.9]$. The battery command is not rewritten at week-end;~\eqref{eq:soc} only gates the terminal bonus in~\eqref{eq:term}.
+\subsection{Economic objective and MDP}
+\label{sec:mdp}
 
-\subsection{Optimization objectives}
+With purchase and sale energies \(E_t^{\mathrm{buy}}=\tau_s[P_t^{\mathrm{grid}}]_+\) and \(E_t^{\mathrm{sell}}=\tau_s[P_t^{\mathrm{grid}}]_-\), the cost~\eqref{eq:C} comprises TOU trading and a soft interchange-contract excess, thermal fuel and O\&M, an ETS carbon charge, curtailment and unserved penalties, battery wear and CAES start-up. Policies are compared on \(CC=\sum_t C_t\).
 
-Let $t=0,\ldots,T-1$ index hours in a weekly episode ($T=168$). Grid purchase/sale energies are $E_t^{\mathrm{buy}}=\tau_s[P_t^{\mathrm{grid}}]_+$ and $E_t^{\mathrm{sell}}=\tau_s[P_t^{\mathrm{grid}}]_-$ (MWh). Device operating costs $C_t^{\mathrm{op}}$ aggregate thermal fuel/O\&M and storage energy-bookkeeping cash increments exported by the twin (battery cycle life is not in Modelica income; see $C_t^{\mathrm{deg}}$). Under price-taker TOU prices $\lambda_t^{\mathrm{buy}},\lambda_t^{\mathrm{sell}}$, the hourly \emph{cash} increment is
+The problem is the finite-horizon MDP \(\mathcal{M}=\langle\mathcal{S},\Afhat(\cdot),P,r,\gamma\rangle\) with \(\gamma=0.99\). The state
 \begin{equation}
-\Delta J_t^{\mathrm{cash}}
-=
-\lambda_t^{\mathrm{sell}} E_t^{\mathrm{sell}}
--
-\lambda_t^{\mathrm{buy}} E_t^{\mathrm{buy}}
--
-C_t^{\mathrm{op}}.
-\label{eq:dJ}
-\end{equation}
-Step CO$_2$ mass uses emission factors $\eta_{\mathrm{th}},\eta_{\mathrm{grid}}$ (tCO$_2$/MWh) on thermal energy and grid imports,
-\begin{equation}
-\Delta m_t
-=
-\eta_{\mathrm{th}} E_t^{\mathrm{th}}
-+
-\eta_{\mathrm{grid}} E_t^{\mathrm{buy}},
-\label{eq:co2}
-\end{equation}
-with carbon priced at the reproducible 2024 national ETS year-end composite close $\pi_{\mathrm{CO_2}}=97.49$~CNY/tCO$_2$e (2024 band $69$--$106$, peak $105.65$)~\cite{mee2025etsnews,mee2025etsreport}. Sensitivity retains the legacy operating point $80$~\cite{icap2025chinaets} and a GHTD3 literature cross-check $\approx 86.4$~CNY/t ($0.012$~USD/kg at $7.2$~CNY/USD)~\cite{cui2025ghtd3,worldbank2024usdnyc}. The default Python settlement uses an intensity-benchmark mode: thermal output accumulates an intensity allowance $A_t=\beta E_t^{\mathrm{th}}$ against emissions $E_t=\eta_{\mathrm{th}}E_t^{\mathrm{th}}$ and settles the position $Q=A-E$ at episode end, while grid-import CO$_2$ remains a step charge $\pi_{\mathrm{CO_2}}\eta_{\mathrm{grid}}E_t^{\mathrm{buy}}$. Here $\beta=0.8049$~t/MWh is the official 2024 Class~II (conventional coal, this plant's $150$~MW rating) \emph{generation benchmark}~\cite{mee2024quota}, $\eta_{\mathrm{grid}}=0.6191$~t/MWh is the official 2023 Shandong location-based electricity factor~\cite{mee2023ef}, and $\eta_{\mathrm{th}}=0.85$~t/MWh is a plant direct-emission \emph{scenario} factor (not identical to $\beta$). A flat step tax $\pi_{\mathrm{CO_2}}\Delta m_t$ is retained as a sensitivity. Carbon is treated as an external ETS-style charge rather than a second fuel bill. Curtailment and unserved energies $E_t^{\mathrm{curt}},E_t^{\mathrm{uns}}$ follow bus residuals and enter a Cui-style spill cost~\cite{cui2025ghtd3},
-\begin{equation}
-C_t^{CUT}
-=
-\nu_{\mathrm{curt}} E_t^{\mathrm{curt}}
-+
-\nu_{\mathrm{uns}} E_t^{\mathrm{uns}},
-\label{eq:cut}
-\end{equation}
-with operating points $\nu_{\mathrm{curt}}=300$~CNY/MWh (cross-checked against GHTD3 $\nu_{\mathrm{res}}=0.041$~USD/kWh~$\approx 295$~CNY/MWh) and $\nu_{\mathrm{uns}}=1000$~CNY/MWh as a conservative unserved penalty well below typical VOLL survey ranges~\cite{schroeder2015voll}---objective coefficients, not regulated tariffs. Battery \emph{cycle} cost is accounted outside pure energy bookkeeping: device-level battery income in the plant model reflects energy transfer only, whereas capital wear is represented by a convex cumulative-discharge term $\psi(\delta)=a_0\delta^{p}$ with $p\approx 2.03$~\cite{cui2025ghtd3,cui2024caesbess}. We calibrate $a_0$ so that lifetime discharge exhausts capital cost (LCOS-style amortisation~\cite{xu2022lcos}). Let $\delta_t$ be episode cumulative \emph{discharge} energy (MWh; charge does not increase $\delta$) and $\delta_0=\rho E_{\mathrm{life}}$ an optional mid-life offset. On the weekly protocol used here we set $\rho=0$, so wear starts from a zero discharge tally; a positive offset is reserved for continuous-year books. With lifetime discharge $E_{\mathrm{life}}=N_{\mathrm{cycle}}\mathrm{DoD}_{\mathrm{eq}}E_{\mathrm{cap}}$ and total capital $\mathrm{Capex}=c_{\mathrm{kWh}}E_{\mathrm{cap}}$,
-\begin{equation}
-\psi(\delta)=a_0\,\delta^{p},\quad
-a_0=\frac{\mathrm{Capex}}{E_{\mathrm{life}}^{p}},\quad
-p=2.03,\quad
-C_t^{\mathrm{deg}}
-=
-\psi(\delta_0+\delta_t)-\psi(\delta_0+\delta_{t-1}),
-\label{eq:deg}
-\end{equation}
-hence $\psi(E_{\mathrm{life}})=\mathrm{Capex}$ and degradation becomes strictly more expensive as cumulative discharge grows. Default plant-scale numbers match the battery capacity ($E_{\mathrm{cap}}=500$~MWh) with a stationary LFP-class economic point $c_{\mathrm{kWh}}=1000$~CNY/kWh, $N_{\mathrm{cycle}}=5000$ and $\mathrm{DoD}_{\mathrm{eq}}=0.8$~\cite{xu2022lcos}. CAES mode switches incur a Cui Table~2 start-up coefficient $c_{\mathrm{su}}=3.42$~USD at $800$~kW~\cite{cui2024caesbess}, converted at $7.2$~CNY/USD~\cite{worldbank2024usdnyc}; scaling linearly to the plant $P_{\mathrm{cap}}=150$~MW is an explicit \emph{extrapolation} (sensitivity: unscaled / linear / $\sqrt{P}$). Soft interchange-contract excess beyond a scenario band $P_{\lim}=\pm200$~MW is priced as
-\begin{equation}
-C_t^{\mathrm{grid}}
-=
-\nu_{\mathrm{grid}}\max\bigl(0,\,|P_t^{\mathrm{grid}}|-P_{\lim}\bigr)\Delta t,
-\label{eq:grid-contract}
-\end{equation}
-with scenario $\nu_{\mathrm{grid}}=600$~CNY/MWh (not a statutory fee; the FMU hard interchange remains $\pm500$~MW). The comprehensive monetary objective is
-\begin{equation}
-\Delta J_t^{\mathrm{gen}}
-=
-\Delta J_t^{\mathrm{cash}}
--
-C_t^{\mathrm{CO_2}}
--
-C_t^{CUT}
--
-C_t^{\mathrm{deg}}
--
-C_t^{\mathrm{su}}
--
-C_t^{\mathrm{grid}},
-\qquad
-\max_{\{a_t\}}\; J^{\mathrm{gen}} = \sum_{t=0}^{T-1} \Delta J_t^{\mathrm{gen}}
-\quad\text{s.t.}\quad
-\eqref{eq:pv}\text{--}\eqref{eq:grid},\
-a_t\in\mathcal{A}_f(s_t)\subseteq\mathcal{F}(s_t).
-\label{eq:J}
-\end{equation}
-Equation~\eqref{eq:J} is the negative of~\eqref{eq:C}, with $C_t^{\mathrm{thermal}}$ inside $C_t^{\mathrm{op}}$. Policies are compared on $CC=\sum_t C_t$. Hour-scale hybrid actions couple to week-scale inventory, carbon, spill, wear, start-ups and contracted interchange;~\eqref{eq:soc} enters only as a terminal bonus.
-
-\subsection{State-dependent hybrid-action MDP}
-\label{sec:pamdp}
-
-Closed-loop control is forecast-aware coordination of thermal generation, BESS, CAES and grid exchange. The MDP is $\mathcal{M}=\langle\mathcal{S},\mathcal{A}_f(\cdot),P,r,\gamma\rangle$ with $\gamma=0.99$. The state is
-\begin{equation}
-s_t=[x_t,f_t,p_t],
+s_t=[x_t,\,f_{t:t+23},\,\lambda_{t:t+23},\,z_t]
 \label{eq:state}
 \end{equation}
-where $x_t$ is the FMU physical vector (battery / gas / hot / cold SoC, gas pressure and temperatures, thermal / battery / CAES / grid / wind / PV / load / curtailment / unserved powers; 19 plant channels), $f_t$ is the 24~h-ahead forecast $\{\hat v,\hat G,\hat T_a,\hat P_{\mathrm{load}}\}_{t:t+23}$, and $p_t$ is the TOU path $\{\lambda^{\mathrm{buy}},\lambda^{\mathrm{sell}}\}_{t:t+23}$. The reported observation dimension is $166$. The heterogeneous hybrid action is
+concatenates the FMU physical vector \(x_t\), a 24~h forecast of wind, irradiance, temperature and load, the TOU path, and a short bookkeeping vector \(z_t\) (observation dimension \(166\)). The hybrid action is
 \begin{equation}
-a_t
-=
-\bigl(u_t^{\mathrm{th}},\, u_t^{\mathrm{bat}},\, m_t^{\mathrm{CAES}},\, z_t^{\mathrm{CAES}}\bigr),
-\qquad
-m_t^{\mathrm{CAES}}\in\{D,I,C\},\quad
-z_t^{\mathrm{CAES}}\in[0,1],
+a_t=(u_t^{\mathrm{th}},u_t^{\mathrm{bat}},m_t,z_t),
+\quad m_t\in\{D,I,C\},\; z_t\in[0,1].
 \label{eq:action-hyb}
 \end{equation}
-Device-level hybrid support (CAES topology only) is
+Device-level support is
 \begin{equation}
 \mathcal{A}_{\mathrm{dev}}(s)
 =
 \mathcal{A}_{\mathrm{tp}}(s)\times
 \mathcal{A}_{\mathrm{bat}}(s)\times
 \bigcup_{k\in\mathcal{K}(s)}
-\bigl(\{k\}\times\mathcal{M}_k(s)\bigr).
+\bigl(\{k\}\times\mathcal{M}_k(s)\bigr),
 \label{eq:adev}
 \end{equation}
-Here $\mathcal{K}(s)\subseteq\{\mathrm{dis},\mathrm{idle},\mathrm{chg}\}$ is the admissible mode set from mode locks and inventory margins, and $\mathcal{M}_k(s)=[\underline{u}_k(s),\overline{u}_k(s)]$ is the dynamic magnitude interval for mode~$k$ returned by the feasibility oracle (twin physics plus engineered margins; sensitivity in Section~\ref{sec:results} separates the two). Idle is a point mass. Interchange couples the three physical commands through~\eqref{eq:pgrid-u}. Writing $\mathcal{A}_{\mathrm{grid}}(s)$ for the slice of $(u^{\mathrm{th}},u^{\mathrm{bat}},u^{\mathrm{CAES}})$ that meets~\eqref{eq:grid}, the legal hybrid support is the intersection, not the cartesian product of device boxes:
+where \(\mathcal{K}(s)\) is the admissible CAES mode set and \(\mathcal{M}_k(s)\) the current magnitude interval. Writing \(\mathcal{A}_{\mathrm{grid}}(s)\) for the commands that meet~\eqref{eq:grid},
 \begin{equation}
-\mathcal{A}_f(s)
+\Afhat(s)
 =
 \mathcal{A}_{\mathrm{dev}}(s)\cap\mathcal{A}_{\mathrm{grid}}(s).
 \label{eq:support}
 \end{equation}
-The physical FMU command is the continuous triple
-\begin{equation}
-a_t = \bigl(u_{\mathrm{tp},t},\, u_{\mathrm{bat},t},\, u_{\mathrm{caes},t}\bigr),
-\label{eq:action}
-\end{equation}
-decoded from the \emph{current} interval rather than from a static device band alone,
+The physical command is the continuous triple \((u^{\mathrm{th}},u^{\mathrm{bat}},u_{\mathrm{caes}})\), with
 \begin{equation}
 u_t^{\mathrm{CAES}}
 =
 \begin{cases}
-l_D(s_t)+z_t\bigl[h_D(s_t)-l_D(s_t)\bigr], & m=D,\\
+\underline{u}_D(s_t)+z_t\bigl[\overline{u}_D(s_t)-\underline{u}_D(s_t)\bigr], & m=D,\\
 0, & m=I,\\
-l_C(s_t)+z_t\bigl[h_C(s_t)-l_C(s_t)\bigr], & m=C.
+\underline{u}_C(s_t)+z_t\bigl[\overline{u}_C(s_t)-\underline{u}_C(s_t)\bigr], & m=C.
 \end{cases}
 \label{eq:decode}
 \end{equation}
-When margins vanish,~\eqref{eq:decode} collapses to the device envelope in Fig.~\ref{fig:caes-legal}. A Boolean mask $M(s)\in\{0,1\}^3$ encodes $\mathcal{K}(s)$. After $u^{\mathrm{CAES}}$ is fixed, the thermal and battery heads are remapped onto the residual interchange intervals (Section~\ref{sec:hybrid-actor}). Predicted next-state inventories and residual twin constraints that cannot be written as intervals remain with GiveSafe. Transitions integrate~\eqref{eq:pv}--\eqref{eq:tank-bal} for one plant hour under $a_t\in\mathcal{A}_f(s_t)\subseteq\mathcal{F}(s_t)$.
+The learning reward is a scaled negative of \(C_t\), with light inventory shaping; ranking uses \(CC\).
 
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.88\textwidth]{fig_caes_legal}
-\caption{Legal CAES electric command. (a)~Device envelope with discharge, idle and charge bands. (b)~State-dependent intervals $\mathcal{M}_k(s)$ that may shrink or drop a band.}
-\label{fig:caes-legal}
-\end{figure}
-
-\subsection{Reward function for learning}
-\label{sec:reward}
-
-With calibration constant $C_{\mathrm{ref}}\approx1.565\times10^{5}$~CNY (rule-controller $p_{95}$ step cash magnitude),
-\begin{equation}
-r_t^{\mathrm{econ}} = \frac{\Delta J_t^{\mathrm{gen}}}{C_{\mathrm{ref}}}.
-\label{eq:recon}
-\end{equation}
-Potential-based inventory shaping uses the weighted L1 distance $L_{1,t}$ of (battery, gas, hot, cold) relative to episode start:
-\begin{equation}
-r_t^{\mathrm{shape}}
-= \kappa_t \bigl(L_{1,t-1}-L_{1,t}\bigr)
-- \kappa_t^{\mathrm{abs}} L_{1,t},
-\label{eq:shape}
-\end{equation}
-with base $\kappa=5$ and a recovery-window scale-up over the last $H=40$~h. At a completed, failure-free terminal step the Cui-style indicator is
-\begin{equation}
-r_T^{\mathrm{term}}
-=
-\begin{cases}
-B, & L_1^{\mathrm{e}}\le\varepsilon,\\
-0, & \text{otherwise},
-\end{cases}
-\label{eq:term}
-\end{equation}
-with $B=15$. Falling outside~\eqref{eq:soc} simply withholds the bonus; the week remains valid and no utilisation incentive is added. The extrinsic reward is the sum of the three terms
-\begin{equation}
-r_t^{\mathrm{ext}}
-= r_t^{\mathrm{econ}}+r_t^{\mathrm{shape}}+r_t^{\mathrm{term}}.
-\label{eq:rext}
-\end{equation}
-Classical programmes must convexify~\eqref{eq:caes-legal} and the CAES thermo-mechanical coupling; PC-HybridTD3 (Section~\ref{sec:method}) optimises~\eqref{eq:J} by closed-loop interaction with the plant twin under support~\eqref{eq:support}. Rolling MILP optimises a linear energy surrogate and is evaluated on the same FMU.
-
-% =====================================================================
-\section{Solution methodology}
+\section{Physics-Constrained Hybrid TD3}
 \label{sec:method}
-% =====================================================================
 
-\subsection{Same-timescale hybrid policy}
-\label{sec:same-timescale}
+PC-HybridTD3~\cite{lillicrap2016ddpg,fujimoto2018td3,fan2019hybrid} is a single-timescale actor--critic on a parameterized hybrid action~\cite{hausknecht2016pas,masson2016paa}: thermal and battery heads are continuous, while CAES is a mode--magnitude pair because~\eqref{eq:legal} is disconnected. GiveSafe is adopted as a residual physical check~\cite{garcia2015safe,sun2024constrained}. Fig.~\ref{fig:algorithm} summarises the loop.
 
-PC-HybridTD3~\cite{fujimoto2018td3,fan2019hybrid} is a single-timescale actor--critic. Thermal and battery commands are continuous; CAES uses a mode--magnitude pair because its electric envelope is disconnected. Hierarchical methods remain appropriate when independent slow inventory targets dominate; they are not required here.
-
-\subsection{Twin-closed loop}
-\label{sec:twin-loop}
-At each hour the controller assembles $\mathcal{A}_f(s)$ from device boxes and interchange, decodes $\pi_{\theta}(s,\mathcal{A}_f(s))$ (greedy $\arg\max$ mode at evaluation) and offers the physical triple to GiveSafe. An accepted command steps the FMU and the resulting transition enters the economic replay $\mathcal{D}_{\mathrm{B}}$. Rejections do not advance the plant and are stored only in a safety set $\mathcal{D}_{\mathrm{S}}$. During exploration the actor may be resampled up to $N_{\mathrm{try}}=64$ times; evaluation uses a single attempt. Training begins with $N_{\mathrm{warm}}=1024$ feasible random hours so that charge and discharge are both visited before the first gradient step. Figure~\ref{fig:algorithm} summarises the loop.
-
-\begin{figure}[H]
+\begin{figure*}[!t]
 \centering
-\includegraphics[width=\textwidth]{fig_algorithm}
-\caption{PC-HybridTD3. A forecast-aware state feeds a hybrid actor; a joint feasible-support decoder maps thermal, battery and CAES commands onto $\mathcal{A}_f(s)$; GiveSafe is the last physical check before the FMU steps.}
+\includegraphics[width=0.92\textwidth]{fig_algorithm}
+\caption{Closed-loop PC-HybridTD3 scheduling framework. The forecast-aware state is mapped to heterogeneous device commands, decoded using a state-dependent joint feasible-support model, screened by GiveSafe, and subsequently executed on the FMU. Only executed physical transitions are used for TD3 updates.}
 \label{fig:algorithm}
-\end{figure}
+\end{figure*}
 
+\subsection{Joint feasible-support decoder}
+\label{sec:decoder}
 
-\subsection{Parameterized hybrid actor}
-\label{sec:hybrid-actor}
-
-The actor emits
-\begin{equation}
-a_t
-=
-\bigl(u_t^{\mathrm{th}},\,u_t^{\mathrm{bat}},\,m_t,\,z_t\bigr),
-\qquad
-m_t\in\{D,I,C\},\quad
-z_t\in[0,1].
-\label{eq:pi-factor}
-\end{equation}
-Thermal and battery heads map bounded latents by a sigmoid onto the current boxes $\mathcal{A}_{\mathrm{tp}}(s)$ and $\mathcal{A}_{\mathrm{bat}}(s)$. The CAES head emits three mode logits $\ell\in\mathbb{R}^{3}$ and one magnitude logit. With Boolean mask $M(s)\in\{0,1\}^3$,
+At each hour the actor is decoded onto \(\Afhat(s)\). Illegal CAES modes are removed by a Boolean mask \(M(s)\in\{0,1\}^3\),
 \begin{equation}
 \tilde\ell
 =
-\ell + \log\bigl(M(s)+\varepsilon\bigr)
-\quad\text{(illegal modes set to $-\infty$)},
+\ell + \log\bigl(M(s)+\varepsilon\bigr),
 \label{eq:mask}
 \end{equation}
-so $\mathrm{softmax}(\tilde\ell)$ is supported only on $\mathcal{K}(s)$. Evaluation and the TD3 target take $m'=\arg\max_m\tilde\ell(s')$. The physical CAES command is decoded on the \emph{current} oracle intervals,
-\begin{equation}
-u^{\mathrm{CAES}}
-=
-\begin{cases}
-\underline{u}_D(s)+z\bigl(\overline{u}_D(s)-\underline{u}_D(s)\bigr), & m=D,\\
-0, & m=I,\\
-\underline{u}_C(s)+z\bigl(\overline{u}_C(s)-\underline{u}_C(s)\bigr), & m=C,
-\end{cases}
-\label{eq:affine}
-\end{equation}
-which is~\eqref{eq:decode}. Idle is a point mass. Device boxes are then coupled through~\eqref{eq:pgrid-u}. Let $(u^{\mathrm{th}}_{\mathrm{lo}},u^{\mathrm{th}}_{\mathrm{hi}})$ and $(u^{\mathrm{bat}}_{\mathrm{lo}},u^{\mathrm{bat}}_{\mathrm{hi}})$ be the current thermal and battery boxes, $P_T,P_B,P_C$ the device ratings and $(G_{\min},G_{\max})$ the interchange band (oracle margins included). The CAES grid window is
+so that \(\mathrm{softmax}(\tilde\ell)\) is supported on \(\mathcal{K}(s)\). Evaluation and the TD3 target take \(m'=\arg\max_m\tilde\ell(s')\). With thermal and battery boxes \((u^{\mathrm{th}}_{\mathrm{lo}},u^{\mathrm{th}}_{\mathrm{hi}})\), \((u^{\mathrm{bat}}_{\mathrm{lo}},u^{\mathrm{bat}}_{\mathrm{hi}})\), ratings \(P_T,P_B,P_C\) and interchange band \((G_{\min},G_{\max})\), the CAES grid window is
 \begin{equation}
 \begin{aligned}
 \underline{u}_C^{\mathrm{g}}
@@ -762,7 +261,7 @@ which is~\eqref{eq:decode}. Idle is a point mass. Device boxes are then coupled 
 \end{aligned}
 \label{eq:caes-window}
 \end{equation}
-Each mode interval $\mathcal{M}_k(s)$ is intersected with $[\underline{u}_C^{\mathrm{g}},\overline{u}_C^{\mathrm{g}}]$; empty modes are masked. After $u^{\mathrm{CAES}}$ is decoded, thermal is remapped onto the residual interval for which some battery command still meets the band,
+Each interval \(\mathcal{M}_k(s)\) is intersected with this window and empty modes are masked. After \(u^{\mathrm{CAES}}\) is decoded by~\eqref{eq:decode}, thermal is remapped onto the residual interval
 \begin{equation}
 \begin{aligned}
 \underline{u}^{\mathrm{th}\star}
@@ -774,7 +273,7 @@ Each mode interval $\mathcal{M}_k(s)$ is intersected with $[\underline{u}_C^{\ma
 \end{aligned}
 \label{eq:th-window}
 \end{equation}
-and battery is remapped given $(u^{\mathrm{th}},u^{\mathrm{CAES}})$,
+and battery is remapped given \((u^{\mathrm{th}},u^{\mathrm{CAES}})\),
 \begin{equation}
 \begin{aligned}
 \underline{u}^{\mathrm{bat}\star}
@@ -786,381 +285,139 @@ and battery is remapped given $(u^{\mathrm{th}},u^{\mathrm{CAES}})$,
 \end{aligned}
 \label{eq:bat-window}
 \end{equation}
-No online quadratic programme is required. GiveSafe then checks predicted next-state inventories and remaining twin constraints; evaluation queries the actor once. Clamping $u^{\mathrm{CAES}}$ after the fact is used only as an audit of the decoder.
+GiveSafe then tests predicted next-state inventories and residual twin constraints that cannot be written as intervals~\cite{garcia2015safe,sun2024constrained}. Thus \(\Afhat(s)\) is a computable approximation of \(\AFMU(s)\).
 
-Because the discrete mode is not differentiable, actor updates use Straight-Through Gumbel--Softmax, with a hard one-hot in the forward pass, a soft gradient in the backward pass, and temperature $\tau_{\mathrm{G}}$ annealed from $1.0$ to $0.2$.
+\subsection{Physical-only TD3 update}
+\label{sec:td3}
 
-\subsection{Hybrid critic and TD3 target}
-\label{sec:critic}
-
-Twin critics $Q_{\phi_1},Q_{\phi_2}$ score the executed physical triple $(u^{\mathrm{th}},u^{\mathrm{bat}},u_{\mathrm{caes}})$. Writing $Q=\min(Q_{\phi_1},Q_{\phi_2})$ and clipping $Q$ at $\pm 200$, the Bellman target is the standard TD3 backup
+Twin critics \(Q_{\phi_1},Q_{\phi_2}\) score the executed triple \((u^{\mathrm{th}},u^{\mathrm{bat}},u_{\mathrm{caes}})\). With \(Q=\min(Q_{\phi_1},Q_{\phi_2})\),
 \begin{equation}
 y
 =
-r^{\mathrm{ext}}+\gamma(1-d)\,Q_{\bar\phi}\bigl(s',u^{\mathrm{th}\prime},u^{\mathrm{bat}\prime},u_{\mathrm{caes}}'\bigr),
-\label{eq:soft-v}
+r+\gamma(1-d)\,Q_{\bar\phi}\bigl(s',u^{\mathrm{th}\prime},u^{\mathrm{bat}\prime},u_{\mathrm{caes}}'\bigr).
+\label{eq:td3-y}
 \end{equation}
-where the target actor is deterministic in the mode,
-\begin{equation}
-m'=\arg\max_{m}\tilde\ell_{\bar\theta}(s'),
-\label{eq:target-mode}
-\end{equation}
-clipped Gaussian noise is added \emph{only} to the magnitude,
+The target actor is deterministic in the mode, \(m'=\arg\max_m\tilde\ell_{\bar\theta}(s')\); clipped Gaussian noise is added only to the magnitude,
 \begin{equation}
 \tilde z'=\mathrm{clip}\bigl(z'(s')+\varepsilon,0,1\bigr),
-\qquad
-\varepsilon\sim\mathrm{clip}\bigl(\mathcal{N}(0,\sigma),-c,c\bigr),
 \label{eq:target-mag}
 \end{equation}
-and $\tilde z'$ is re-decoded with the \emph{next-state} intervals $\mathcal{M}_{m'}(s')$. Noise is not added to the decoded $u_{\mathrm{caes}}$. The twin critics minimise
-\begin{equation}
-L_Q
-=
-\mathbb{E}_{\mathcal{D}_{\mathrm{B}}}
-\bigl[
-(Q_{\phi_1}-y)^2+(Q_{\phi_2}-y)^2
-\bigr].
-\label{eq:lq}
-\end{equation}
-The actor (delayed, policy delay $D=2$) maximises $Q_{\phi_1}$ on the currently decoded hybrid action
-\begin{equation}
-L_{\pi}
-=
-\mathbb{E}_{s\sim\mathcal{D}_{\mathrm{B}}}
-\bigl[-Q_{\phi_1}(s,u^{\mathrm{th}},u^{\mathrm{bat}},u_{\mathrm{caes}})\bigr].
-\label{eq:lpi}
-\end{equation}
-Only physical FMU transitions in $\mathcal{D}_{\mathrm{B}}$ enter~\eqref{eq:lq}--\eqref{eq:lpi}.
+and \(\tilde z'\) is re-decoded with \(\mathcal{M}_{m'}(s')\). The delayed actor maximises \(Q_{\phi_1}\) on the decoded hybrid action. Mode non-differentiability is handled by Straight-Through Gumbel--Softmax.
 
-\subsection{Network architecture}
-\label{sec:network}
+Executed FMU transitions enter the economic replay \(\mathcal{D}_{\mathrm{B}}\) and drive the critic and actor losses. Rejected proposals leave the plant unmoved and are stored only for audit. Algorithm~\ref{alg:pc-hybridtd3} and Table~\ref{tab:hyper} summarise the procedure.
 
-The actor encoder is a two-layer MLP ($256$--ReLU--$256$--ReLU) on the $166$-dimensional observation. Linear heads emit thermal and battery commands, three CAES mode logits and one magnitude logit. Twin critics take the concatenated physical packing $(s,u^{\mathrm{th}},u^{\mathrm{bat}},u_{\mathrm{caes}})$. All Adam learning rates are $3\times10^{-4}$; gradient norms are clipped at $10$. Target networks track with $\tau=5\times10^{-3}$.
-
-\subsection{Physical-only economic replay}
-\label{sec:givesafe}
-
-During exploration the controller may draw up to $N_{\mathrm{try}}=64$ candidates from $\pi_{\theta}$; evaluation uses a single draw. A candidate is executed only if it lies in $\mathcal{F}(s)$. Accepted transitions $(s,a,r^{\mathrm{ext}},s')$ enter $\mathcal{D}_{\mathrm{B}}$ and drive~\eqref{eq:lq}--\eqref{eq:lpi}. Rejected proposals leave the plant unmoved and are recorded in $\mathcal{D}_{\mathrm{S}}$ for later audit. GiveSafe is therefore a residual screen on the joint decoder~\cite{garcia2015safe,sun2024constrained}, not a substitute for it.
-
-\subsection{Ablations and classical baselines}
-\label{sec:ablation}
-
-Two controls isolate the two modelling claims. (i)~\textbf{Continuous-projection TD3} maps a single CAES latent by
-\begin{equation}
-u_{\mathrm{caes}}
-=
-\Pi_{\mathrm{bands}}\bigl(\tanh(z)\bigr),
-\label{eq:project}
-\end{equation}
-where $\Pi_{\mathrm{bands}}$ maps the open gap to idle and otherwise clamps to the nearest charge or discharge band. (ii)~\textbf{Component-support hybrid TD3} retains the mode mask~\eqref{eq:mask} but decodes magnitude on device boxes without the sequential grid-coupled decoder, isolating the joint support $\mathcal{A}_f(s)$. Fig.~\ref{fig:action-rep} places the three encodings on the same $u_{\mathrm{caes}}$ axis. Panel~(a) is~\eqref{eq:project}: a latent that lands in the illegal gap is forced to idle. Panel~(b) is the static-band hybrid: the actor first chooses a mode, then uses the full device charge or discharge band. Panel~(c) is PC-HybridTD3: the same hybrid heads map magnitude only through the currently feasible interval $\mathcal{M}_k(s)$. Section~\ref{sec:results} compares these learners with a price-aware heuristic and a rolling MILP on a linear energy surrogate, all evaluated on the same FMU.
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.95\textwidth]{fig_action_rep}
-\caption{CAES command encodings.}
-\label{fig:action-rep}
-\end{figure}
-
-\begin{algorithm}[!htbp]
-\caption{PC-HybridTD3 on the plant FMU}
+\begin{algorithm}[!t]
+\caption{PC-HybridTD3}
 \label{alg:pc-hybridtd3}
 \begin{algorithmic}[1]
-\Require Actor $\pi_{\theta}$, twin critics, buffers $\mathcal{D}_{\mathrm{B}}$ and $\mathcal{D}_{\mathrm{S}}$
-\State Collect $N_{\mathrm{warm}}=1024$ feasible random hours on $\mathcal{A}_f(s)$
-\For{episode $=1,2,\ldots$ until the physical-step budget}
-  \State Reset Sysplorer FMU on a \emph{training}-week start; $s\leftarrow s_0$
-  \For{$t=0$ to $T-1$}
-    \State Device boxes $\leftarrow$ oracle; CAES $\cap$ grid window; mask empty modes
-    \State Decode $u^{\mathrm{CAES}}$, tighten thermal, then battery (joint $\mathcal{A}_f(s)$)
-    \State $a^{\star}\leftarrow$ GiveSafe($s,a$; $N_{\mathrm{try}}=64$ if exploring, $1$ if evaluating)
-    \If{no legal $a^{\star}$}
-      \State record the first oracle reason in $\mathcal{D}_{\mathrm{S}}$ and end the episode
-    \EndIf
-    \State Step FMU one hour with $a^{\star}$; observe $s'$, $r^{\mathrm{ext}}$
-    \State store $(s,a^{\star},r^{\mathrm{ext}},s',m,z,\mathcal{M}(s),\mathcal{M}(s'))$ in $\mathcal{D}_{\mathrm{B}}$
-    \State Target: $m'\leftarrow\arg\max$; noise on $z'$ only; re-decode with $\mathcal{M}(s')$
-    \State Update critics~\eqref{eq:lq}; delayed actor~\eqref{eq:lpi} with Straight-Through Gumbel
-    \State $s\leftarrow s'$
+\Require Actor \(\pi_{\theta}\), twin critics, replay \(\mathcal{D}_{\mathrm{B}}\)
+\State Warm-start with random feasible hours on \(\Afhat(s)\)
+\For{each episode on a training week}
+  \For{\(t=0\) to \(T-1\)}
+    \State Decode CAES, thermal and battery on \(\Afhat(s)\)
+    \State Accept \(a^{\star}\) by GiveSafe; otherwise terminate
+    \State Step the FMU; store the transition in \(\mathcal{D}_{\mathrm{B}}\)
+    \State Target: \(\arg\max\) mode, noise on \(z'\) only, re-decode at \(s'\)
+    \State Update critics; delayed Gumbel actor
   \EndFor
 \EndFor
-\Ensure Learned physics-constrained policy $\pi_{\theta}$
 \end{algorithmic}
 \end{algorithm}
 
-\begin{table}[!htbp]
-\centering
+\begin{table}[!t]
 \caption{Principal PC-HybridTD3 hyperparameters.}
 \label{tab:hyper}
+\centering
 \scriptsize
 \begin{tabular}{@{}llll@{}}
 \toprule
-Symbol / name & Value & Symbol / name & Value \\
+Name & Value & Name & Value \\
 \midrule
-$\gamma$ & 0.99 & target $\tau$ & $5\times10^{-3}$ \\
-actor / critic lr & $3\times10^{-4}$ & batch size & 64 \\
-Bellman buffer & $1\times10^{5}$ & GiveSafe tries (train / greedy) & 64 / 1 \\
-policy delay $D$ & 2 & target mag.\ noise / clip & $0.2$ / $0.5$ \\
-Gumbel $\tau_{\mathrm{G}}$ & $1.0\to 0.2$ & algorithm & PC-HybridTD3 \\
-MLP hidden / act. & $256$ / ReLU & $Q$ clip / grad clip & $200$ / $10$ \\
-warm start / $\varepsilon_{\mathrm{rand}}$ & $1024$ / $1.0\to 0.05$ & forecast horizon & 24~h \\
-$C_{\mathrm{ref}}$ & $1.565\times10^{5}$ CNY & terminal $\xi$ & 0.06 \\
-terminal bonus $B$ & 15 & episode length $T$ & 168 h \\
-seeds & $0,1,2$ & interactions / seed & $3$--$5\times10^{5}$ \\
-observation dim & 166 & hybrid action & $(u^{\mathrm{th}},u^{\mathrm{bat}},m,z)$ \\
+\(\gamma\) / target \(\tau\) & \(0.99\) / \(5\times10^{-3}\) & actor / critic lr & \(3\times10^{-4}\) \\
+batch / buffer & 64 / \(1\times10^{5}\) & GiveSafe tries & 64 / 1 \\
+policy delay \(D\) & 2 & mag.\ noise / clip & \(0.2\) / \(0.5\) \\
+Gumbel \(\tau_{\mathrm{G}}\) & \(1.0\to 0.2\) & MLP hidden & \(256\), ReLU \\
+warm start / \(\varepsilon_{\mathrm{rand}}\) & \(1024\) / \(1.0\to 0.05\) & forecast horizon & 24 h \\
+seeds & \(0,1,2\) & episode length \(T\) & 168 h \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\subsection{Ablations}
+\label{sec:ablation}
+
+Two controls isolate the two modelling claims. Continuous-projection TD3 maps a CAES latent by \(u_{\mathrm{caes}}=\Pi_{\mathrm{bands}}(\tanh(z))\), sending the illegal gap to idle. Component-support hybrid TD3 retains the mode mask~\eqref{eq:mask} but decodes magnitude on static device boxes, without the sequential grid-coupled decoder. Fig.~\ref{fig:action-rep} compares the three encodings. The CAES head is the hybrid sub-action of a plant-wide policy.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.95\textwidth]{fig_action_rep}
+\caption{Comparison of CAES sub-action representations used in the ablation study: (a)~continuous scalar action followed by projection, (b)~mode--magnitude decoding on static device bands, and (c)~mode--magnitude decoding on state-dependent feasible intervals in PC-HybridTD3.}
+\label{fig:action-rep}
+\end{figure*}
 \FloatBarrier
 
-% =====================================================================
-\section{Numerical study}
+\section{Case Study}
 \label{sec:results}
-% =====================================================================
 
-\subsection{Experimental setting}
+\subsection{Experimental protocol}
 \label{sec:setup}
 
-All methods interact with the same Sysplorer FMU, the monthly 110~kV TOU of Table~\ref{tab:tou-monthly} and identical resource files. Each weekly episode lasts \(T=168\)~h. The 8760~h calendar supplies rotating start times; inventories are re-initialised at each reset. A subsequent 8760~h rollout, without retraining, is used as a deployment check and is not mixed with the held-out weekly scores. The 52 complete weeks are stratified by quarter into $9$ training, $2$ validation and $2$ test weeks per season. Training starts are drawn from the training set only; checkpoints are selected on validation; reported tables use the test weeks. Seeds $0,1,2$ share a physical interaction budget of $3$--$5\times10^{5}$ hours. Hyperparameters are listed in Table~\ref{tab:hyper}. The main comparison assumes a perfect 24~h forecast; a noisy observation case is discussed in Section~\ref{sec:deployment}.
+All methods are evaluated on the same FMU, tariff and resource traces. Each episode lasts \(T=168\)~h. The 52 weeks of the 8760~h calendar are split by season into \(9\) training, \(2\) validation and \(2\) test weeks (\(36/8/8\)). Inventories reset at each weekly start. After the weekly comparison, the selected policy is rolled for 8760~h without retraining. Three seeds share \(3\)--\(5\times10^{5}\) environment hours. The main comparison uses a perfect 24~h forecast.
 
-Four methods are compared: a price-aware heuristic, a rolling MILP on a linear energy surrogate, continuous-projection TD3, and PC-HybridTD3. The two learning ablations isolate the hybrid representation and the joint support $\mathcal{A}_f(s)$. Held-out evaluation is deterministic. GiveSafe remains active for every learner. Learning curves of the three DRL variants are shown in Fig.~\ref{fig:training}.
+The baselines are a price-aware heuristic, a rolling MILP on a linear energy surrogate, continuous-projection TD3, component-support hybrid TD3, and PC-HybridTD3. Evaluation is deterministic. Methods are ranked by full-week operating cost~\eqref{eq:C}. Grid trading, carbon, curtailment, unserved energy, hard violations and decision time complete the comparison; device throughputs are used only to interpret the dispatch.
 
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{fig_placeholder}
-\caption{Learning curves of continuous-projection TD3, component-support hybrid TD3 and PC-HybridTD3 (mean $\pm$ one standard deviation over three seeds).}
-\label{fig:training}
-\end{figure}
+\subsection{Training convergence}
+\label{sec:learn}
 
-Policies are ranked by the full-week operating cost~\eqref{eq:C},
-$CC=\sum_t C_t$,
-computed only on completed 168~h episodes. Grid trading and carbon costs, renewable curtailment and its rate, unserved energy, interchange-contract excess, constraint violations, solver failures and decision time complete the system picture (Tables~\ref{tab:econ}--\ref{tab:kpi}). Thermal generation, battery and CAES throughputs, and inventory ranges are read as mechanism, not as a substitute for $CC$. The terminal residual $E_{\mathrm{terminal}}=|s_{T,\mathrm{bat}}-s_{0,\mathrm{bat}}|+|s_{T,\mathrm{gas}}-s_{0,\mathrm{gas}}|$ is reported alongside the soft bonus~\eqref{eq:term}. Where a method records lower curtailment but higher $CC$, the comparison is a price-and-constraint trade-off rather than a ranking of solvers. If both the learned policy and the rolling MILP leave CAES idle on a given week, that outcome is attributed to the plant and the tariff.
+The three TD3 variants are trained over three seeds. Convergence is measured by deterministic validation operating cost (mean \(\pm\) one standard deviation).
+% FIG. 4 --- Stage D: fig_training
+% Training convergence of the three TD3 variants over three random seeds. Lines denote the mean deterministic validation performance and shaded regions indicate one standard deviation.
 
-\subsection{Operating cost}
-\label{sec:econ}
+\subsection{System-level scheduling performance}
+\label{sec:kpi}
 
-Table~\ref{tab:econ} reports $CC$ together with grid and carbon costs and with curtailment and unserved energy. Only complete weeks enter the table, so that survival time is not mistaken for cash. Device throughputs appear in Table~\ref{tab:kpi}.
+Table~\ref{tab:kpi} reports operating cost, grid trading, carbon, curtailment, unserved energy, hard-constraint violations and per-step runtime on the eight test weeks, averaged over three seeds, for completed 168~h episodes.
 
-\begin{table}[!htbp]
-\centering
-\caption{Full-week test economics under the monthly 110~kV TOU (three seeds). Costs in CNY; energies in MWh. Only completed 168~h episodes are ranked.}
-\label{tab:econ}
-\scriptsize
-\begin{tabular}{llrrrrr}
-\toprule
-Season & Method & $CC$ & $C^{\mathrm{grid}}$ & $C^{\mathrm{carbon}}$ & $E^{\mathrm{curt}}$ & $E^{\mathrm{uns}}$ \\
-\midrule
-Winter & PC-HybridTD3 & --- & --- & --- & --- & --- \\
-Winter & projection TD3 & --- & --- & --- & --- & --- \\
-Winter & rolling MILP & --- & --- & --- & --- & --- \\
-Winter & price-aware rule & --- & --- & --- & --- & --- \\
-Transition / summer / autumn & PC-HybridTD3 & --- & --- & --- & --- & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
-\FloatBarrier
-
-\subsection{Renewable uptake and reliability}
-\label{sec:kpi-physics}
-
-Curtailment $E^{\mathrm{curt}}$, its rate relative to available renewable energy, and unserved energy $E^{\mathrm{uns}}$ are read on the same completed weeks as Table~\ref{tab:econ}. Interchange peak, valley and ramp, and contract excess, are collected in Table~\ref{tab:kpi}.
-
-\subsection{Constraint satisfaction}
-\label{sec:safety}
-
-Table~\ref{tab:run} records whether each method completes the held-out week without a hard violation or an FMU failure. Hours are plant steps that the twin actually advanced. A missing feasible action under the deterministic policy is counted as an evaluation failure, not retried.
-
-\begin{table}[!htbp]
-\centering
-\caption{Completion of held-out weekly evaluations (three seeds). Hours are valid FMU steps.}
-\label{tab:run}
-\scriptsize
-\begin{tabular}{lllr}
-\toprule
-Season & Method & Status & Hours \\
-\midrule
-Winter / transition / summer / autumn & PC-HybridTD3 & --- & --- \\
-Winter / transition / summer / autumn & projection TD3 & --- & --- \\
-Winter / transition / summer / autumn & static-support hybrid TD3 & --- & --- \\
-Winter / transition / summer / autumn & price-aware rule & --- & --- \\
-Winter / transition / summer / autumn & rolling MILP & --- & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
-\FloatBarrier
-
-\subsection{Dispatch mechanism}
-\label{sec:typical-week}
-
-Figure~\ref{fig:dispatch} shows a typical held-out week: thermal regulation, battery balancing on the hourly scale, any longer CAES shifting, and grid import or export, against load and renewable availability. The price-aware rule is a heuristic on the same FMU. The rolling MILP uses a $24$~h receding horizon on a linear energy surrogate, applies only the first-hour command, then the FMU steps and the programme is resolved. All four methods are therefore scored on the plant twin rather than on mismatched models.
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{fig_placeholder}
-\caption{Typical held-out week: load, wind, PV, thermal, battery, CAES and grid power.}
-\label{fig:dispatch}
-\end{figure}
-
-Inventory trajectories on the same week are shown with the TOU price in Fig.~\ref{fig:soc-price}.
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{fig_placeholder}
-\caption{Battery and CAES inventories with the TOU price on the same week.}
-\label{fig:soc-price}
-\end{figure}
-
-\subsection{Sensitivity}
-\label{sec:sensitivity-rules}
-
-Carbon price, feasibility-margin scale, CAES rating, and the curtailment and contract penalties $\nu_{\mathrm{curt}}$ and $\nu_{\mathrm{grid}}$ are the principal sensitivity axes. A lower $CC$ with higher curtailment is reported as such. The main comparison uses a shared perfect 24~h forecast.
-
-\subsection{Summary of indicators}
-\label{sec:kpi-ledger}
-
-Table~\ref{tab:kpi} gathers the system indicators first and the device throughputs second. Figure~\ref{fig:kpi} summarises operating cost, curtailment, emissions and constraint satisfaction.
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{fig_placeholder}
-\caption{System indicators: operating cost, renewable curtailment, emissions and constraint satisfaction.}
-\label{fig:kpi}
-\end{figure}
-
-\begin{table}[!htbp]
-\centering
-\caption{Held-out weekly indicators. Operating cost $CC$ is the ranking column.}
+\begin{table}[!t]
+\caption{Held-out weekly indicators on eight test weeks (three seeds). Operating cost \(CC\) is the ranking column.}
 \label{tab:kpi}
+\centering
 \scriptsize
-\begin{tabular}{llrrrr}
+\setlength{\tabcolsep}{3.2pt}
+\begin{tabular}{@{}lrrrrr@{}}
 \toprule
-Indicator & Unit & Rule & MILP & Proj.\ TD3 & PC-HybridTD3 \\
+Indicator & Rule & MILP & Proj.\ TD3 & Hybrid & PC-Hyb. \\
 \midrule
-Total operating cost $CC$ & CNY & --- & --- & --- & --- \\
-Grid trading cost & CNY & --- & --- & --- & --- \\
-Carbon cost / emissions & CNY / t & --- & --- & --- & --- \\
-Renewable curtailment & MWh & --- & --- & --- & --- \\
-Curtailment rate & \% & --- & --- & --- & --- \\
-Unserved energy & MWh & --- & --- & --- & --- \\
-Grid contract excess & MWh & --- & --- & --- & --- \\
-Hard violations & count & --- & --- & --- & --- \\
-FMU failures & count & --- & --- & --- & --- \\
-Decision time & ms/step & --- & --- & --- & --- \\
-Thermal generation & MWh & --- & --- & --- & --- \\
-Battery throughput / SoC range & MWh / -- & --- & --- & --- & --- \\
-CAES throughput / mode hours & MWh / h & --- & --- & --- & --- \\
-Terminal inventory $E_{\mathrm{terminal}}$ & -- & --- & --- & --- & --- \\
+Operating cost \(CC\) (CNY) & --- & --- & --- & --- & --- \\
+Grid trading (CNY) & --- & --- & --- & --- & --- \\
+Carbon (CNY) & --- & --- & --- & --- & --- \\
+Curtailment (MWh) & --- & --- & --- & --- & --- \\
+Unserved energy (MWh) & --- & --- & --- & --- & --- \\
+Hard violations (count) & --- & --- & --- & --- & --- \\
+Runtime (ms/step) & --- & --- & --- & --- & --- \\
 \bottomrule
-\end{tabular}
+\end{tabular}\\[2pt]
+{\footnotesize Hybrid: component-support hybrid TD3. PC-Hyb.: PC-HybridTD3.}
 \end{table}
-\FloatBarrier
 
-\subsection{Forecast noise and annual rollout}
-\label{sec:deployment}
+\subsection{Coordinated weekly dispatch}
+\label{sec:dispatch}
 
-A robustness case perturbs only the observed forecasts ($\sigma_{\mathrm{wind}}=10\%$, $\sigma_{\mathrm{solar}}=10\%$, $\sigma_{\mathrm{load}}=8\%$). After the weekly comparison, the selected policy is rolled for 8760~h without retraining, yielding annual cost, curtailment, unserved energy, CO$_2$, constraint counts and device throughput as a deployment check rather than a substitute for Table~\ref{tab:kpi}.
+A representative held-out week is used to examine coordinated operation: thermal regulation, hourly BESS balancing, CAES shifting, and grid exchange, together with TOU price, net load and storage inventories, relative to the heuristic and the rolling MILP.
+% FIG. 5 --- Stage D: fig_dispatch_week
+% Coordinated dispatch of PC-HybridTD3 on a representative held-out week: (a)~load and renewable availability, (b)~thermal, BESS, CAES and grid powers, (c)~TOU price and net load, and (d)~storage inventory trajectories.
 
-\subsection{Discussion}
-\label{sec:support}
+\subsection{Ablation and robustness}
+\label{sec:ablation-results}
 
-The comparison is organised from operating cost to renewable uptake and reliability, then to constraint satisfaction; Figs.~\ref{fig:dispatch}--\ref{fig:kpi} explain those system quantities. Quantitative cells will be completed once each method finishes a full held-out week on the monthly 110~kV path. Appendix~\ref{app:annual-carbon} records the intensity carbon book and the weekly-reset convention; it does not by itself establish annual optimality of the learned policy.
+The chain continuous-projection TD3, component-support hybrid TD3 and PC-HybridTD3 isolates the hybrid CAES representation and then the joint decoder \(\Afhat(s)\). Both controls appear in Table~\ref{tab:kpi}. Forecast noise (\(\sigma_{\mathrm{wind}}=10\%\), \(\sigma_{\mathrm{solar}}=10\%\), \(\sigma_{\mathrm{load}}=8\%\)) and an 8760~h rollout without retraining test robustness of the weekly ranking.
 
-Two limitations should be kept in view. The live magnitude intervals $\mathcal{M}_k(s)$ mix twin physics with oracle margins, and the main study resets inventories each week. GiveSafe is adopted from the safety-filter literature. September--December buy levels in Table~\ref{tab:tou-monthly} carry forward the last published month until official tables appear.
-
-% =====================================================================
 \section{Conclusion}
 \label{sec:conclusion}
-% =====================================================================
 
-Weekly multi-energy dispatch under a monthly Shandong TOU tariff and a national ETS carbon price is a coordinated problem: thermal generation, BESS, CAES and the grid must be moved together inside a state-dependent support $\mathcal{A}_f(s)$ induced by a DAE plant twin. The plant is a first-principles Sysplorer Modelica model, compiled as an FMI FMU, on which both classical programmes and learned policies are evaluated. A single policy issues continuous thermal and battery commands and a CAES mode--magnitude pair; interchange capacity couples the three through the sequential decoder~\eqref{eq:caes-window}--\eqref{eq:bat-window}. PC-HybridTD3 learns on that support: the TD3 target keeps a deterministic CAES mode and perturbs only magnitude, and only FMU-executed hours enter the economic Bellman update.
+Weekly multi-energy scheduling on an FMU plant requires thermal generation, BESS, CAES and the grid to be moved together inside a state-dependent support that is not a product of device boxes. PC-HybridTD3 generates heterogeneous commands on a computable approximation \(\Afhat(s)\), screens them with GiveSafe, and learns only from executed hours. The case study uses the 2026 monthly 110~kV tariff, a stratified weekly split, and five methods compared on completed 168~h episodes. Operating cost is the ranking criterion, with curtailment, unserved energy and constraint satisfaction reported alongside. The magnitude intervals \(\mathcal{M}_k(s)\) include oracle margins, inventories are reset each week, and September--December buy prices still follow the last published month.
 
-The numerical comparison is a weekly study on the 2026 monthly 110~kV path, with a stratified train/validation/test split and four methods scored on completed 168~h episodes. Operating cost is the ranking quantity; curtailment, unserved energy and constraint satisfaction complete the picture. Hierarchical RL remains appropriate when slow inventory targets dominate, and a learned policy need not undercut a rolling MILP on cash. The present limitations are the engineered margins inside $\mathcal{M}_k(s)$, the weekly inventory reset, and September--December buy levels that still carry the last published month.
-
-\section*{Declaration of competing interest}
-
-The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
-
-\section*{Acknowledgments}
-
-Mengxi system-level boundaries and real-time nodal prices used in related cross-domain studies were provided through the AI4E track of the World Scientific Intelligence Competition; numerical weather prediction fields were supplied by TJ Weather. The authors gratefully acknowledge the organisers and data providers.
-
-\section*{Data availability}
-
-Plant model parameters, TOU reconstruction data and evaluation protocols are available from the authors upon reasonable request, subject to competition data-access rules where applicable.
-
-% =====================================================================
-\appendix
-\section{Continuous-year viability and intensity carbon accounting}
-\label{app:annual-carbon}
-% =====================================================================
-
-The notes below concern annual rollouts and the intensity carbon book. They complement the weekly comparison; they do not replace it.
-
-\paragraph{Disconnected CAES set.}
-Figure~\ref{fig:caes-set} sketches continuous projection onto the charge, idle and discharge bands (cf.\ Fig.~\ref{fig:caes-legal}).
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.88\textwidth]{fig_caes_feasible_set}
-\caption{Disconnected legal set of the continuous CAES command and a schematic projection from an illegal raw proposal onto a feasible band (ablation view).}
-\label{fig:caes-set}
-\end{figure}
-
-\paragraph{Cold-tank transition guard.}
-A sign error in the cold-tank mass balance of the one-step oracle truncated continuous annual rollouts. After the guard was corrected, a rule-based policy completes $8760$~h (Fig.~\ref{fig:cold}), which confirms twin viability rather than annual optimality of the learned policy.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.72\textwidth]{fig_placeholder}
-\caption{Hours completed in a continuous-year rollout before and after the cold-tank guard.}
-\label{fig:cold}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=\textwidth]{fig_placeholder}
-\caption{Illustrative annual trajectories of battery, gas, hot and cold inventories.}
-\label{fig:cont-soc}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{fig_placeholder}
-\caption{Weekly-reset annual evaluation as a contrast to continuous inventory carry.}
-\label{fig:annual-reset}
-\end{figure}
-
-\paragraph{Intensity-benchmark carbon.}
-Thermal output accumulates an intensity allowance $A_t=\beta E^{\mathrm{th}}_t$ against emissions $E_t=\eta_{\mathrm{th}}E^{\mathrm{th}}_t$; the position $Q=A-E$ is settled at the end of the episode. Normalised position, degradation fraction and year progress are appended to the observation (Figs.~\ref{fig:carbon-pos}--\ref{fig:aux}). Weekly tables use $\pi_{\mathrm{CO_2}}=97.49$~CNY/t unless a sensitivity case is indicated.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.92\textwidth]{fig_placeholder}
-\caption{Cumulative allowance $A$, emissions $E$ and position $Q=A-E$ under the intensity benchmark.}
-\label{fig:carbon-pos}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.78\textwidth]{fig_placeholder}
-\caption{Year-end intensity settlement by method.}
-\label{fig:carbon-settle}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.92\textwidth]{fig_aux_obs}
-\caption{Auxiliary observation channels appended to the physical--forecast--market vector (observation dimension $166$).}
-\label{fig:aux}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.78\textwidth]{fig_placeholder}
-\caption{GiveSafe rejection rate and episode return under deterministic evaluation.}
-\label{fig:reject}
-\end{figure}
-
-\bibliographystyle{elsarticle-num}
+\bibliographystyle{IEEEtran}
 \bibliography{references}
 
 \end{document}
