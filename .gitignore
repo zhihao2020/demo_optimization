@@ -12,6 +12,8 @@ build/
 *.pdf
 /ruff_cache/
 reference_modelica_code/
+# Modelica plant sources stay local; do not publish to GitHub.
+resources/
 *.assets/
 outputs/
 # 论文主线 runs/ 纳入版本库，便于其它机器复现表图与加载 ckpt。
