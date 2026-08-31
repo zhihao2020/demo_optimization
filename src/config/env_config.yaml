@@ -1,4 +1,6 @@
 fmu:
+  # Live export 2026-08-31 (guid 9b0edb50-…, sha256 31c8fec7…). Dated copy:
+  # data/0831TypicalScensrio_Example_TypicalScene_PowerSystem_8760h.fmu
   path: data/TypicalScensrio_Example_TypicalScene_PowerSystem_8760h.fmu
   communication_step_seconds: 3600
   decision_interval_seconds: 3600

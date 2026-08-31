@@ -1,6 +1,6 @@
 # PC-HybridTD3 d5.3：endpoint snap 与 idle robust guard
 
-文档更新：2026-08-31 18:40 (+08:00)
+文档更新：2026-08-31 23:10 (+08:00)
 
 按 `检查.txt` 只修 **safety / action interface**。未改 TD3 \(\gamma,\tau,\) lr、网络宽度、reward、Gumbel、GiveSafe `n_try=1`、Shadow（主线仍 `enable_shadow=False`），未开 `storage_use`，**未启动 Stage D**。
 
@@ -59,4 +59,12 @@ Stage C 总表是 **7 次** unsafe transition（7/7），不要和某一 taxonom
 - **新目录**重跑 Stage C 30k；旧 run 只作 diagnosis。
 - 新 C 五门全过之前 **禁止 Stage D**。
 
-C 过门仍是：C1 NaN/Inf=0；C2 训练 hard=0 / main-FMU unsafe=0 / eval FMU fail=0；C3 held-out NoSafeAction=0；C4 168 h unserved≈0；C5 成本优于 random feasible。CAES 利用率不是门。
+C 过门仍是：C1∧C2∧C3∧C4∧C5。`complete_week` **只**看评估 `eval_status=ok` 且 `valid_steps=168`，**不含 C2**。训练 false-safe 只打 C2，不再把 C4/C5 连带置 False。
+
+## Idle 冷罐 0.13→0.045：direct FMU replay（未改 margin）
+
+Modelica `TypicalScenarios.mo` idle 分支把六路 `Mdot_*.mflow_in=0`；`Tank` 为 `der(m)=port_a.m_flow+port_b.m_flow`，`caes_cold_soc=compressedAirEnergyStorage.coldtank.SOC`。`p_caes=PBS.P_act=u_dispatch*P_cap`，因此日志 `p_caes=0` **只证明指令为 0，不是实测液压功率**。
+
+仓库默认路径现已换成 **0831 新导出**（2026-08-31T15:05:31Z，guid `9b0edb50-…`，sha256 `31c8fec7…`，有边界口）。它与服务器 8-17 训练 FMU（guid `433bca45-…`）仍不是同一份。0831 上：`u_caes` read-back=0 时 idle 5 h 从 SOC=0.5 **冷罐不变**；ep13 气候下充/idle 前缀后 idle 一步 Δcold **= 0**。不是 0.08–0.12。
+
+因此 **不能**把 14 条 false-safe 写成「FMU idle 天然掉 0.1」。在证实那 14 小时的前缀动作可复现之前，禁止用 0.12 裕度掩盖。下一步需要 episode 13 / step 125 的动作前缀 replay（当前 run 只有 eval 轨迹，没有训练逐步 `u_caes`）。summary 现写入 `fmu_sha256` / `guid` / `model_description_hash` / `git_commit`。

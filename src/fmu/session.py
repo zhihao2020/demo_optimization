@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import sys
@@ -95,6 +96,39 @@ DEFAULT_INITIAL_BOUNDARIES = {
     "t_air_in": 262.4,
     "p_load_plan_in": 2.14e8,
 }
+
+
+def describe_fmu(fmu_path: Path) -> dict[str, str]:
+    """Identity of the binary actually opened: hash, FMI guid, model name."""
+    path = Path(fmu_path)
+    digest = hashlib.sha256()
+    md_digest = hashlib.sha256()
+    if path.is_file():
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+        with zipfile.ZipFile(path) as archive:
+            for name in archive.namelist():
+                if name.lower().endswith("modeldescription.xml"):
+                    md_digest.update(archive.read(name))
+                    break
+    md = read_model_description(str(path)) if path.is_file() else None
+    ident = ""
+    guid = ""
+    generated = ""
+    if md is not None:
+        guid = str(md.guid or "")
+        generated = str(getattr(md, "generationDateAndTime", "") or "")
+        if md.coSimulation is not None:
+            ident = str(md.coSimulation.modelIdentifier or "")
+    return {
+        "fmu_filename": path.name,
+        "fmu_sha256": digest.hexdigest() if path.is_file() else "",
+        "model_identifier": ident,
+        "guid": guid,
+        "model_description_hash": md_digest.hexdigest() if path.is_file() else "",
+        "generation_date": generated,
+    }
 
 
 def fmu_platform_supported(fmu_path: Path) -> bool:

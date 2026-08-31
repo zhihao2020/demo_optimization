@@ -16,7 +16,7 @@ from tqdm import tqdm
 from envs.failures import FeasibleSetEmpty
 from envs.power_system_env import PowerSystemEnv
 from envs.reward_calculator import IncompleteRewardConfigError
-from fmu import FmuAdapter
+from fmu import FmuAdapter, describe_fmu
 from replay import HybridGiveSafeReplayBuffer
 from safety import GiveSafeController, ShadowFmuValidator, load_givesafe_config
 from training.episode_starts import eval_start_seconds, training_start_seconds
@@ -38,6 +38,18 @@ def _soft_shell_enabled(explicit: bool | None = None) -> bool:
     if explicit is not None:
         return bool(explicit)
     return os.environ.get("SOFT_SHELL", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _git_commit(root: Path) -> str:
+    head = root / ".git" / "HEAD"
+    try:
+        raw = head.read_text(encoding="utf-8").strip()
+        if raw.startswith("ref:"):
+            ref = root / ".git" / raw.split(":", 1)[1].strip()
+            return ref.read_text(encoding="utf-8").strip()[:40]
+        return raw[:40]
+    except OSError:
+        return ""
 
 
 def _paper_cfg(root: Path) -> dict[str, Any]:
@@ -255,7 +267,7 @@ def compute_stage_c_gates(
     )
     eval_steps = int(ev.get("valid_steps") or ev.get("steps") or 0)
     random_steps = int(rnd.get("valid_steps") or rnd.get("steps") or 0)
-    complete_week = bool(no_safe_ok and fmu_hard_ok and eval_steps >= 168)
+    complete_week = bool(no_safe_ok and eval_steps >= 168)
     random_complete = (not bool(rnd.get("eval_failed"))) and random_steps >= 168
 
     metrics = ev.get("metrics") or {}
@@ -485,6 +497,8 @@ def run_hybrid_training(
         "soft_shell": use_soft_shell,
         "shadow_validation": shadow.capabilities() if shadow else {"enabled": False},
         "oracle_version": env.oracle.oracle_version,
+        "git_commit": _git_commit(root),
+        **{k: v for k, v in describe_fmu(env.fmu_path).items()},
         "annual_horizon_hours": env.config["fmu"].get("annual_horizon_hours"),
         "episode_start_schedule": "annual_cycling_windows",
         "forecast_enabled": env.forecast_enabled,

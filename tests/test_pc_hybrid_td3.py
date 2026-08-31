@@ -421,3 +421,20 @@ def test_stage_c_gates_require_cost_and_unserved():
     assert fail_short["complete_week"] is False
     assert fail_short["c5_cost_better_than_random"] is False
     assert fail_short["passed"] is False
+
+    train_unsafe = compute_stage_c_gates(
+        last_metrics={"critic_loss": 0.1, "actor_loss": 0.2, "q1_mean": -3.0},
+        step_log=[{"critic_loss": 0.2}],
+        collector_stats={
+            "post_step_hard_constraint_violation_count": 14,
+            "main_fmu_unsafe_execution_count": 14,
+        },
+        eval_result=ok_eval,
+        random_eval=ok_random,
+    )
+    assert train_unsafe["c2_fmu_hard_zero"] is False
+    assert train_unsafe["complete_week"] is True
+    assert train_unsafe["c3_heldout_nosafe_zero"] is True
+    assert train_unsafe["c4_unserved_approx_zero"] is True
+    assert train_unsafe["c5_cost_better_than_random"] is True
+    assert train_unsafe["passed"] is False

@@ -1,326 +1,577 @@
-## 但我发现第一个需要继续修的地方：snap 的顺序还差一步
+ 但这里有一个更重要的问题：真正的 idle 为什么会让 cold SOC 一小时掉 0.08–0.12？
 
-这是我认为**必须在正式 Stage D 前补掉**的小 P0。
+这一步我认为**必须先查清楚**。
 
-当前 `FeasibilityOracle.check_action_executable()` 的顺序实际上是：
+我同时重新看了你之前提供的 Modelica CAES 源码。按照那份模型：
 
-```python
-physical = action
-
-pred = self.predict_p_grid(outputs, physical)
-
-# 先检查 grid
-if pred > ...:
-    reject
-
-# 后面才根据 CAES interval 做 endpoint snap
-u_checked, snapped = snap_to_interval_endpoint(...)
-```
-
-也就是说，**CAES 的 FP32 endpoint correction 发生在 grid constraint 检查之后**。
-
-这留下一个很细的漏洞。
-
-例如：
+在
 
 $$
-u_C^{FP32}=0.93000000715
+u_{\mathrm{dispatch}}=0
 $$
 
-理论端点：
+时，CAES idle 分支明确把冷热罐、气罐两端质量流量全部设为 0。
+
+而 `Tank` 模型中：
 
 $$
-u_C^\star=0.93
+\frac{dm}{dt}
+=
+\dot m_a+\dot m_b
 $$
 
-差：
+并且：
 
 $$
-7.15\times10^{-9}.
+m=1000V,
+\qquad
+SOC=\frac{\mathrm{level}}{V_0/A}.
 $$
 
-如果 CAES 额定功率约为 \(150\) MW，这个差异映射到联络线预测就是大约：
+也就是说，如果服务器上的 FMU 确实由这套模型导出，那么在真正：
 
 $$
-150\times10^6
-\times7.15\times10^{-9}
-\approx1.07\text{ W}.
+u_{CAES}=0
 $$
 
-而你当前 grid checker 恰好只有约 1 W 的数值 tolerance。
+且两端质量流量均为 0 时，应有：
 
-所以极端靠近联络线边界时仍可能出现：
+$$
+\frac{dm}{dt}=0
+$$
 
-> CAES interval 检查不会误拒了，但 **grid 检查先一步因为同一个 FP32 endpoint artifact 拒绝。**
+从而：
 
-正确顺序应该改成：
+$$
+SOC_{cold,t+1}\approx SOC_{cold,t}.
+$$
+
+**从 0.13 一小时直接掉到约 0.045，并不像普通模型 residual。**
+
+而且你说 14 次“全部相同”，这更像一个结构性的现象，而不是随机误差。
+
+所以现在不能只说：
+
+> “FMU idle 冷罐天然会掉 0.1，Oracle margin 太小。”
+
+还要先排除四件事：
+
+1. 服务器正在用的 FMU 是否真的是当前这份 Modelica 源码导出的版本；
+2. 日志里的 `u_caes=0` 是否就是传入 FMU 的最终动作，而不是 policy/GiveSafe 层记录的动作；
+3. `caes_cold_soc` 顶层输出是否确实对应 `compressedAirEnergyStorage.coldtank.SOC`；
+4. false-safe 日志中的 pre-state/post-state 是否存在一个小时的错位。
+
+这很重要，因为当前 GitHub **没有跟踪实际运行的 FMU 文件**。`env_config.yaml` 指向 `data/TypicalScensrio_Example_TypicalScene_PowerSystem_8760h.fmu`，但这个二进制文件并不在仓库里，所以仅看 commit 无法证明服务器使用的 FMU 和源码完全一致。
+
+FMI 执行路径本身看起来没有明显 action lag：`FmuSession.step()` 是：
 
 ```text
-raw physical action
-        ↓
-确定 CAES mode
-        ↓
-根据当前 feasible interval
-执行 endpoint canonicalization
-        ↓
-canonical physical action
-        ↓
-predict_p_grid
-        ↓
-grid check
-        ↓
-next-state check
+set_inputs
+→ set_boundaries
+→ doStep
+→ read
 ```
 
-即在 `check_action_executable()` 开头就先生成：
+而且通信步长就是 3600 s。
 
-```python
-checked_physical
-```
-
-后面所有：
-
-```python
-predict_p_grid()
-predict_next_state()
-```
-
-统一使用这个 canonicalized physical action。
-
-这不是大改，但最好补掉，否则 numerical contract 还没有真正做到“单一入口”。
+所以最好直接做一个 FMU replay probe。
 
 ---
 
-## 第二个我认为更值得修：`legalize_mode_mask()` 仍然会偷偷把空集变成全模式可行
+# 我建议 Agent 现在按这个顺序做
 
-现在 `caes_u.py` 还有这段：
+### 第一阶段：不要改 margin，先复现一条 14 次中的 false-safe
 
-```python
-def legalize_mode_mask(mode_mask):
-    ...
-    fill = legal.any(dim=-1, keepdim=True)
-    return torch.where(fill, legal, torch.ones_like(legal))
-```
-
-它的 docstring 甚至明确写着：
-
-> `if a row is all-false, allow every mode.`
-
-这和我们现在的安全语义是冲突的。
-
-Oracle 现在已经专门支持：
+从 Stage C 中找一条典型记录：
 
 ```text
-D=False
-I=False
-C=False
-→ feasible_set_empty=True
+pre cold SOC ≈ 0.13
+executed u_caes = 0
+post cold SOC ≈ 0.045
+failure = caes_cold_soc_low
 ```
 
-而新测试也要求：
+恢复到对应 episode start，然后 replay 前缀到失败前一小时。
 
-> 无合法 mode 时绝不重新打开 idle。
-
-可神经网络内部的 utility 却还有：
+失败小时必须额外记录：
 
 ```text
-[False, False, False]
-        ↓
-[True, True, True]
+simulation_time_before
+simulation_time_after
+
+policy_u_caes
+givesafe_safe_action_u_caes
+env_final_u_caes
+FMU input u_caes          # 最好 set 后直接 read-back
+
+p_caes_before
+p_caes_after
+
+cold_soc_before
+cold_soc_after
+hot_soc_before/after
+gas_soc_before/after
+
+cold_temperature_before/after
+
+oracle_predicted_cold_soc
 ```
 
-正常 online 路径理论上应该在 actor 被调用前就捕获 `FeasibleSetEmpty`，所以它**未必是这次 Stage C 失败原因**。
-
-但是现在 idle robust guard 加严之后，all-false state 出现概率会比以前更高。为了保持论文中：
+关键验收：
 
 $$
-a_t\in\mathcal A_f(s_t)
+u_{CAES}^{FMU}=0
 $$
 
-这个硬定义，我建议彻底取消这条 silent rescue。
+并且：
 
-至少改成：
+$$
+P_{CAES}^{act}\approx0.
+$$
 
-```python
-if not legal.any(dim=-1).all():
-    raise EmptyModeMaskError(...)
-```
+如果这两个成立，而 cold SOC 仍：
 
-在线控制路径：
+$$
+0.13\rightarrow0.045,
+$$
 
-> empty → `FeasibleSetEmpty`，不调用 actor。
+才能把这个现象正式归为：
 
-对于 TD3 replay target，如果一个 next state 确实是 terminal/empty，可以用 `done=1` 避免 Bellman bootstrap，而不是把三个模式全部开放。
+> **FMU idle state drift**。
 
-这个建议我认为很重要，因为否则你论文说：
-
-> “no feasible mode is never silently reopened”
-
-代码上还不是完全成立。
+否则应该先修动作/日志/模型映射，不要靠安全 margin 掩盖。
 
 ---
 
-## 第三个小问题：`ENDPOINT_SNAP_HARD_FAIL` 目前实际上几乎触发不了
+# 第二阶段：把 FMU 身份也固定下来
 
-现在：
+现在实验报告缺一个非常有价值的东西。
 
-```python
-DYNAMIC_ENDPOINT_ATOL = 1e-7
-ENDPOINT_SNAP_HARD_FAIL = 1e-3
-```
-
-collector 只有当：
-
-```python
-caes_endpoint_snapped == True
-```
-
-时才检查 snap delta；但 helper 只有：
-
-$$
-|\Delta|\le10^{-7}
-$$
-
-才会设置 `snapped=True`。
-
-因此正常代码下：
-
-$$
-|\Delta_{\text{snap}}|\le10^{-7}
-$$
-
-永远不可能：
-
-$$
->10^{-3}.
-$$
-
-所以现在这个：
-
-```python
-if delta > ENDPOINT_SNAP_HARD_FAIL:
-    raise RuntimeError(...)
-```
-
-更多是一个“理论保险丝”，而不是真正能发现 decoder 大越界的机制。
-
-如果真想实现我们之前定义的审计逻辑，建议分别统计：
+每个 run 的 `summary.json` 增加：
 
 ```text
-raw_endpoint_miss_abs
-numerical_snap_abs
+fmu_sha256
+fmu_filename
+model_identifier
+model_description_hash
+oracle_version
+git_commit
 ```
 
-如果 raw actor output 离所选 mode interval 超过例如 \(10^{-3}\)，直接报 decoder bug；只有 \(\le10^{-7}\) 才做 numerical snap。
+这样以后我们不会再碰到：
 
-这个不是安全阻塞项，可以排 P1。
+> “代码是这一版，但服务器到底跑的是哪个 FMU？”
+
+这种问题。
+
+对于论文实验尤其重要。
 
 ---
 
-## 实验流程目前还没有完全按要求完成
+# 第三阶段：如果 direct replay 确认 idle cold drift 确实存在，再重新标定 guard
 
-新提交自己也承认还没有做三件事：
+这时也**不要只拿14条失败样本直接写 `0.12`**。
 
-1. 用旧 30k checkpoint 跑新的 **168 h greedy regression**；
-2. 跑至少 **20,000 boundary stress actions**，要求 false-safe=0；
-3. 新目录重新跑 Stage C 30k。
+因为这14条是被筛选出来的“已经越界的坏样本”，存在 selection bias。
 
-而当前 `pc_hybrid_queue.py` 实际流程仍是：
+应该从这次 30k Stage C 的所有真实 physical transitions 中提取：
 
-```text
-Stage A
-→ Stage B d53
-→ Stage C d53ep
-→ C通过才D
+$$
+u_{CAES}=0
+$$
+
+的全部 idle transition。
+
+对每一个算：
+
+$$
+d_t^{cold}
+=
+SOC_{cold,t}
+-
+SOC_{cold,t+1}.
+$$
+
+只关注危险方向：
+
+$$
+d_{t,+}^{cold}
+=
+\max(d_t^{cold},0).
+$$
+
+然后得到：
+
+$$
+q_{95},q_{99},q_{max}
+$$
+
+特别报告：
+
+$$
+Q_{0.99}
+\left(
+\max(SOC_t-SOC_{t+1},0)
+\right).
+$$
+
+当前配置里的：
+
+```yaml
+residual_p99_cold: 0.01
 ```
 
-它没有把：
-
-```text
-old-checkpoint regression
-boundary stress 20k
-```
-
-插到 Stage C 前面。
-
-所以如果 agent 下一步准备直接运行这个 queue，我建议先补两个任务：
-
-```text
-Stage B
-  ↓
-Regression-R:
-旧30k checkpoint + 新Oracle
-168h deterministic TEST
-  ↓
-Stress-S:
-20k boundary actions
-false-safe=0
-  ↓
-Stage C d53 30k fresh
-  ↓
-C1-C5
-  ↓
-Stage D
-```
-
-这里 Regression-R 很有价值：它能直接回答：
-
-> **修的是环境安全接口，还是必须重新学习策略？**
-
-如果旧 checkpoint 换上 d5.3 后已经可以完整走 168 h，就证明我们对根因的定位很准确。
+显然来自旧 probe，它已经不能代表当前运行分布。配置自己也写明这些 residual 来自旧的 probe 数据。
 
 ---
 
-## 文档还有一处证据口径建议修正
+# 第四阶段：决定用固定 guard 还是 state-dependent guard
 
-新 `d5.3` 报告把 C3 失败写成：
+会议论文版本我仍建议**优先保持简单**。
 
-> discharge、`mag=1`、`-0.32999998` 被投成 idle。
-
-但你刚才给我的实际 Stage C `eval_failure.json` 口径是：
-
-> charge \(u_{caes}=0.93000000715\)，上界 \(0.9299999999999999\)。
-
-实际上这两个都是**同一类 FP32 endpoint bug**，而新增测试也确实同时覆盖了 charge 和 discharge。
-
-因此报告最好不要把其中一个重新写成“唯一 C3 根因”，而应该改成：
-
-> Two endpoint failures were reproduced: the charge-side upper endpoint and the discharge-side \(-0.33\) endpoint; both originate from float32 representation around dynamically decoded band boundaries.
-
-同样，新报告中写“C2 的 6 次 false-safe”，而你这次 Stage C 总表是 **7/7**。这也应该统一，或者明确：
+如果统计出来 idle cold drift 比较集中，例如：
 
 ```text
-7 total unsafe transitions
-其中 6 条属于某 taxonomy
-1 条属于 endpoint→idle / 其他类别
+P95 = 0.083
+P99 = 0.101
+max = 0.112
 ```
 
-不要以后论文/工程报告里出现 6 和 7 两套数字。
+那直接使用：
+
+$$
+\delta^{idle}_{cold}
+=
+Q_{0.99}
++
+m_{cold}
+$$
+
+即可。
+
+假设：
+
+$$
+Q_{0.99}=0.105,
+\qquad
+m=0.015,
+$$
+
+则：
+
+$$
+\delta^{idle}_{cold}=0.12.
+$$
+
+由于物理下界：
+
+$$
+SOC_{cold}^{min}=0.05,
+$$
+
+则 idle 的实际下安全界变成：
+
+$$
+SOC_{cold,t}
+\ge
+0.05+0.12
+=
+0.17.
+$$
+
+这就会把：
+
+$$
+SOC_{cold}=0.13
+$$
+
+的 idle 直接 mask 掉。
+
+这正是我们需要的。
+
+但如果统计发现：
+
+```text
+SOCcold = 0.7 时 drift ≈ 0.005
+SOCcold = 0.3 时 drift ≈ 0.03
+SOCcold = 0.13 时 drift ≈ 0.10
+```
+
+那说明 drift 强烈依赖状态。
+
+这时不应该粗暴设置：
+
+$$
+\delta=0.12
+$$
+
+覆盖整个状态空间，因为会让 idle 过度保守。
+
+可以做一个非常简单的 state-dependent lower envelope，例如按冷罐 SOC 分 3–4 个 bin：
+
+$$
+\delta_{cold}(SOC)
+=
+Q_{0.99}
+(
+d^{cold}
+\mid SOC\in B_j
+).
+$$
+
+这仍然不是复杂 ML，也不会扩大论文。
 
 ---
 
-## 我现在的验收结论
+# 第五阶段：idle guard 最好改成方向化，而不是永远双边用同一个数
 
-这次 commit 我会给：
-
-**代码方向：通过。核心修复：通过。正式训练放行：暂不通过。**
-
-具体来说：
-
-* endpoint FP32 bug：**基本修好**；
-* idle pressure/SOC/temp robust guard：**修好，单元测试设计也合理**；
-* d5.3 Oracle version：**正确**；
-* Stage D gate：**正确保持关闭**；
-* 论文 3-D critic / \(3\times10^{-4}\)：**文档重新对齐**；
-* 还需修：**Oracle 先 snap 再做 grid check**；
-* 建议修：**删除 all-false mode mask → all-true 的 silent fallback**；
-* 还需执行：**旧 checkpoint 168 h regression + 20k boundary stress + 新 Stage C**；
-* 当前 GitHub **没有远端 CI status**，56 passed 是提交文档记录的本地结果，不是 CI 证明。
-
-把前两个代码点再补一个很小的 commit 后，我认为就可以开始 **Regression → Stress → 新 Stage C 30k**。只有新 C 的：
+现在代码对 idle 使用的是：
 
 $$
-C1=C2=C3=C4=C5=\text{pass}
+SOC_{\min}+\delta
+\le SOC
+\le
+SOC_{\max}-\delta.
 $$
 
-之后，才开三个 seed 的 Stage D。
+这是上一轮为了安全快速做的对称 envelope。
+
+但如果这次 30k 数据证明 idle cold SOC 的危险方向几乎全部是：
+
+$$
+\Delta SOC_{cold}<0,
+$$
+
+那么应该改成明确的：
+
+```yaml
+idle:
+  residual_p99_cold_low: ...
+  residual_p99_cold_high: ...
+```
+
+而不是：
+
+```yaml
+residual_p99_cold
+```
+
+于是：
+
+$$
+SOC_{cold}
+\ge
+SOC_{cold}^{min}
++
+r_{cold,low}^{idle}
++
+m_{cold,low}
+$$
+
+和：
+
+$$
+SOC_{cold}
+\le
+SOC_{cold}^{max}
+-
+r_{cold,high}^{idle}
+-
+m_{cold,high}
+$$
+
+分别计算。
+
+这和 charge/discharge 现在已经采用 `_low/_high` 的方向化配置是一致的。当前 charge/discharge 已经这么设计了，而 idle 还是一个对称标量。
+
+我建议借这次机会把 idle 也统一成 direction-aware。
+
+---
+
+# C4/C5 的 gate 逻辑我也建议顺便改一下
+
+你说得对：
+
+> 当前评估已经完整跑了 168/168，C3 也通过，unserved 已经是 0；只是训练阶段 C2 有 false-safe。
+
+那么：
+
+### C2
+
+应该：
+
+```text
+FAIL
+```
+
+没有争议。
+
+### C4
+
+如果 evaluation 本身满足：
+
+$$
+valid\_steps=168
+$$
+
+$$
+eval\_status=ok
+$$
+
+那么就应该独立计算：
+
+$$
+E_{unserved}.
+$$
+
+如果为 0，则：
+
+```text
+C4 = PASS
+```
+
+### C5
+
+同样，如果：
+
+* policy 168 h 完整；
+* random baseline 168 h 完整；
+* 两边成本口径一致；
+
+就应该直接比较：
+
+$$
+C_{policy}<C_{random}.
+$$
+
+不应该因为：
+
+$$
+C2=false
+$$
+
+就自动写：
+
+```text
+C4=false
+C5=false
+```
+
+**最终的 `stage_c_passed` 当然仍然必须是：**
+
+$$
+C1\land C2\land C3\land C4\land C5.
+$$
+
+因此即使：
+
+```text
+C1 PASS
+C2 FAIL
+C3 PASS
+C4 PASS
+C5 PASS
+```
+
+最终依然：
+
+```text
+stage_c_passed = false
+```
+
+这才是干净的实验报告。
+
+否则现在的结果会错误表达成：
+
+> 方法缺供能力不过门、经济性不过门，
+
+实际上它们根本没有失败，只是被 safety gate 连带置 False。
+
+建议把：
+
+```text
+complete_week
+```
+
+严格定义为：
+
+$$
+eval\_status=ok
+\land
+eval\_valid\_steps=168
+$$
+
+**不要包含 C2。**
+
+这个修复不改变 Stage D 的阻断，只让诊断更准确。
+
+---
+
+# 修完后的 C2 不能只要求“14→0”
+
+新一版至少做三层验证。
+
+1. **失败状态 replay**
+   把14条 false-safe 的 pre-state 全部重放：
+
+   $$
+   14/14
+   $$
+
+   必须在主 FMU 前被 mask/reject，或者生成恢复动作。
+
+2. **所有 idle physical transitions 离线回放**
+   用新的 guard 检查旧 30k 数据：
+   所有已知会造成：
+
+   $$
+   SOC_{cold,t+1}<0.05
+   $$
+
+   的 idle 必须全部提前判 unsafe。
+
+3. **新 Stage C 30k**
+   重新从头训练，要求：
+
+   $$
+   N_{\mathrm{false-safe}}=0
+   $$
+
+   不是只看 cold：
+
+   ```text
+   pressure low = 0
+   cold SOC low = 0
+   temperature = 0
+   all post-step hard = 0
+   ```
+
+然后才：
+
+$$
+C2=\text{PASS}.
+$$
+
+---
+
+## 我给当前问题的最终判断
+
+**`7515e7e` 可以保留，不需要回滚。**它把上一轮 numerical contract 的两个漏洞确实闭合了，而且 commit 自己也正确地没有声称解决 C2。
+
+现在真正的 blocker 的确已经收敛到：
+
+$$
+\boxed{\text{idle CAES one-step cold-storage feasibility}}
+$$
+
+但我会比“直接把 0.02 改到 0.12”多加一个硬步骤：
+
+> **先证明服务器真实 FMU 在最终输入 `u_caes=0` 下确实存在 0.08–0.12 的 cold-SOC 一步下降。**
+
+因为按照你之前提供的 Modelica 储罐方程，真正 idle 下这种大幅 SOC 漂移并不自然。如果这个检查跳过了，很可能是用一个越来越大的 Oracle margin 去遮住 FMU/日志/变量映射的问题。
+
+一旦 direct FMU replay 证明漂移是真的，就按**全部 idle transitions 的危险方向 P99 + engineering margin**重新标定 cold guard，再跑新 Stage C。论文里不用写 0.93、ULP、14 条 bug 这些工程排错过程；正文只需要保留一句：
+
+> *Mode-specific one-step residual envelopes calibrated from FMU transitions are incorporated into the feasible-support layer to account for model mismatch.*
+
+这就够了。Stage D 仍然保持冻结。

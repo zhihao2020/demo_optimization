@@ -12,6 +12,7 @@ from .session import (
     DEFAULT_INITIAL_INPUTS,
     DEFAULT_OUTPUTS,
     FmuSession,
+    describe_fmu,
     fmu_platform_supported,
 )
 from .types import DispatchPlan, SimulationResult
@@ -30,6 +31,7 @@ __all__ = [
     "SimulationResult",  # rollout 轨迹与 metadata
     "VariableRegistry",  # FMU 变量名/单位/边界注册表
     "build_registry",  # 从 YAML + modelDescription 构建注册表
+    "describe_fmu",  # sha256 / guid / modelDescription hash
     "fmu_platform_supported",  # 当前 OS 是否有对应 FMU 二进制
     "read_model_info",  # 只读解析 modelDescription
     "validate_inputs",  # 调度输入边界校验
