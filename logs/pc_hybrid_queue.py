@@ -23,13 +23,13 @@ JOBS = [
     {
         "name": "stageB_s0",
         "args": ["--method", "td3", "--season", "all", "--stage", "B", "--seed", "0"],
-        "run_dir": str(ROOT / "runs" / "seasonal_tou2026" / "all" / "pc_hybrid_td3_stageB_s0"),
+        "run_dir": str(ROOT / "runs" / "seasonal_tou2026" / "all" / "pc_hybrid_td3_stageB_d53_s0"),
         "gate": "stage_b",
     },
     {
         "name": "stageC_s0",
         "args": ["--method", "td3", "--season", "all", "--stage", "C", "--seed", "0"],
-        "run_dir": str(ROOT / "runs" / "seasonal_tou2026" / "all" / "pc_hybrid_td3_stageC_s0"),
+        "run_dir": str(ROOT / "runs" / "seasonal_tou2026" / "all" / "pc_hybrid_td3_stageC_d53ep_s0"),
         "gate": "stage_c",
     },
     {

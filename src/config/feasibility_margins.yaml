@@ -2,7 +2,7 @@
 # 禁止统一 0.02 盲目扩张；各设备/模式/方向独立配置。
 # residual = actual - predicted；dangerous 方向上的 P99 转化为保守裕度。
 
-oracle_version: "d5.2-probe-calibrated"
+oracle_version: "d5.3-idle-robust-endpoint"
 
 # 裕度来自 runs/feasibility_probe（800 valid steps）残差危险方向 P99 + 工程内收
 battery:

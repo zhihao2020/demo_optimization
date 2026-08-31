@@ -11,6 +11,7 @@ from actions.caes_u import (
     CHARGE_LO,
     DISCHARGE_HI,
     DISCHARGE_LO,
+    ENDPOINT_SNAP_HARD_FAIL,
     feasible_bound_dict,
     mag_from_u,
     mode_from_u,
@@ -58,7 +59,27 @@ class GiveSafeTransitionCollector:
             "valid_transition_count": 0,
             "rejected_transition_count": 0,
             "fine_failure_counts": {},
+            "numerical_endpoint_snap_count": 0,
+            "max_endpoint_snap_abs": 0.0,
         }
+
+    def _record_endpoint_snap(self, action: Any) -> None:
+        if not isinstance(action, dict):
+            return
+        if not bool(action.get("caes_endpoint_snapped")):
+            return
+        self.stats["numerical_endpoint_snap_count"] = (
+            int(self.stats.get("numerical_endpoint_snap_count", 0)) + 1
+        )
+        delta = abs(float(action.get("caes_endpoint_snap_delta", 0.0) or 0.0))
+        prev = float(self.stats.get("max_endpoint_snap_abs", 0.0) or 0.0)
+        if delta > prev:
+            self.stats["max_endpoint_snap_abs"] = delta
+        if delta > float(ENDPOINT_SNAP_HARD_FAIL):
+            raise RuntimeError(
+                f"endpoint snap {delta} exceeds {ENDPOINT_SNAP_HARD_FAIL}; "
+                "this is a decoder bug, not float32 ULP"
+            )
 
     def on_episode_reset(self, start_time: float = 0.0) -> None:
         if self._shell is not None:
@@ -253,6 +274,11 @@ class GiveSafeTransitionCollector:
         valid_steps_before = int(env.valid_episode_steps)
         feasible = env.get_feasible_action_spec()
 
+        def propose_and_audit():
+            action = propose_fn()
+            self._record_endpoint_snap(action)
+            return action
+
         def on_rejection(action, safety, terms):
             self.stats["policy_attempt_count"] += 1
             self._store_rejection(env, obs_before, action, safety, terms)
@@ -261,7 +287,7 @@ class GiveSafeTransitionCollector:
             gs = self.controller.select_safe_action(
                 env.last_outputs,
                 env.previous_thermal,
-                propose_fn,
+                propose_and_audit,
                 deterministic=deterministic,
                 on_rejection=on_rejection,
                 feasible_override=feasible,

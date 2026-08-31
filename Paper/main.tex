@@ -852,12 +852,12 @@ u_{\mathrm{caes}}
 \Pi_{\mathrm{bands}}\bigl(\tanh(z)\bigr),
 \label{eq:project}
 \end{equation}
-where $\Pi_{\mathrm{bands}}$ maps the open gap to idle and otherwise clamps to the nearest charge or discharge band. This isolates the hybrid representation (Fig.~\ref{fig:action-rep}). (ii)~\textbf{Component-support hybrid TD3} retains the mode mask~\eqref{eq:mask} but decodes magnitude on device boxes without the sequential grid-coupled decoder, isolating the joint support $\mathcal{A}_f(s)$. Section~\ref{sec:results} compares these learners with a price-aware heuristic and a rolling MILP on a linear energy surrogate, all evaluated on the same FMU.
+where $\Pi_{\mathrm{bands}}$ maps the open gap to idle and otherwise clamps to the nearest charge or discharge band. (ii)~\textbf{Component-support hybrid TD3} retains the mode mask~\eqref{eq:mask} but decodes magnitude on device boxes without the sequential grid-coupled decoder, isolating the joint support $\mathcal{A}_f(s)$. Fig.~\ref{fig:action-rep} places the three encodings on the same $u_{\mathrm{caes}}$ axis. Panel~(a) is~\eqref{eq:project}: a latent that lands in the illegal gap is forced to idle. Panel~(b) is the static-band hybrid: the actor first chooses a mode, then uses the full device charge or discharge band. Panel~(c) is PC-HybridTD3: the same hybrid heads map magnitude only through the currently feasible interval $\mathcal{M}_k(s)$. Section~\ref{sec:results} compares these learners with a price-aware heuristic and a rolling MILP on a linear energy surrogate, all evaluated on the same FMU.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.95\textwidth]{fig_action_rep}
-\caption{Action representation. (a)~Continuous projection onto~\eqref{eq:caes-legal} maps the infeasible gap to idle. (b)~Component-wise hybrid decoding on the device envelope. (c)~PC-HybridTD3 maps magnitude through the current joint interval $\mathcal{M}_k(s)$.}
+\caption{CAES command encodings.}
 \label{fig:action-rep}
 \end{figure}
 

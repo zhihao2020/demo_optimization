@@ -1,6 +1,6 @@
 # PAMDP / PC-HybridTD3 formalization for multi-mode CAES plant dispatch
 
-文档更新：2026-08-31 08:30 (+08:00)
+文档更新：2026-08-31 12:00 (+08:00)
 
 Status: paper §3–§4 aligned with **PC-HybridTD3** joint support \(\mathcal A_f=\mathcal A_{\mathrm{dev}}\cap\mathcal A_{\mathrm{grid}}\).  
 Code: `src/training/hybrid_td3/` with `parameterized_caes=True` and dynamic \(\mathcal A_f(s)\).  
@@ -51,7 +51,7 @@ u^{\mathrm{CAES}}=
 
 Actor: mode logits + one magnitude head; Straight-Through Gumbel \(\tau:1.0\to 0.2\) on the actor update; evaluation and the TD3 target use \(\arg\max m\).
 
-Critic: \(Q(s,u^{\mathrm{th}},u^{\mathrm{bat}},e_m,z)\) (action dim 6). Do not score a collapsed scalar \(u_{\mathrm{caes}}\) on \([-1,1]\).
+Critic: \(Q(s,u^{\mathrm{th}},u^{\mathrm{bat}},u_{\mathrm{caes}})\) (executed physical triple, action dim 3). Mode/magnitude stay in the actor decoder.
 
 Target:
 1. \(m'=\arg\max_m \ell_{\bar\theta}(s')\) (no Gumbel, no mode noise)
@@ -60,7 +60,7 @@ Target:
 
 Economic replay \(\mathcal D_B\): physical FMU transitions only (`physical_fraction=1.0`). GiveSafe rejections go to a safety audit set and never the Bellman update.
 
-Trainer knobs aligned with Cui 2024 Table 4 where they transfer: \(\varepsilon:1.0\to 0.05\), \(\mathrm{lr}=10^{-4}\), \(\tau=0.005\), batch \(64\), \(\gamma=0.99\). TD3 delay \(D=2\). Warm-up \(N_{\mathrm{warm}}=1024\) random-feasible physical hours; stop if \(N_D\le 100\) or \(N_C\le 100\). `storage_use.enabled: false`. Terminal SOC \(\xi=0.06\); report \(E_{\mathrm{terminal}}\) as well as the bonus.
+Trainer knobs: \(\varepsilon:1.0\to 0.05\), \(\mathrm{lr}=3\times10^{-4}\), \(\tau=0.005\), batch \(64\), \(\gamma=0.99\). TD3 delay \(D=2\). Warm-up \(N_{\mathrm{warm}}=1024\) random-feasible physical hours; stop if \(N_D\le 100\) or \(N_C\le 100\). `storage_use.enabled: false`. Terminal SOC \(\xi=0.06\); report \(E_{\mathrm{terminal}}\) as well as the bonus.
 
 ---
 

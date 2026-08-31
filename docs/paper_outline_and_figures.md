@@ -1,6 +1,6 @@
 # Paper outline and figure checklist
 
-文档更新：2026-08-31 10:16 (+08:00)
+文档更新：2026-08-31 12:00 (+08:00)
 
 **Working title:** *Physics-Constrained Hybrid TD3 for Forecast-Aware Economic Scheduling of Multi-Energy Systems*
 
@@ -18,7 +18,7 @@
 
 | 项 | 现状 |
 |----|------|
-| 代码 `src/training/hybrid_td3/` | **P0 已落地**：动态 \(\mathcal A_f(s)\) 解码、**3-D critic** \(Q(s,u_T,u_B,u_C)\)、target \(\arg\max m'\)+只噪 \(z\)、physical-only replay |
+| 代码 `src/training/hybrid_td3/` | **P0 已落地**：动态 \(\mathcal A_f(s)\) 解码、**3-D critic** \(Q(s,u_T,u_B,u_C)\)、target \(\arg\max m'\)+只噪 \(z\)、physical-only replay；Oracle `d5.3-idle-robust-endpoint` |
 | Stage C 过门 | `compute_stage_c_gates`：NaN/Inf、FMU hard、held-out NoSafeAction、缺供、成本优于 random。CAES 使用不是过门 |
 | 队列 | `logs/pc_hybrid_queue.py`：A→B→C；`stage_c_passed` 前 SKIP Stage D |
 | 训练入口 | `scripts/train_seasonal.py --method td3 --season all`；36/8/8 |
@@ -108,8 +108,8 @@
 - 4.1 孪生闭环：Actor 解码已在 \(\mathcal A_f(s)\)；拒绝不进 \(\mathcal D_B\)；季节栈 shadow off
 - 4.2 动作表示对照：投影 vs 静态带 vs 动态支撑；`fig_action_rep`
 - 4.3 PC-HybridTD3 actor：掩码分类、单一幅值头、动态区间仿射
-- 4.4 6 维 hybrid critic + TD3 target（\(\arg\max m'\)，只噪 \(z'\)）
-- 4.5 网络：256-ReLU 双层；lr \(10^{-4}\)；batch 64
+- 4.4 3 维 executed physical critic \(Q(s,u^{\mathrm{th}},u^{\mathrm{bat}},u_{\mathrm{caes}})\) + TD3 target（\(\arg\max m'\)，只噪 \(z'\)）
+- 4.5 网络：256-ReLU 双层；lr \(3\times10^{-4}\)；batch 64
 - 4.6 物理-only 经济 replay + 采用 GiveSafe；拒绝进安全审计
 - 4.7 两组消融：连续 vs 混合；静态 vs 动态。主方法：rule / rolling MILP / projection TD3 / PC-HybridTD3
 - **图 / 算法框 / 表：** `fig_algorithm`；`fig_action_rep`；Alg. PC-HybridTD3；`tab:hyper`

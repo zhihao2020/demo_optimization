@@ -107,52 +107,14 @@ def _decode_dynamic(z: np.ndarray, lo: float, hi: float) -> np.ndarray:
 
 
 def plot_action_rep() -> Path:
-    fig, axes = plt.subplots(1, 3, figsize=(7.2, 2.55), sharey=True)
-    z = np.linspace(-1.0, 1.0, 800)
+    import importlib.util
 
-    ax = axes[0]
-    u_proj = np.where((z >= DIS_LO) & (z <= DIS_HI), z, np.where((z >= CHG_LO) & (z <= CHG_HI), z, 0.0))
-    ax.fill_betweenx([-1.2, 1.2], DIS_LO, DIS_HI, color=C_DIS, alpha=0.10, zorder=0)
-    ax.fill_betweenx([-1.2, 1.2], CHG_LO, CHG_HI, color=C_CHG, alpha=0.10, zorder=0)
-    ax.plot(z, u_proj, color="#222", lw=1.5)
-    ax.axhline(0, color="#bbb", lw=0.5)
-    ax.set_title("(a) Projection TD3", loc="left", fontsize=9)
-    ax.set_xlabel(r"raw $z_{\mathrm{caes}}$")
-    ax.set_ylabel(r"$u_{\mathrm{caes}}$")
-    ax.text(0.0, 0.42, "gap mapped to idle", fontsize=7.5, color="#555", ha="center")
-
-    ax = axes[1]
-    u_static = _decode_static(z)
-    ax.fill_betweenx([-1.2, 1.2], DIS_LO, DIS_HI, color=C_DIS, alpha=0.10, zorder=0)
-    ax.fill_betweenx([-1.2, 1.2], CHG_LO, CHG_HI, color=C_CHG, alpha=0.10, zorder=0)
-    ax.plot(z[z <= 0], u_static[z <= 0], color=C_DIS, lw=1.5, label="discharge")
-    ax.plot(z[z >= 0], u_static[z >= 0], color=C_CHG, lw=1.5, label="charge")
-    ax.axhline(0, color="#bbb", lw=0.5)
-    ax.set_title("(b) Static-band hybrid", loc="left", fontsize=9)
-    ax.set_xlabel(r"mode latent $z$")
-    ax.legend(loc="lower right", fontsize=7)
-
-    ax = axes[2]
-    lo, hi = -0.72, -0.40
-    mag = np.linspace(0.0, 1.0, 800)
-    u_dyn = lo + mag * (hi - lo)
-    ax.axhspan(lo, hi, color=C_DIS, alpha=0.16, zorder=0)
-    ax.plot(mag, u_dyn, color="#222", lw=1.5)
-    ax.axhline(0, color="#bbb", lw=0.5)
-    ax.set_title(r"(c) PC-HybridTD3 $\mathcal{M}_k(s)$", loc="left", fontsize=9)
-    ax.set_xlabel(r"magnitude $z\in[0,1]$")
-    ax.set_xlim(-0.05, 1.05)
-    ax.set_xticks([0, 0.5, 1])
-    ax.text(0.50, 0.15, "current discharge interval", fontsize=7.5, color="#555", ha="center")
-
-    for ax in axes[:2]:
-        ax.set_xlim(-1.05, 1.05)
-        ax.set_xticks([-1, 0, 1])
-    for ax in axes:
-        ax.set_ylim(-1.15, 1.15)
-        ax.set_yticks([-1, 0, 1])
-    fig.tight_layout(w_pad=0.8)
-    return _save(fig, "fig_action_rep")
+    path = ROOT / "Paper" / "figures" / "gen_fig_action_rep.py"
+    spec = importlib.util.spec_from_file_location("gen_fig_action_rep", path)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return Path(mod.main())
 
 
 def plot_horizon(root: Path = TRAJ) -> Path | None:

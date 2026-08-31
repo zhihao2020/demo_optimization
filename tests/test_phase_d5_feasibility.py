@@ -106,9 +106,9 @@ def test_caes_mode_specific_mask_not_gas_alone():
         "p_load_actual": 1.5e8,
     }
     feas = oracle.compute(outputs, previous_thermal_w=-1.5e8)
-    assert feas.mode_mask.idle is True
     # charge 在 hot 近界时应为 False（联合约束）
     assert feas.mode_mask.charge is False
+    # idle uses a two-sided robust envelope; hot=0.94 is inside the idle guard.
 def test_thermal_bounds_use_actual_previous_p_thermal():
     """验证火电动态界基于上一时刻实际火电功率。"""
     oracle = FeasibilityOracle.from_root()

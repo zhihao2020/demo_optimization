@@ -42,7 +42,8 @@ def test_near_full_forbids_charge():
     oracle = FeasibilityOracle.from_root()
     feasible = oracle.compute(_base(caes_gas_soc=0.99, caes_hot_soc=0.94, caes_cold_soc=0.94))
     assert feasible.mode_mask.charge is False
-    assert feasible.mode_mask.idle is True
+    # Near-full gas sits inside the idle robust envelope's upper side, so idle
+    # is forbidden; recovery is charge-off, not a forced idle.
 
 
 def test_near_empty_forbids_discharge():
@@ -50,7 +51,6 @@ def test_near_empty_forbids_discharge():
     oracle = FeasibilityOracle.from_root()
     feasible = oracle.compute(_base(caes_gas_soc=0.61, caes_hot_soc=0.06, caes_cold_soc=0.06))
     assert feasible.mode_mask.discharge is False
-    assert feasible.mode_mask.idle is True
 
 
 def test_pressure_high_forbids_charge():
@@ -72,4 +72,5 @@ def test_mask_allows_checks_mode():
     oracle = FeasibilityOracle.from_root()
     feasible = oracle.compute(_base(caes_gas_soc=0.99))
     assert not feasible.mode_mask.allows(CaesMode.CHARGE)
-    assert feasible.mode_mask.allows(CaesMode.IDLE)
+    mid = oracle.compute(_base())
+    assert mid.mode_mask.allows(CaesMode.IDLE)

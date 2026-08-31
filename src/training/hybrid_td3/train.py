@@ -771,6 +771,12 @@ def run_hybrid_training(
         result.update(
             {
                 "stats": collector.stats,
+                "numerical_endpoint_snap_count": int(
+                    collector.stats.get("numerical_endpoint_snap_count", 0) or 0
+                ),
+                "max_endpoint_snap_abs": float(
+                    collector.stats.get("max_endpoint_snap_abs", 0.0) or 0.0
+                ),
                 "physical_replay_size": buffer.physical_size,
                 "givesafe_replay_size": buffer.givesafe_size,
                 "proposal_rejection_rate": rej / attempts,

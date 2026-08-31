@@ -1,6 +1,7 @@
 """根据当前状态计算动态可行域 A(s_t)；逐设备方程 + residual 方向裕度。"""
 
 from __future__ import annotations
+import math
 from pathlib import Path
 from typing import Any, Mapping
 import numpy as np
@@ -11,6 +12,7 @@ from .caes_u import (
     DISCHARGE_HI,
     DISCHARGE_LO,
     mode_from_u,
+    snap_to_interval_endpoint,
     u_from_mode_mag,
 )
 from .feasible_set import DynamicFeasibleActionSet
@@ -217,6 +219,10 @@ class FeasibilityOracle:
             "p_cap_battery_W": ctx.p_battery,
             "p_cap_caes_W": ctx.p_caes,
         }
+        idle_ok, idle_reason, idle_audit = self._caes_idle_step_ok(outputs)
+        meta.update(idle_audit)
+        meta["idle_ok"] = bool(idle_ok)
+        meta["idle_forbidden_reason"] = None if idle_ok else idle_reason
         return DynamicFeasibleActionSet(
             u_tp_low=tp[0],
             u_tp_high=tp[1],
@@ -331,6 +337,14 @@ class FeasibilityOracle:
         ):
             return False, f"预测 p_grid={pred} W 超出联络线安全界"
         mode = mode_from_u(physical.u_caes)
+        if mode == CaesMode.IDLE:
+            # Do not admit idle via predict_next_state(u_caes=0). That predictor
+            # holds pressure constant and was the Stage C false-safe.
+            if not feasible.mode_mask.idle:
+                return False, "IDLE 被 mask 禁止"
+            idle_ok, idle_reason, _audit = self._caes_idle_step_ok(outputs)
+            if not idle_ok:
+                return False, f"idle_robust_guard:{idle_reason}"
         if mode == CaesMode.CHARGE and not feasible.mode_mask.charge:
             return False, "CHARGE 被 mask 禁止"
         if mode == CaesMode.DISCHARGE and not feasible.mode_mask.discharge:
@@ -344,11 +358,18 @@ class FeasibilityOracle:
         )
         if span is not None:
             lo, hi = min(span), max(span)
-            if not (lo - 1e-9 <= physical.u_caes <= hi + 1e-9):
+            u_checked, snapped = snap_to_interval_endpoint(physical.u_caes, lo, hi)
+            if not (lo <= u_checked <= hi):
                 return False, (
                     f"u_caes={physical.u_caes} 超出该方向安全幅值区间 [{lo}, {hi}]"
                 )
-        predicted = self.predict_next_state(outputs, action, previous_thermal_w)
+            if snapped:
+                physical = PhysicalFmuAction(
+                    u_tp=physical.u_tp,
+                    u_battery=physical.u_battery,
+                    u_caes=u_checked,
+                )
+        predicted = self.predict_next_state(outputs, physical, previous_thermal_w)
         ok, reason = self.post_step_hard_ok(predicted, use_safe=False)
         if not ok:
             return False, f"Oracle 预测下一状态违反硬约束: {reason}"
@@ -914,6 +935,83 @@ class FeasibilityOracle:
 
     _CAES_SCAN_POINTS = 33
 
+    def idle_robust_guards(self) -> dict[str, float]:
+        """Idle one-step robust envelope from device_params + idle residual/margin.
+
+        Does not hard-code 6.685 MPa; pressure guard is
+        ``residual_p99_pressure + margin_pressure_Pa``.
+        """
+        c = self.params["caes"]
+        idle = (self.margins.get("caes") or {}).get("idle") or {}
+        return {
+            "gas": float(idle.get("residual_p99_gas", 0.0)) + float(idle.get("margin_gas", 0.0)),
+            "hot": float(idle.get("residual_p99_hot", 0.0)) + float(idle.get("margin_hot", 0.0)),
+            "cold": float(idle.get("residual_p99_cold", 0.0)) + float(idle.get("margin_cold", 0.0)),
+            "pressure": float(idle.get("residual_p99_pressure", 0.0))
+            + float(idle.get("margin_pressure_Pa", 0.0)),
+            "temp": float(idle.get("residual_p99_temp_abs", 0.0))
+            + float(idle.get("margin_temp_K", 0.0)),
+            "gas_min": float(c["gas_SOC_min"]),
+            "gas_max": float(c["gas_SOC_max"]),
+            "hot_min": float(c["hot_SOC_min"]),
+            "hot_max": float(c["hot_SOC_max"]),
+            "cold_min": float(c["cold_SOC_min"]),
+            "cold_max": float(c["cold_SOC_max"]),
+            "pressure_min": float(c["gas_pressure_min_Pa"]),
+            "pressure_max": float(c["gas_pressure_max_Pa"]),
+        }
+
+    def _caes_idle_step_ok(
+        self,
+        outputs: Mapping[str, float],
+    ) -> tuple[bool, str | None, dict[str, Any]]:
+        """Robust idle admissibility without predict_next_state(u_caes=0).
+
+        Requires current (gas, hot, cold, pressure, finite temperatures) to sit
+        inside the hard box shrunk by |idle residual P99| + margin on both sides.
+        """
+        g = self.idle_robust_guards()
+        audit = {
+            "idle_pressure_margin": g["pressure"],
+            "idle_gas_margin": g["gas"],
+            "idle_hot_margin": g["hot"],
+            "idle_cold_margin": g["cold"],
+            "idle_temperature_margin": g["temp"],
+        }
+        gas = float(outputs["caes_gas_soc"])
+        hot = float(outputs["caes_hot_soc"])
+        cold = float(outputs["caes_cold_soc"])
+        p = float(outputs.get("caes_gas_pressure", 8.5e6))
+
+        if not (g["pressure_min"] + g["pressure"] <= p <= g["pressure_max"] - g["pressure"]):
+            side = "low" if p < g["pressure_min"] + g["pressure"] else "high"
+            return False, f"idle_pressure_{side}", audit
+        if not (g["gas_min"] + g["gas"] <= gas <= g["gas_max"] - g["gas"]):
+            side = "low" if gas < g["gas_min"] + g["gas"] else "high"
+            return False, f"idle_gas_{side}", audit
+        if not (g["hot_min"] + g["hot"] <= hot <= g["hot_max"] - g["hot"]):
+            side = "low" if hot < g["hot_min"] + g["hot"] else "high"
+            return False, f"idle_hot_{side}", audit
+        if not (g["cold_min"] + g["cold"] <= cold <= g["cold_max"] - g["cold"]):
+            side = "low" if cold < g["cold_min"] + g["cold"] else "high"
+            return False, f"idle_cold_{side}", audit
+
+        temps = {
+            "caes_gas_temperature": float(outputs.get("caes_gas_temperature", 300.0)),
+            "caes_hot_temperature": float(outputs.get("caes_hot_temperature", 400.0)),
+            "caes_cold_temperature": float(outputs.get("caes_cold_temperature", 290.0)),
+        }
+        dT = g["temp"]
+        for name, lo, hi in self._temp_bounds():
+            val = temps.get(name)
+            if val is None:
+                continue
+            if math.isfinite(lo) and val < lo + dT:
+                return False, f"idle_temperature_{name}_low", audit
+            if math.isfinite(hi) and val > hi - dT:
+                return False, f"idle_temperature_{name}_high", audit
+        return True, None, audit
+
     def _caes_mode_mask_base(self, outputs: Mapping[str, float]) -> ModeMask:
         """基础模式掩码：gas/hot/cold SOC + pressure + temps，不含生存性过滤。
 
@@ -946,8 +1044,7 @@ class FeasibilityOracle:
         discharge_ok = self._u_caes_step_ok(
             outputs, DISCHARGE_HI, cm.get("discharge", {}), "low"
         )
-        # IDLE：当前态在物理界内则始终允许（残差裕度不得禁止待机）
-        idle_ok, _ = self.post_step_hard_ok(outputs, use_safe=False)
+        idle_ok, _reason, _audit = self._caes_idle_step_ok(outputs)
         # 即使预测失败，仍保留温度硬门（禁充放，不禁 idle）
         current_temps = {
             "caes_gas_temperature": tg,

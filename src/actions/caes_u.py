@@ -21,6 +21,35 @@ CHARGE_HI = 1.0
 IDLE_U = 0.0
 
 _EPS = 1e-6
+# Actor is float32; Oracle intervals are float64. Endpoint snap is ULP
+# canonicalization only, not a safety margin and not a projection.
+DYNAMIC_ENDPOINT_ATOL = 1.0e-7
+# Snap larger than this is a decoder bug, not float32 ULP. Hard-fail training.
+ENDPOINT_SNAP_HARD_FAIL = 1.0e-3
+
+
+def snap_to_interval_endpoint(
+    value: float,
+    low: float,
+    high: float,
+    *,
+    atol: float = DYNAMIC_ENDPOINT_ATOL,
+) -> tuple[float, bool]:
+    """Snap a value onto an interval endpoint iff the miss is a ULP/float32 artifact.
+
+    Does **not** project a generally infeasible action back into the interval.
+    ``0.930000007`` vs ``hi=0.93`` snaps; ``hi + 1e-4`` is left unchanged.
+    """
+    lo, hi = min(float(low), float(high)), max(float(low), float(high))
+    x = float(value)
+    eps = float(atol)
+    if lo <= x <= hi:
+        return x, False
+    if lo - eps <= x < lo:
+        return lo, True
+    if hi < x <= hi + eps:
+        return hi, True
+    return x, False
 
 
 def mode_from_u(u: float) -> CaesMode:
@@ -51,35 +80,41 @@ def project_u_caes(u: float) -> float:
     """将任意标量投影到合法三段：空隙 → 0；带内夹到端点。
 
     仅数值稳定/合法化，不改变物理合法集（仍非凸）。
+    Values within ``DYNAMIC_ENDPOINT_ATOL`` of a band endpoint snap onto that
+    band; they must not be mapped through the open gap to idle (float32
+    interpolation of mag=1 at u=-0.33 produced -0.32999998 and was idled).
     """
     u = float(u)
     if not np.isfinite(u):
         return IDLE_U
+    snapped, flag = snap_to_interval_endpoint(u, DISCHARGE_LO, DISCHARGE_HI)
+    if flag or DISCHARGE_LO <= snapped <= DISCHARGE_HI:
+        return snapped
+    snapped, flag = snap_to_interval_endpoint(u, CHARGE_LO, CHARGE_HI)
+    if flag or CHARGE_LO <= snapped <= CHARGE_HI:
+        return snapped
     if u < DISCHARGE_LO:
         return DISCHARGE_LO
-    if DISCHARGE_LO <= u <= DISCHARGE_HI:
-        return u
-    if CHARGE_LO <= u <= CHARGE_HI:
-        return u
     if u > CHARGE_HI:
         return CHARGE_HI
-    # 空隙 (DISCHARGE_HI, CHARGE_LO) \ {0} → idle
     return IDLE_U
 
 
 def project_u_caes_torch(u: torch.Tensor) -> torch.Tensor:
-    """Batch 版 project_u_caes（元素级）。"""
+    """Batch 版 project_u_caes（元素级），含端点 ULP snap。"""
     u = u.float()
+    atol = float(DYNAMIC_ENDPOINT_ATOL)
+    d_lo = u.new_tensor(DISCHARGE_LO)
+    d_hi = u.new_tensor(DISCHARGE_HI)
+    c_lo = u.new_tensor(CHARGE_LO)
+    c_hi = u.new_tensor(CHARGE_HI)
     out = torch.zeros_like(u)
-    # discharge band
-    dis = (u >= DISCHARGE_LO) & (u <= DISCHARGE_HI)
-    out = torch.where(dis, u, out)
-    out = torch.where(u < DISCHARGE_LO, torch.full_like(u, DISCHARGE_LO), out)
-    # charge band
-    chg = (u >= CHARGE_LO) & (u <= CHARGE_HI)
-    out = torch.where(chg, u, out)
-    out = torch.where(u > CHARGE_HI, torch.full_like(u, CHARGE_HI), out)
-    # gap → 0 already
+    near_dis = (u >= d_lo - atol) & (u <= d_hi + atol)
+    out = torch.where(near_dis, u.clamp(d_lo, d_hi), out)
+    near_chg = (u >= c_lo - atol) & (u <= c_hi + atol)
+    out = torch.where(near_chg, u.clamp(c_lo, c_hi), out)
+    out = torch.where(u < d_lo - atol, d_lo.expand_as(u), out)
+    out = torch.where(u > c_hi + atol, c_hi.expand_as(u), out)
     return out
 
 
@@ -208,8 +243,10 @@ def u_from_mode_onehot_dynamic(
 ) -> torch.Tensor:
     """Decode onto state-dependent [l_D,h_D] / [l_C,h_C]. Idle is a point mass at 0."""
     mag = mag.clamp(0.0, 1.0)
-    u_dis = dis_lo + mag * (dis_hi - dis_lo)
-    u_chg = chg_lo + mag * (chg_hi - chg_lo)
+    # mag=0/1 must hit the interval endpoints exactly; FMA of
+    # lo+1*(hi-lo) is not hi in float32 and used to land in the illegal gap.
+    u_dis = torch.where(mag <= 0, dis_lo, torch.where(mag >= 1, dis_hi, dis_lo + mag * (dis_hi - dis_lo)))
+    u_chg = torch.where(mag <= 0, chg_lo, torch.where(mag >= 1, chg_hi, chg_lo + mag * (chg_hi - chg_lo)))
     return onehot[:, 0] * u_dis + onehot[:, 2] * u_chg
 
 
