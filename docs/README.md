@@ -1,10 +1,10 @@
 # 文档索引（PC-HybridTD3）
 
-文档更新：2026-08-30 22:40 (+08:00)
+文档更新：2026-08-31 13:10 (+08:00)
 
 **现行论文提纲（唯一）：** [paper_outline_and_figures.md](paper_outline_and_figures.md)
 
-主方法（live）：**PC-HybridTD3**（`--method td3`，`parameterized_caes=True`，动态 \(\mathcal A_f(s)\)）。对照：投影连续 TD3、滚动 MILP、price-aware rule。静态带宽 hybrid TD3 为支撑消融。FS-HSAC / HMSD 叙事不作为现行论文身份。结果表在 Stage D 之前保持空。
+主方法（live）：**PC-HybridTD3**（`--method td3`，联合 \(\mathcal A_f(s)\)）。研究对象是多能源安全经济协同调度。对照：投影连续 TD3、滚动 MILP、price-aware rule。分量支撑 hybrid TD3 为支撑消融。FS-HSAC / HMSD 叙事不作为现行论文身份。结果表在 Stage D 之前保持空。
 
 ## 主线真源
 
@@ -20,6 +20,7 @@
 | 结果清单 | [paper_results_manifest.md](paper_results_manifest.md) |
 | **参数证据台账** | [parameter_evidence.md](parameter_evidence.md)（profile `official-2024-ets-sd-grid-v1`） |
 | 综合成本分项 | [comprehensive_cost_terms.md](comprehensive_cost_terms.md) |
+| 检查清单工程报告 | [pc_hybrid_td3_check_report.md](pc_hybrid_td3_check_report.md) |
 | 正文 | [`Paper/main.tex`](../Paper/main.tex) |
 | 训练入口 | `scripts/train_seasonal.py --method td3 --season all`（投影：`--ablation projection`；静态支撑：`--ablation static-support`） |
 

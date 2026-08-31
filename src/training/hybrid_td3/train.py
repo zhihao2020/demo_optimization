@@ -13,19 +13,20 @@ import numpy as np
 import yaml
 from tqdm import tqdm
 
-from actions import CaesMode, FeasibilityOracle
 from envs.failures import FeasibleSetEmpty
 from envs.power_system_env import PowerSystemEnv
 from envs.reward_calculator import IncompleteRewardConfigError
 from fmu import FmuAdapter
 from replay import HybridGiveSafeReplayBuffer
-from safety import GiveSafeController, NoSafeActionFoundError, ShadowFmuValidator, load_givesafe_config
-from safety.soft_constraint_shell import SoftConstraintShell
+from safety import GiveSafeController, ShadowFmuValidator, load_givesafe_config
 from training.episode_starts import eval_start_seconds, training_start_seconds
 from training.evaluate_td3 import evaluate_annual_policy, evaluate_policy
 from controllers.price_aware_rule import PriceAwareRuleController
 from controllers.rule_based_controller import RuleBasedController
-from training.hybrid_common.policy_wrapper import RandomFeasiblePolicy
+from training.hybrid_common.policy_wrapper import (
+    HybridGiveSafePolicyWrapper as HybridPolicyWrapper,
+    RandomFeasiblePolicy,
+)
 
 from .algorithm import HybridTD3
 from .buffer import SafetyDataset
@@ -39,94 +40,38 @@ def _soft_shell_enabled(explicit: bool | None = None) -> bool:
     return os.environ.get("SOFT_SHELL", "").strip().lower() in ("1", "true", "yes", "on")
 
 
-class HybridPolicyWrapper:
-    """评估用：经 GiveSafeController 采样；默认硬协议，可选 soft_shell 保守恢复。"""
+def _paper_cfg(root: Path) -> dict[str, Any]:
+    path = root / "src" / "config" / "paper_pc_hybrid_td3.yaml"
+    if not path.is_file():
+        return {}
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
-    def __init__(
-        self,
-        agent: HybridTD3,
-        env: PowerSystemEnv,
-        controller: GiveSafeController,
-        deterministic: bool = True,
-        *,
-        soft_shell: bool = False,
-    ):
-        """组装 TD3 评估用 GiveSafe 包装。
 
-        Args:
-            agent: HybridTD3 智能体。
-            env: 评估环境。
-            controller: GiveSafe 控制器。
-            deterministic: 默认确定性动作。
-            soft_shell: True 时 NoSafeAction 退回保守动作（非 use_fallback）。
-        """
-        self.agent = agent
-        self.env = env
-        self.controller = controller
-        self.deterministic = deterministic
-        self.soft_shell = bool(soft_shell)
-        self.shell = SoftConstraintShell() if self.soft_shell else None
+def _paper_algo_cfg(root: Path) -> dict[str, Any]:
+    return dict(_paper_cfg(root).get("algorithm") or {})
 
-    def predict(self, obs, deterministic: bool | None = None):
-        """经 GiveSafe 选择安全动作。
 
-        Args:
-            obs: 当前观测。
-            deterministic: 覆盖默认可选。
-
-        Returns:
-            安全混合动作字典。
-        """
-        det = self.deterministic if deterministic is None else deterministic
-
-        def propose():
-            """按当前可行域向智能体请求动作。"""
-            feasible = self.env.get_feasible_action_spec()
-            return self.agent.select_action(obs, feasible, deterministic=det)
-
-        try:
-            gs = self.controller.select_safe_action(
-                self.env.last_outputs,
-                self.env.previous_thermal,
-                propose,
-                deterministic=det,
+def _stamp_summary_status(result: dict[str, Any]) -> None:
+    """检查.txt: summary always distinguishes training vs evaluation."""
+    status = str(result.get("status") or "unknown")
+    result.setdefault("training_status", status)
+    result.setdefault("training_valid_steps", result.get("valid_steps"))
+    ev = result.get("eval") or {}
+    if isinstance(ev, dict) and ev:
+        result.setdefault("evaluation_status", ev.get("eval_status") or ev.get("status") or "ok")
+        result.setdefault("eval_completed_steps", ev.get("valid_steps", ev.get("steps")))
+        if "stage_c_passed" in result:
+            result["formal_gate_passed"] = bool(result.get("stage_c_passed"))
+        else:
+            result["formal_gate_passed"] = bool(result.get("phase_e_allowed")) and not ev.get(
+                "eval_failed"
             )
-            return gs.safe_action
-        except (NoSafeActionFoundError, FeasibleSetEmpty):
-            if not self.soft_shell or self.shell is None:
-                raise
-            return self.shell.recover(self.env)
-
-    def on_episode_reset(self, info: dict[str, Any]) -> None:
-        """回合重置时重置影子 FMU。
-
-        Args:
-            info: reset info，含 time。
-
-        Returns:
-            无。
-        """
-        if self.controller.shadow is not None:
-            self.controller.shadow.on_episode_reset(float(info.get("time", 0.0) or 0.0))
-
-    def on_transition(self, info: dict[str, Any]) -> None:
-        """物理步成功后更新影子 FMU 状态。
-
-        Args:
-            info: step info。
-
-        Returns:
-            无。
-        """
-        if self.controller.shadow is None or not info.get("transition_valid"):
-            return
-        self.controller.shadow.on_physical_success(
-            {
-                "u_tp": float(info["decoded_u_tp"]),
-                "u_battery": float(info["decoded_u_battery"]),
-                "u_caes": float(info["decoded_u_caes"]),
-            }
-        )
+    else:
+        result.setdefault("evaluation_status", "not_run")
+        if "stage_c_passed" in result:
+            result["formal_gate_passed"] = bool(result.get("stage_c_passed"))
+        else:
+            result.setdefault("formal_gate_passed", False)
 
 
 def _reward_ready(cfg: dict) -> bool:
@@ -259,6 +204,93 @@ def check_formal_gates(
     return blockers
 
 
+def _is_finite_number(value: Any) -> bool:
+    try:
+        fv = float(value)
+    except (TypeError, ValueError):
+        return False
+    return fv == fv and abs(fv) != float("inf")
+
+
+def compute_stage_c_gates(
+    *,
+    last_metrics: dict[str, Any] | None,
+    step_log: list[dict[str, Any]] | None,
+    collector_stats: dict[str, Any] | None,
+    eval_result: dict[str, Any] | None,
+    random_eval: dict[str, Any] | None,
+    unserved_eps_mwh: float = 1e-3,
+) -> dict[str, Any]:
+    """检查.txt §25/§40.18 Stage C formal gates. CAES usage is not a gate.
+
+    Returns:
+        Dict with per-gate booleans and ``passed`` (all five must hold).
+    """
+    last_metrics = last_metrics or {}
+    step_log = step_log or []
+    stats = collector_stats or {}
+    ev = eval_result or {}
+    rnd = random_eval or {}
+
+    finite = True
+    sources: list[dict[str, Any]] = [last_metrics]
+    sources.extend(row for row in step_log if isinstance(row, dict))
+    for src in sources:
+        for key in ("critic_loss", "actor_loss", "q1_mean", "q2_mean"):
+            if key in src and src[key] is not None and not _is_finite_number(src[key]):
+                finite = False
+                break
+        if not finite:
+            break
+
+    post = int(stats.get("post_step_hard_constraint_violation_count", 0) or 0)
+    unsafe = int(stats.get("main_fmu_unsafe_execution_count", 0) or 0)
+    eval_fmu = int(ev.get("fmu_failure_count", 0) or 0)
+    fmu_hard_ok = post == 0 and unsafe == 0 and eval_fmu == 0
+
+    eval_failed = bool(ev.get("eval_failed"))
+    eval_status = str(ev.get("eval_status") or ("failed" if eval_failed else "ok"))
+    no_safe_ok = eval_status != "failed_no_safe_action" and not (
+        eval_failed and "no_safe" in eval_status
+    )
+    eval_steps = int(ev.get("valid_steps") or ev.get("steps") or 0)
+    random_steps = int(rnd.get("valid_steps") or rnd.get("steps") or 0)
+    complete_week = bool(no_safe_ok and fmu_hard_ok and eval_steps >= 168)
+    random_complete = (not bool(rnd.get("eval_failed"))) and random_steps >= 168
+
+    metrics = ev.get("metrics") or {}
+    unserved = float(metrics.get("unserved_energy_mwh") or 0.0)
+    unserved_ok = bool(complete_week and unserved <= float(unserved_eps_mwh))
+
+    policy_cost = ev.get("weekly_raw_total_cost")
+    random_cost = rnd.get("weekly_raw_total_cost")
+    cost_better = False
+    if complete_week and random_complete and policy_cost is not None and random_cost is not None:
+        cost_better = float(policy_cost) < float(random_cost)
+
+    passed = bool(finite and fmu_hard_ok and no_safe_ok and unserved_ok and cost_better)
+    return {
+        "c1_nan_inf_zero": finite,
+        "c2_fmu_hard_zero": fmu_hard_ok,
+        "c3_heldout_nosafe_zero": no_safe_ok,
+        "c4_unserved_approx_zero": unserved_ok,
+        "c5_cost_better_than_random": cost_better,
+        "passed": passed,
+        "policy_cost": policy_cost,
+        "random_cost": random_cost,
+        "unserved_energy_mwh": unserved,
+        "unserved_eps_mwh": float(unserved_eps_mwh),
+        "post_step_hard_constraint_violation_count": post,
+        "main_fmu_unsafe_execution_count": unsafe,
+        "eval_fmu_failure_count": eval_fmu,
+        "eval_status": eval_status,
+        "random_eval_status": rnd.get("eval_status"),
+        "eval_valid_steps": eval_steps,
+        "random_valid_steps": random_steps,
+        "complete_week": complete_week,
+    }
+
+
 def run_hybrid_training(
     total_valid_steps: int = 5000,
     run_dir: str | Path = "runs/givesafe_td3_smoke",
@@ -310,6 +342,8 @@ def run_hybrid_training(
         "device_params.yaml",
         "feasibility_margins.yaml",
         "givesafe_config.yaml",
+        "paper_pc_hybrid_td3.yaml",
+        "experiment_protocol.yaml",
     ):
         src = root / "src/config" / cfg_name
         if src.exists():
@@ -319,6 +353,9 @@ def run_hybrid_training(
     if gs_cfg.get("givesafe", {}).get("use_fallback", False):
         raise RuntimeError("禁止 use_fallback")
     replay_cfg = gs_cfg.get("replay_sampling") or {}
+    paper_replay = dict(_paper_cfg(root).get("replay") or {})
+    if paper_replay:
+        replay_cfg = {**replay_cfg, **paper_replay}
     shadow_cfg = (gs_cfg.get("givesafe") or {}).get("shadow_validation") or {}
     use_shadow = bool(shadow_cfg.get("enabled", True)) if enable_shadow is None else bool(enable_shadow)
 
@@ -367,13 +404,16 @@ def run_hybrid_training(
         buffer, controller, shadow=shadow, safety_dataset=safety_dataset, soft_shell=use_soft_shell
     )
     rew_cfg = env.reward_calculator.config
+    paper_algo = _paper_algo_cfg(root)
     agent = HybridTD3(
         obs_dim=int(np.prod(env.observation_space.shape)),
-        gamma=float(rew_cfg.get("gamma", 0.99)),
-        actor_lr=1e-4,
-        critic_lr=1e-4,
+        gamma=float(paper_algo.get("gamma", rew_cfg.get("gamma", 0.99))),
+        actor_lr=float(paper_algo.get("actor_lr", 3e-4)),
+        critic_lr=float(paper_algo.get("critic_lr", 3e-4)),
+        tau=float(paper_algo.get("tau", 0.005)),
+        policy_delay=int(paper_algo.get("policy_delay", 2)),
         explore_noise=0.1,
-        q_clip=200.0,
+        q_clip=float(paper_algo.get("q_clip", 200.0)),
         parameterized_caes=bool(parameterized_caes),
         use_dynamic_support=bool(use_dynamic_support),
     )
@@ -610,12 +650,23 @@ def run_hybrid_training(
                 eval_shadow.close()
             eval_env.close()
         result["eval_start_time_seconds"] = eval_opts["start_time"]
-        if eval_result.get("eval_failed"):
+        eval_steps = int(eval_result.get("valid_steps") or eval_result.get("steps") or 0)
+        fmu_fail = int(eval_result.get("fmu_failure_count") or 0)
+        greedy_ok = (
+            not bool(eval_result.get("eval_failed"))
+            and fmu_fail == 0
+            and eval_steps >= 168
+        )
+        if not greedy_ok:
             result["stage_b_greedy_eval"] = "failed"
             result["greedy_eval"] = "failed"
             if result.get("stage_b_interaction") == "passed":
                 result["status"] = "partial_pass"
-            fail = eval_result.get("failure") or {}
+            fail = eval_result.get("failure") or {
+                "eval_status": eval_result.get("eval_status"),
+                "valid_steps": eval_steps,
+                "fmu_failure_count": fmu_fail,
+            }
             (run_dir / "eval_failure.json").write_text(
                 json.dumps(fail, indent=2, ensure_ascii=False, default=str),
                 encoding="utf-8",
@@ -623,32 +674,58 @@ def run_hybrid_training(
         else:
             result["stage_b_greedy_eval"] = "passed"
             result["greedy_eval"] = "passed"
-        last_m = agent.last_metrics or {}
-        finite_q = True
-        for k in ("critic_loss", "actor_loss", "q1_mean"):
-            v = last_m.get(k)
-            if v is None:
-                continue
+        random_eval_result: dict[str, Any] | None = None
+        try:
+            rnd_env = PowerSystemEnv(
+                run_id=f"{run_dir.name}_random",
+                forecast_enabled=forecast_enabled,
+                forecast_mode=forecast_mode,
+            )
             try:
-                fv = float(v)
-            except (TypeError, ValueError):
-                finite_q = False
-                break
-            if fv != fv or abs(fv) == float("inf"):
-                finite_q = False
-                break
+                random_eval_result = evaluate_policy(
+                    rnd_env,
+                    RandomFeasiblePolicy(rnd_env),
+                    run_dir / "trajectories" / "random.csv",
+                    reset_options=eval_opts,
+                    deterministic=False,
+                )
+            finally:
+                rnd_env.close()
+        except Exception as exc:  # noqa: BLE001
+            random_eval_result = {
+                "eval_status": "failed",
+                "eval_failed": True,
+                "error": str(exc),
+            }
+        result["random"] = random_eval_result
+
+        last_m = agent.last_metrics or {}
         counts = (collector.stats or {}).get("caes_mode_counts") or {}
         n_d = int(counts.get(0, 0) or 0)
         n_c = int(counts.get(2, 0) or 0)
-        result["stage_c_gates"] = {
-            "c1_learning_stability": bool(finite_q),
-            "c2_greedy_deployability": result.get("greedy_eval") == "passed",
-            "c3_storage_effectiveness": bool(
-                (swing is not None and swing > 0.05) and n_d > 0 and n_c > 0
-            ),
-            "caes_mode_counts": {"D": n_d, "I": int(counts.get(1, 0) or 0), "C": n_c},
-            "gas_soc_range": swing,
+        stage_c = compute_stage_c_gates(
+            last_metrics=last_m,
+            step_log=step_log,
+            collector_stats=collector.stats or {},
+            eval_result=eval_result,
+            random_eval=random_eval_result,
+        )
+        stage_c["c1_learning_stability"] = stage_c["c1_nan_inf_zero"]
+        stage_c["c2_greedy_deployability"] = stage_c["c3_heldout_nosafe_zero"]
+        stage_c["storage_effectiveness_diagnostic"] = bool(
+            (swing is not None and swing > 0.05) and n_d > 0 and n_c > 0
+        )
+        stage_c["caes_mode_counts"] = {
+            "D": n_d,
+            "I": int(counts.get(1, 0) or 0),
+            "C": n_c,
         }
+        stage_c["gas_soc_range"] = swing
+        stage_c["device_diagnostic_note"] = (
+            "CAES idle is not a Stage C gate; compare with rolling MILP."
+        )
+        result["stage_c_gates"] = stage_c
+        result["stage_c_passed"] = bool(stage_c.get("passed"))
 
         annual_eval_result = None
         if annual_evaluation:
@@ -713,6 +790,12 @@ def run_hybrid_training(
         result["phase_e_allowed"] = len(blockers) == 0
         if formal and blockers:
             result.update(status="blocked_formal_gates_post", blockers=blockers)
+    except Exception as exc:
+        if str(result.get("status") or "") in ("running", "", "unknown"):
+            result["status"] = "training_failed"
+        result["error"] = repr(exc)
+        result["training_status"] = "failed"
+        raise
     finally:
         if shadow is not None:
             shadow.close()
@@ -726,6 +809,7 @@ def run_hybrid_training(
                 json.dumps(step_log, ensure_ascii=False, indent=2), encoding="utf-8"
             )
             result.setdefault("algo", "hybrid_givesafe_td3")
+            _stamp_summary_status(result)
             (run_dir / "summary.json").write_text(
                 json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
             )
@@ -737,6 +821,7 @@ def run_hybrid_training(
         json.dumps(step_log, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     result.setdefault("algo", "hybrid_givesafe_td3")
+    _stamp_summary_status(result)
     (run_dir / "summary.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
     )

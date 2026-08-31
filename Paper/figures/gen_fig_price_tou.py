@@ -7,6 +7,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Patch
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = Path(__file__).resolve().parent
@@ -76,6 +77,14 @@ def main() -> None:
     ax.set_ylabel(r"Buy price (CNY/kWh)")
     ax.set_title("(a) Winter held-out week, day 1", loc="left", fontsize=9)
     ax.set_ylim(0, 1.35)
+    handles = [
+        Patch(facecolor=COL["S"], alpha=0.35, edgecolor="none", label="Sharp"),
+        Patch(facecolor=COL["P"], alpha=0.35, edgecolor="none", label="Peak"),
+        Patch(facecolor=COL["F"], alpha=0.35, edgecolor="none", label="Flat"),
+        Patch(facecolor=COL["V"], alpha=0.35, edgecolor="none", label="Valley"),
+        Patch(facecolor=COL["D"], alpha=0.35, edgecolor="none", label="Deep"),
+    ]
+    ax.legend(handles=handles, loc="upper left", ncol=2, fontsize=7, frameon=False)
 
     ax = axes[1]
     jan = buy[0:24]

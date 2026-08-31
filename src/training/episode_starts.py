@@ -81,19 +81,25 @@ def training_start_seconds(
     return float(annual_episode_start_seconds(fmu_cfg, episode_steps, episode_index))
 
 
-def eval_start_seconds(fmu_cfg: dict[str, Any] | None = None) -> float:
-    """Resolve evaluation start. Must not silently fall back when protocol sets training weeks.
+def eval_start_seconds(fmu_cfg: dict[str, Any] | None = None, *, formal: bool | None = None) -> float:
+    """Resolve evaluation start.
 
-    Priority:
-    1. OPTIMAL_DEMO_EVAL_EPISODE_START
-    2. OPTIMAL_DEMO_FORCE_EPISODE_START
-    3. first of OPTIMAL_DEMO_TRAIN_WEEK_STARTS
-    4. fmu start_time_seconds (default 0)
+    Formal paper protocol requires an explicit eval/test week. Silent fallback
+    onto a training week is a configuration error.
     """
-    for key in ("OPTIMAL_DEMO_EVAL_EPISODE_START", "OPTIMAL_DEMO_FORCE_EPISODE_START"):
-        raw = os.environ.get(key, "").strip()
-        if raw:
-            return float(raw)
+    if formal is None:
+        formal = os.environ.get("OPTIMAL_DEMO_FORMAL_SPLIT", "").strip() in {"1", "true", "True", "yes"}
+    raw_eval = os.environ.get("OPTIMAL_DEMO_EVAL_EPISODE_START", "").strip()
+    if raw_eval:
+        return float(raw_eval)
+    if formal:
+        raise ValueError(
+            "formal split: set OPTIMAL_DEMO_EVAL_EPISODE_START to a TEST week; "
+            "do not fall back to a training week"
+        )
+    force = os.environ.get("OPTIMAL_DEMO_FORCE_EPISODE_START", "").strip()
+    if force:
+        return float(force)
     pool = os.environ.get("OPTIMAL_DEMO_TRAIN_WEEK_STARTS", "").strip()
     if pool:
         starts = _parse_float_list(pool)

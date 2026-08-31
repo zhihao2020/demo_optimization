@@ -1,12 +1,12 @@
 # Paper outline and figure checklist
 
-文档更新：2026-08-31 08:30 (+08:00)
+文档更新：2026-08-31 10:16 (+08:00)
 
-**Working title:** *Feasible-Support Hybrid TD3 for Multi-Energy Scheduling with Nonconvex Compressed Air Energy Storage Actions*
+**Working title:** *Physics-Constrained Hybrid TD3 for Forecast-Aware Economic Scheduling of Multi-Energy Systems*
 
-**短标题:** *Feasible-support hybrid TD3 for nonconvex CAES actions*
+**短标题:** *Physics-constrained hybrid TD3 for multi-energy scheduling*
 
-**主方法:** **PC-HybridTD3**（物理约束参数化混合 TD3：Actor 在 \(\mathcal A_f(s)\) 上解码 mode+magnitude；Critic 看 \((e_m,z)\)；经济 Bellman 只用 FMU 真转移）。投影连续 TD3 与静态带宽 hybrid TD3 为仅有的两组消融。FS-HSAC 不再作为论文身份。
+**主方法:** **PC-HybridTD3**（Physics-Constrained Hybrid TD3：预测感知状态 → 异构 Actor → 联合 \(\mathcal A_f(s)\) → GiveSafe → FMU；经济 Bellman 只用真转移）。研究对象是多能源安全经济协同调度。投影连续 TD3 与分量支撑 hybrid TD3 为仅有的两组消融。FS-HSAC 不再作为论文身份。
 
 **体裁:** Applied Energy 能源调度 + DRL（对标 OCTD3 / GHTD3）。
 
@@ -18,12 +18,14 @@
 
 | 项 | 现状 |
 |----|------|
-| 代码 `src/training/hybrid_td3/` | **P0 已落地**：动态 \(\mathcal A_f(s)\) 解码、6-D critic、target \(\arg\max m'\)+只噪 \(z\)、physical-only replay |
+| 代码 `src/training/hybrid_td3/` | **P0 已落地**：动态 \(\mathcal A_f(s)\) 解码、**3-D critic** \(Q(s,u_T,u_B,u_C)\)、target \(\arg\max m'\)+只噪 \(z\)、physical-only replay |
+| Stage C 过门 | `compute_stage_c_gates`：NaN/Inf、FMU hard、held-out NoSafeAction、缺供、成本优于 random。CAES 使用不是过门 |
+| 队列 | `logs/pc_hybrid_queue.py`：A→B→C；`stage_c_passed` 前 SKIP Stage D |
 | 训练入口 | `scripts/train_seasonal.py --method td3 --season all`；36/8/8 |
-| `Paper/main.tex` | 非实验正文已齐：联合 \(\mathcal A_f=\mathcal A_{\mathrm{dev}}\cap\mathcal A_{\mathrm{grid}}\)、解析 decoder 窗、无最短运行锁、graphical abstract、利益声明。§5 表图仍空 |
+| `Paper/main.tex` | 检查.txt Fig.1–6 已对齐：拓扑、算法、训练曲线占位、典型周占位、SoC+电价占位、系统 KPI 占位。结果顺序：经济 → 消纳/可靠性 → 安全 → 机制。主表以 \(CC=\sum C_t\) 为首。已编译 `Paper/main.pdf`。§5 数字仍空 |
 | 购电 | 2026 月度 110 kV 两部制；`tab:tou-monthly` + `tab:tou-windows`；09–12 顺延 8 月（S） |
 | PAMDP 形式化 | `docs/pamdp_formalization.md` |
-| 主数字源 | Stage D TEST weeks（尚未跑） |
+| 主数字源 | Stage D TEST weeks（C 过门前不启动） |
 | 消融对照 | 投影 TD3；静态支撑 hybrid TD3；rule / rolling MILP |
 
 **写作门槛:** Stage D 前 **§5 表图占位不填假数**；不声称 RL 现金优于 MILP。FS-HSAC 不再是论文身份。
@@ -34,9 +36,9 @@
 
 ## 0.5 三条贡献（不超过三条）
 
-1. **非凸 CAES 混合动作** — \((m,z)\) 保拓扑，避免盒投影死区。
-2. **联合 \(\mathcal A_f(s)=(\mathcal A_T\times\mathcal A_B\times\mathcal A_C)\cap\mathcal A_{\mathrm{grid}}\)** — 解析 decoder，不是分量盒再 GiveSafe 蒙。
-3. **FMU 闭环验证** — 物理-only Bellman；36/8/8 TEST；rule / rolling MILP（同一 FMU）/ projection TD3；noisy + 8760 h 部署。碳价/磨损/启停/预测/GiveSafe/Gumbel/TD3 不当贡献。
+1. **异构设备混合动作** — 火电/电池连续；CAES 模式–幅值。避免连续投影死区。
+2. **系统级联合 \(\mathcal A_f(s)\)** — 设备界 + 联络线耦合写入 actor；GiveSafe 最后验证。
+3. **预测感知 FMU 闭环** — 24 h 前瞻；物理-only Bellman；36/8/8 TEST；rule / rolling MILP / projection TD3；8760 h 部署。
 
 **勿写**
 

@@ -183,12 +183,57 @@ def evaluate_policy(
                     except Exception:
                         spec = None
                 failure["feasible_action_spec"] = spec
+                rejected = getattr(exc, "rejected", None)
+                first_rejected = None
+                if isinstance(rejected, (list, tuple)) and rejected:
+                    first_rejected = rejected[0]
+                elif isinstance(rejected, dict):
+                    first_rejected = rejected
+                failure["raw_policy_action"] = _jsonify(first_rejected)
+                decoded = None
+                if isinstance(first_rejected, dict):
+                    decoded = {
+                        "u_tp": first_rejected.get("u_tp"),
+                        "u_battery": first_rejected.get("u_battery"),
+                        "u_caes": first_rejected.get("u_caes"),
+                        "caes_mode": first_rejected.get("caes_mode", first_rejected.get("mode")),
+                        "caes_magnitude": first_rejected.get(
+                            "caes_magnitude", first_rejected.get("mag")
+                        ),
+                    }
+                failure["decoded_physical_action"] = decoded
+                failure["caes_mode"] = None if decoded is None else decoded.get("caes_mode")
+                failure["caes_magnitude"] = None if decoded is None else decoded.get("caes_magnitude")
+                failure["time"] = rows[-1].get("time") if rows else info0.get("time")
+                failure["state"] = _jsonify(obs)
+                if isinstance(spec, dict):
+                    failure["device_bounds"] = {
+                        "u_tp": (spec.get("u_tp_dynamic_low"), spec.get("u_tp_dynamic_high")),
+                        "u_battery": (
+                            spec.get("u_battery_dynamic_low"),
+                            spec.get("u_battery_dynamic_high"),
+                        ),
+                    }
+                    failure["joint_caes_support"] = {
+                        "discharge": spec.get("joint_caes_discharge"),
+                        "charge": spec.get("joint_caes_charge"),
+                        "mode_mask": spec.get("joint_mode_mask"),
+                    }
+                    failure["conditional_thermal_support"] = failure["device_bounds"]["u_tp"]
+                    failure["conditional_battery_support"] = failure["device_bounds"]["u_battery"]
+                    failure["grid_limits"] = {
+                        "g_min_W": spec.get("grid_low_w") or spec.get("grid_g_min_W"),
+                        "g_max_W": spec.get("grid_high_w") or spec.get("grid_g_max_W"),
+                        "residual_W": spec.get("grid_residual_w") or spec.get("grid_residual_W"),
+                    }
                 pred_grid = None
                 first = getattr(exc, "first_check", None)
                 if first is not None:
+                    failure["oracle_rejection_stage"] = getattr(first, "rejection_stage", None)
                     failure["rejection_stage"] = getattr(first, "rejection_stage", None)
                     failure["violation_type"] = getattr(first, "violation_type", None)
                     failure["oracle_rejection_reason"] = getattr(first, "oracle_rejection_reason", None)
+                    failure["shadow_rejection_reason"] = getattr(first, "shadow_failure_reason", None)
                     failure["shadow_failure_reason"] = getattr(first, "shadow_failure_reason", None)
                     pred = getattr(first, "predicted_next_state", None) or {}
                     pred_grid = pred.get("p_grid")
@@ -403,11 +448,28 @@ def evaluate_policy(
     e_terminal = abs(_soc(last, "battery_soc") - _soc(init_soc, "battery_soc")) + abs(
         _soc(last, "caes_gas_soc") - _soc(init_soc, "caes_gas_soc")
     )
+    fmu_fail = sum(1 for r in rows if r.get("fmu_status") == "failure")
+    eval_status = "ok"
+    eval_failed = False
+    failure = None
+    if fmu_fail > 0:
+        eval_status = "failed_fmu"
+        eval_failed = True
+        fail_row = next((r for r in rows if r.get("fmu_status") == "failure"), {})
+        failure = {
+            "eval_status": "failed_fmu",
+            "failure_type": "FMUFailure",
+            "failed_step": fail_row.get("step"),
+            "completed_steps": len(rows),
+            "fmu_error": fail_row.get("fmu_error"),
+            "time": fail_row.get("time"),
+        }
     return {
         "steps": len(rows),
         "valid_steps": sum(1 for r in rows if r.get("transition_valid")),
-        "eval_status": "ok",
-        "eval_failed": False,
+        "eval_status": eval_status,
+        "eval_failed": eval_failed,
+        "failure": failure,
         "soft_shell": bool(soft_shell),
         "soft_shell_count": int(soft_shell_count),
         "soft_shell_hours": int(soft_shell_count),
@@ -422,7 +484,7 @@ def evaluate_policy(
         "terminal_soc": {name: float(last.get(name, float("nan"))) for name in ("battery_soc", "caes_gas_soc", "caes_hot_soc", "caes_cold_soc")},
         "initial_soc": info0.get("initial_soc"),
         "e_terminal": float(e_terminal),
-        "fmu_failure_count": sum(1 for r in rows if r.get("fmu_status") == "failure"),
+        "fmu_failure_count": fmu_fail,
         "forbidden_action_count": forbidden,
         "invalid_transition_count": invalid_transition,
         "action_violation_count": forbidden,

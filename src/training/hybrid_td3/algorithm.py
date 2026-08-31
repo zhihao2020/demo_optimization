@@ -189,7 +189,6 @@ class HybridTD3:
                     )
                 else:
                     n_caes = u_from_mode_onehot_torch(next_act["mode_onehot"], mag)
-                n_onehot, n_mag = next_act["mode_onehot"], mag
             else:
                 n_caes = project_u_caes_torch(
                     torch.clamp(
@@ -201,7 +200,6 @@ class HybridTD3:
                         1.0,
                     )
                 )
-                n_onehot, n_mag = None, None
             n_caes = apply_mode_mask_to_u_torch(n_caes, next_mask)
             from actions.joint_support import decode_joint_torch
 
@@ -220,21 +218,11 @@ class HybridTD3:
                 _t("p_cap_battery_W", 1.0e8),
                 _t("p_cap_caes_W", 1.5e8),
             )
-            q1_t, q2_t = self.critic_target(
-                next_obs, n_tp, n_bat, n_caes, mode_onehot=n_onehot, mag=n_mag
-            )
+            q1_t, q2_t = self.critic_target(next_obs, n_tp, n_bat, n_caes)
             q_t = torch.min(q1_t, q2_t).clamp(-self.q_clip, self.q_clip)
             target_q = reward + (1.0 - done) * self.gamma * q_t
 
-        stored_onehot = None
-        stored_mag = None
-        if "caes_mode" in batch:
-            stored_onehot = torch.nn.functional.one_hot(
-                torch.as_tensor(batch["caes_mode"], device=dev, dtype=torch.long), num_classes=3
-            ).float()
-        if "caes_magnitude" in batch:
-            stored_mag = _t("caes_magnitude")
-        q1, q2 = self.critic(obs, u_tp, u_bat, u_caes, mode_onehot=stored_onehot, mag=stored_mag)
+        q1, q2 = self.critic(obs, u_tp, u_bat, u_caes)
         critic_loss = F.mse_loss(q1, target_q) + F.mse_loss(q2, target_q)
         self.critic_opt.zero_grad()
         critic_loss.backward()
@@ -268,8 +256,6 @@ class HybridTD3:
                 cur["u_tp"],
                 cur["u_battery"],
                 cur["u_caes"],
-                mode_onehot=cur.get("mode_onehot"),
-                mag=cur.get("mag"),
             ).mean()
             self.actor_opt.zero_grad()
             actor_loss.backward()

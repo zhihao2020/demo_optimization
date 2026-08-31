@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
-import torch.nn.functional as F
 
 from actions.caes_u import (
     CHARGE_HI,
@@ -219,17 +216,19 @@ class HybridGiveSafeReplayBuffer:
         batch: list[Transition] = []
         if len(self.physical) > 0 and n_phys > 0:
             batch.extend(self.physical.sample(n_phys))
-        elif n_phys > 0 and len(self.givesafe) > 0:
+        elif n_phys > 0 and self.givesafe_fraction > 0 and len(self.givesafe) > 0:
             batch.extend(self.givesafe.sample(n_phys))
-        if len(self.givesafe) > 0 and n_gs > 0:
+        if self.givesafe_fraction > 0 and len(self.givesafe) > 0 and n_gs > 0:
             batch.extend(self.givesafe.sample(n_gs))
         elif n_gs > 0 and len(self.physical) > 0:
             batch.extend(self.physical.sample(n_gs))
         if not batch:
             raise RuntimeError("replay buffer 为空")
-        # 若因一侧为空导致数量不足，用已有侧补齐
         while len(batch) < batch_size:
-            src = self.physical if len(self.physical) >= len(self.givesafe) else self.givesafe
+            if self.givesafe_fraction <= 0.0:
+                src = self.physical
+            else:
+                src = self.physical if len(self.physical) >= len(self.givesafe) else self.givesafe
             if len(src) == 0:
                 break
             batch.extend(src.sample(1))

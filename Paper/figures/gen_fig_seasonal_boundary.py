@@ -56,31 +56,22 @@ def main() -> None:
     buy = _col(ROOT / "data" / "price_tou.csv")  # buy_yuan_per_kwh is first non-time column
 
     t = np.arange(168)
-    fig, axes = plt.subplots(3, 3, figsize=(7.2, 5.5), sharex="col", sharey="row")
-    axp_last = None
+    fig, axes = plt.subplots(4, 3, figsize=(7.2, 6.4), sharex="col", sharey="row")
     for j, (name, s0) in enumerate(SEASONS):
         sl = slice(s0, s0 + 168)
         axes[0, j].set_title(name)
-        axes[0, j].plot(t, wind[sl], color=COL["wind"], lw=0.95)
-        axes[1, j].plot(t, irr[sl], color=COL["irr"], lw=0.95)
-        axes[2, j].plot(t, load_mw[sl], color=COL["load"], lw=0.95)
-        axp = axes[2, j].twinx()
-        axp.plot(t, buy[sl], color=COL["tou"], lw=0.85, alpha=0.85)
-        axp.spines["top"].set_visible(False)
-        axp.set_ylim(0.0, 1.35)
-        if j < 2:
-            axp.set_yticklabels([])
-        else:
-            axp_last = axp
-        axes[2, j].set_xlabel("Hour in held-out week")
-        axes[2, j].set_xlim(0, 167)
+        axes[0, j].plot(t, wind[sl], color=COL["wind"], lw=0.9)
+        axes[1, j].plot(t, irr[sl], color=COL["irr"], lw=0.9)
+        axes[2, j].plot(t, load_mw[sl], color=COL["load"], lw=0.9)
+        axes[3, j].plot(t, buy[sl], color=COL["tou"], lw=0.9)
+        axes[3, j].set_xlabel("Hour in held-out week")
+        axes[3, j].set_xlim(0, 167)
+        axes[3, j].set_xticks([0, 48, 96, 144])
     axes[0, 0].set_ylabel(r"Wind (m/s)")
     axes[1, 0].set_ylabel(r"Irradiance (W/m$^2$)")
     axes[2, 0].set_ylabel("Load (MW)")
-    if axp_last is not None:
-        axp_last.set_ylabel("TOU buy (CNY/kWh)")
-
-    fig.tight_layout(h_pad=0.6, w_pad=0.4)
+    axes[3, 0].set_ylabel("TOU buy (CNY/kWh)")
+    fig.tight_layout(h_pad=0.45, w_pad=0.35)
     fig.savefig(OUT / "fig_seasonal_boundary.pdf")
     fig.savefig(OUT / "fig_seasonal_boundary.png", dpi=300)
     print("wrote", OUT / "fig_seasonal_boundary.pdf")

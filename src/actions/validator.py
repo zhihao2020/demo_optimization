@@ -97,13 +97,13 @@ def CHARGE_OK(u: float) -> bool:
 
 
 def physical_from_dict(action: dict[str, Any]) -> PhysicalFmuAction:
-    """从环境字典构造物理动作。只认 u_tp / u_battery / u_caes。"""
+    """从环境字典构造物理动作。执行量只认 u_tp / u_battery / u_caes。
+
+    Actor 诊断字段（caes_mode_onehot / caes_magnitude / mag）允许并存；
+    若缺少 u_caes 则拒绝走旧 hybrid 字段。
+    """
     if "u_caes" not in action:
         raise KeyError("动作必须含 u_caes（物理路径；不再接受 caes_mode/caes_magnitude）")
-    if "caes_mode" in action or "caes_magnitude" in action:
-        raise StaticActionViolation(
-            "已废弃 hybrid 字段 caes_mode/caes_magnitude；请直接传 u_caes"
-        )
     return PhysicalFmuAction(
         u_tp=float(np_as_scalar(action["u_tp"])),
         u_battery=float(np_as_scalar(action["u_battery"])),

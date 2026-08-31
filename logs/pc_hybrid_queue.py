@@ -30,7 +30,7 @@ JOBS = [
         "name": "stageC_s0",
         "args": ["--method", "td3", "--season", "all", "--stage", "C", "--seed", "0"],
         "run_dir": str(ROOT / "runs" / "seasonal_tou2026" / "all" / "pc_hybrid_td3_stageC_s0"),
-        "gate": None,
+        "gate": "stage_c",
     },
     {
         "name": "stageD_s0",
@@ -109,6 +109,11 @@ def job_ok(job: dict, code: int, result: dict) -> bool:
         if result.get("stage_b_interaction") == "failed":
             return False
         return status in {"completed", "partial_pass", "blocked_formal_gates_post"} or bool(result)
+    if job.get("gate") == "stage_c":
+        # Training crash stops the queue. Failed formal gates skip Stage D, do not abort baselines.
+        if code != 0:
+            return False
+        return status in {"completed", "partial_pass", "blocked_formal_gates_post"} or bool(result)
     if job.get("gate") == "stage_d":
         return code == 0
     return code == 0
@@ -130,15 +135,21 @@ def run_job(job: dict) -> int:
 def main() -> int:
     LOG.parent.mkdir(parents=True, exist_ok=True)
     log("QUEUE start n=%d" % len(JOBS))
-    state = {"done": [], "failed": None}
+    state = {"done": [], "failed": None, "stage_c_ok": False}
     for job in JOBS:
-        if job.get("gate") == "stage_d" and not state.get("greedy_ok"):
-            log("SKIP " + job["name"] + " (Stage D blocked until greedy deployability)")
+        if job.get("gate") == "stage_d" and not state.get("stage_c_ok"):
+            log("SKIP " + job["name"] + " (Stage D blocked until Stage C formal gates)")
             continue
         code = run_job(job)
         result = read_result(job["run_dir"])
         status = result.get("status")
-        log("END %s code=%s status=%s greedy=%s" % (job["name"], code, status, result.get("greedy_eval")))
+        log(
+            "END %s code=%s status=%s greedy=%s stage_c_passed=%s"
+            % (job["name"], code, status, result.get("greedy_eval"), result.get("stage_c_passed"))
+        )
+        if job.get("gate") == "stage_c":
+            state["stage_c_ok"] = bool(result.get("stage_c_passed"))
+            log("STAGE_C_GATES passed=%s %s" % (state["stage_c_ok"], result.get("stage_c_gates")))
         if result.get("greedy_eval") == "passed":
             state["greedy_ok"] = True
         if not job_ok(job, code, result):

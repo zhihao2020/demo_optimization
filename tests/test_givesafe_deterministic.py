@@ -72,3 +72,6 @@ def test_evaluate_policy_records_no_safe_action(tmp_path):
     assert out["failure"]["failure_type"] == "NoSafeActionFound"
     assert out["steps"] == 0
     assert "feasible_action_spec" in out["failure"]
+    assert "raw_policy_action" in out["failure"]
+    assert "decoded_physical_action" in out["failure"]
+    assert "state" in out["failure"]

@@ -18,11 +18,17 @@ X.~Yang, Y.~Tao, L.~Li, Decentralized coordinated planning model for integrated
   two-stage multi-layer robust optimization and {Nash} bargaining approach,
   EnergySeasonal uncertainty and coordinated IES planning (2024).
 
-\bibitem{icap2025chinaets}
-{International Carbon Action Partnership}, {China National ETS} factsheet,
-  \url{https://icapcarbonaction.com/en/ets/china-national-ets},
-  secondary-market average allowance price (2025) about 70.78 CNY/tCO2e;
-  sensitivity / legacy OP only; accessed 2026 (2025).
+\bibitem{emmanuel2020market}
+M.~I. Emmanuel, P.~Denholm, A market feedback framework for improved estimates
+  of the arbitrage value of energy storage using price-taker models, Applied
+  EnergyPrice-taker storage valuation with market feedback (2022).
+
+\bibitem{pei2024pricetaker}
+Z.~Pei, J.~Fang, Z.~Zhang, J.~Chen, S.~Hong, Z.~Peng, Optimal price-taker
+  bidding strategy of distributed energy storage systems in the electricity
+  spot market, Frontiers in Energy Research 12 (2024) 1463286.
+\newblock \href {https://doi.org/10.3389/fenrg.2024.1463286}
+  {\path{doi:10.3389/fenrg.2024.1463286}}.
 
 \bibitem{ndrc2021tou}
 {National Development and Reform Commission of China}, Notice on further
@@ -35,17 +41,11 @@ X.~Yang, Y.~Tao, L.~Li, Decentralized coordinated planning model for integrated
   Gai Price [2023] No. 914; TOU mechanism and band ratios, not absolute
   delivered tariffs (2023).
 
-\bibitem{emmanuel2020market}
-M.~I. Emmanuel, P.~Denholm, A market feedback framework for improved estimates
-  of the arbitrage value of energy storage using price-taker models, Applied
-  EnergyPrice-taker storage valuation with market feedback (2022).
-
-\bibitem{pei2024pricetaker}
-Z.~Pei, J.~Fang, Z.~Zhang, J.~Chen, S.~Hong, Z.~Peng, Optimal price-taker
-  bidding strategy of distributed energy storage systems in the electricity
-  spot market, Frontiers in Energy Research 12 (2024) 1463286.
-\newblock \href {https://doi.org/10.3389/fenrg.2024.1463286}
-  {\path{doi:10.3389/fenrg.2024.1463286}}.
+\bibitem{icap2025chinaets}
+{International Carbon Action Partnership}, {China National ETS} factsheet,
+  \url{https://icapcarbonaction.com/en/ets/china-national-ets},
+  secondary-market average allowance price (2025) about 70.78 CNY/tCO2e;
+  sensitivity / legacy OP only; accessed 2026 (2025).
 
 \bibitem{cui2025ghtd3}
 F.~Cui, D.~An, H.~Xi, Z.~Ren, Collaborative scheduling optimization of
@@ -78,13 +78,12 @@ X.~Wu, B.~Liu, S.~Yuan, B.~Cao, Z.~Zhang, Y.~Hu, Pricing strategy for regional
 \newblock \href {https://doi.org/10.17775/CSEEJPES.2021.08300}
   {\path{doi:10.17775/CSEEJPES.2021.08300}}.
 
-\bibitem{fan2019hybrid}
-Z.~Fan, R.~Su, W.~Zhang, Y.~Yu, Hybrid actor-critic reinforcement learning in
-  parameterized action space, in: Proceedings of the Twenty-Eighth
-  International Joint Conference on Artificial Intelligence, 2019, pp.
-  2279--2285.
-\newblock \href {https://doi.org/10.24963/ijcai.2019/316}
-  {\path{doi:10.24963/ijcai.2019/316}}.
+\bibitem{sun2024constrained}
+Q.~Sun, X.~Wang, Z.~Liu, W.~Lin, J.~He, W.~Pei, Dynamic energy dispatch
+  strategy for integrated energy system based on constrained reinforcement
+  learning, CSEE Journal of Power and Energy Systems (2022).
+\newblock \href {https://doi.org/10.17775/CSEEJPES.2021.08770}
+  {\path{doi:10.17775/CSEEJPES.2021.08770}}.
 
 \bibitem{cui2024caesbess}
 F.~Cui, D.~An, H.~Xi, Integrated energy hub dispatch with a multi-mode
@@ -111,12 +110,13 @@ T.~Ochoa, E.~Gil, A.~Angulo, C.~Valle, Multi-agent deep reinforcement learning
 J.~Garc{\'i}a, F.~Fern{\'a}ndez, A comprehensive survey on safe reinforcement
   learning, Journal of Machine Learning Research 16 (2015) 1437--1480.
 
-\bibitem{sun2024constrained}
-Q.~Sun, X.~Wang, Z.~Liu, W.~Lin, J.~He, W.~Pei, Dynamic energy dispatch
-  strategy for integrated energy system based on constrained reinforcement
-  learning, CSEE Journal of Power and Energy Systems (2022).
-\newblock \href {https://doi.org/10.17775/CSEEJPES.2021.08770}
-  {\path{doi:10.17775/CSEEJPES.2021.08770}}.
+\bibitem{fan2019hybrid}
+Z.~Fan, R.~Su, W.~Zhang, Y.~Yu, Hybrid actor-critic reinforcement learning in
+  parameterized action space, in: Proceedings of the Twenty-Eighth
+  International Joint Conference on Artificial Intelligence, 2019, pp.
+  2279--2285.
+\newblock \href {https://doi.org/10.24963/ijcai.2019/316}
+  {\path{doi:10.24963/ijcai.2019/316}}.
 
 \bibitem{shandong2026tou}
 {State Grid Shandong Electric Power Company}, Announcement of industrial and

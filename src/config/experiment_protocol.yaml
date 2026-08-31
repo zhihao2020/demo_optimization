@@ -1,0 +1,14 @@
+# Frozen weekly split for the paper protocol. 52 complete weeks, 9/2/2 per quarter.
+weekly_split:
+  train: 36
+  validation: 8
+  test: 8
+  stratification: quarter
+  seed: 0
+  eval_week: first_test_week
+
+rules:
+  train_reads_train_weeks_only: true
+  checkpoint_on_validation: true
+  test_never_for_hyperparameters: true
+  no_train_week_eval_fallback: true

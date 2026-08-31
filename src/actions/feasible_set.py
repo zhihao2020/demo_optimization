@@ -38,11 +38,16 @@ class DynamicFeasibleActionSet:
         """
         dis = self.u_caes_discharge
         chg = self.u_caes_charge
+        meta = self.metadata or {}
         return {
             "u_tp_dynamic_low": self.u_tp_low,
             "u_tp_dynamic_high": self.u_tp_high,
             "u_battery_dynamic_low": self.u_battery_low,
             "u_battery_dynamic_high": self.u_battery_high,
+            "base_u_tp_low": self.u_tp_low,
+            "base_u_tp_high": self.u_tp_high,
+            "base_u_battery_low": self.u_battery_low,
+            "base_u_battery_high": self.u_battery_high,
             "caes_discharge_allowed": self.mode_mask.discharge,
             "caes_idle_allowed": self.mode_mask.idle,
             "caes_charge_allowed": self.mode_mask.charge,
@@ -50,6 +55,12 @@ class DynamicFeasibleActionSet:
             "u_caes_discharge_high": None if dis is None else dis[1],
             "u_caes_charge_low": None if chg is None else chg[0],
             "u_caes_charge_high": None if chg is None else chg[1],
+            "joint_caes_discharge": dis,
+            "joint_caes_charge": chg,
+            "joint_mode_mask": self.mode_mask.as_bool_array(),
+            "grid_low_w": meta.get("grid_g_min_W"),
+            "grid_high_w": meta.get("grid_g_max_W"),
+            "grid_residual_w": meta.get("grid_residual_W"),
             "grid_violation_predicted": self.grid_violation_predicted,
-            **(self.metadata or {}),
+            **meta,
         }

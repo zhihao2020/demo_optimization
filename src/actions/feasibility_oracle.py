@@ -17,7 +17,13 @@ from .feasible_set import DynamicFeasibleActionSet
 from .mode_mask import ModeMask
 from .types import CaesMode, PhysicalFmuAction
 from .validator import physical_from_dict
-from .joint_support import coupling_from_oracle, tighten_caes_modes
+from .joint_support import (
+    battery_window,
+    coupling_from_feasible,
+    coupling_from_oracle,
+    thermal_window,
+    tighten_caes_modes,
+)
 
 # FMU 输出变量
 OBS_NAMES = (
@@ -222,6 +228,66 @@ class FeasibilityOracle:
             grid_violation_predicted=False,
             metadata=meta,
         )
+
+    def joint_caes_support(
+        self,
+        outputs: Mapping[str, float],
+        feasible: DynamicFeasibleActionSet | None = None,
+        previous_thermal_w: float | None = None,
+    ) -> dict[str, Any]:
+        """System-level CAES intervals after grid coupling (not device boxes)."""
+        if feasible is None:
+            feasible = self.compute(outputs, previous_thermal_w=previous_thermal_w)
+        ctx = coupling_from_feasible(feasible) or coupling_from_oracle(self, outputs)
+        return {
+            "joint_caes_discharge": feasible.u_caes_discharge,
+            "joint_caes_charge": feasible.u_caes_charge,
+            "joint_idle_feasible": bool(feasible.mode_mask.idle),
+            "joint_mode_mask": feasible.mode_mask.as_bool_array(),
+            "grid_low_w": ctx.g_min,
+            "grid_high_w": ctx.g_max,
+            "grid_residual_w": ctx.residual,
+        }
+
+    def conditional_thermal_bounds(
+        self,
+        outputs: Mapping[str, float],
+        feasible: DynamicFeasibleActionSet,
+        u_caes: float,
+    ) -> tuple[float, float]:
+        """Thermal interval given a chosen CAES command so some battery action remains legal."""
+        ctx = coupling_from_feasible(feasible) or coupling_from_oracle(self, outputs)
+        win = thermal_window(
+            ctx,
+            float(u_caes),
+            float(feasible.u_tp_low),
+            float(feasible.u_tp_high),
+            float(feasible.u_battery_low),
+            float(feasible.u_battery_high),
+        )
+        if win is None:
+            return float(feasible.u_tp_low), float(feasible.u_tp_high)
+        return win
+
+    def conditional_battery_bounds(
+        self,
+        outputs: Mapping[str, float],
+        feasible: DynamicFeasibleActionSet,
+        u_caes: float,
+        u_tp: float,
+    ) -> tuple[float, float]:
+        """Battery interval given chosen thermal and CAES commands."""
+        ctx = coupling_from_feasible(feasible) or coupling_from_oracle(self, outputs)
+        win = battery_window(
+            ctx,
+            float(u_tp),
+            float(u_caes),
+            float(feasible.u_battery_low),
+            float(feasible.u_battery_high),
+        )
+        if win is None:
+            return float(feasible.u_battery_low), float(feasible.u_battery_high)
+        return win
 
     def is_feasible_set_empty(self, feasible: DynamicFeasibleActionSet) -> bool:
         """判断动态可行域是否为空（无合法动作）。

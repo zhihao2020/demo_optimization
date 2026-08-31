@@ -29,7 +29,7 @@ RL_METHODS = ("hmsd", "td3", "sac", "fs_hsac")
 ALL_METHODS = ("hmsd", "td3", "sac", "fs_hsac", "pso", "linprog", "milp", "rule")
 TD3_ABLATIONS = ("none", "projection", "static-support")
 FORECAST_MODES = ("perfect", "noisy")
-# Physical-step budgets from 重构.txt §§15. Stage A is support-only (no FMU train).
+# Physical-step budgets from 检查.txt Stage A–D. Stage A is support-only (no FMU train).
 STAGE_STEPS = {"A": 0, "B": 5000, "C": 30000, "D": 400000}
 
 

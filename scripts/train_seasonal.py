@@ -194,9 +194,9 @@ def run_stage_a(run_dir: Path, seed: int) -> dict:
     from training.hybrid_td3.stage_a import run_stage_a_support
 
     out = run_stage_a_support(n=10_000, seed=seed)
-    (run_dir / "train_result.json").write_text(
-        json.dumps(out, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
-    )
+    payload = json.dumps(out, indent=2, ensure_ascii=False, default=str)
+    (run_dir / "train_result.json").write_text(payload, encoding="utf-8")
+    (run_dir / "summary.json").write_text(payload, encoding="utf-8")
     return out
 
 
@@ -224,7 +224,11 @@ def main() -> None:
         train_weeks = parse_weeks(args.train_weeks, meta["train"])
         val_weeks = parse_weeks(args.val_weeks, meta.get("val", meta["train"][-2:]))
         test_weeks = parse_weeks(args.test_weeks, meta.get("test", [meta["eval"]]))
+        if not test_weeks or not val_weeks:
+            raise SystemExit("formal split: val/test weeks must be configured; no train-week fallback")
         eval_week = int(args.eval_week) if args.eval_week is not None else int(test_weeks[0])
+        if eval_week in train_weeks:
+            raise SystemExit(f"formal split: eval week {eval_week} is a training week")
 
     train_starts = [week_start_seconds(w) for w in train_weeks]
     eval_start = week_start_seconds(eval_week)
@@ -303,8 +307,10 @@ def main() -> None:
         os.environ.pop("FS_HSAC_NO_FEAS", None)
     if args.single_week:
         os.environ["OPTIMAL_DEMO_FORCE_EPISODE_START"] = str(train_starts[0])
+        os.environ.pop("OPTIMAL_DEMO_FORMAL_SPLIT", None)
     else:
         os.environ.pop("OPTIMAL_DEMO_FORCE_EPISODE_START", None)
+        os.environ["OPTIMAL_DEMO_FORMAL_SPLIT"] = "1"
 
     if args.method == "hmsd":
         result = run_ghtd3_training(

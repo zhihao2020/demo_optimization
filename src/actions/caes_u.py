@@ -83,16 +83,6 @@ def project_u_caes_torch(u: torch.Tensor) -> torch.Tensor:
     return out
 
 
-def apply_mode_mask_to_u(u: float, *, discharge: bool, charge: bool, idle: bool = True) -> float:
-    """按 mode mask 禁止方向：禁止放则 u<0→0；禁止充则 u>0→0。"""
-    u = project_u_caes(u)
-    if u < 0.0 and not discharge:
-        return IDLE_U if idle else u
-    if u > 0.0 and not charge:
-        return IDLE_U if idle else u
-    return u
-
-
 def apply_mode_mask_to_u_torch(u: torch.Tensor, mode_mask: torch.Tensor) -> torch.Tensor:
     """mode_mask (B,3) bool: [discharge, idle, charge]。非法方向 → 0。"""
     u = project_u_caes_torch(u)
@@ -333,10 +323,15 @@ def physical_dict(
     u_tp: float,
     u_battery: float,
     u_caes: float,
+    *,
+    project: bool = False,
 ) -> dict[str, np.ndarray]:
-    """环境可 step 的三连续动作字典。"""
+    """环境可 step 的三连续动作字典。联合支撑路径默认不再做静态投影。"""
+    u = float(u_caes)
+    if project and not is_legal_u_caes(u):
+        u = project_u_caes(u)
     return {
         "u_tp": np.asarray([float(u_tp)], dtype=np.float32),
         "u_battery": np.asarray([float(u_battery)], dtype=np.float32),
-        "u_caes": np.asarray([float(project_u_caes(u_caes))], dtype=np.float32),
+        "u_caes": np.asarray([u], dtype=np.float32),
     }

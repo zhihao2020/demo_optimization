@@ -1,0 +1,45 @@
+# Formal PC-HybridTD3 paper stack. Do not mix with archived GHTD3 / FS-HSAC configs.
+algorithm:
+  name: pc_hybrid_td3
+  gamma: 0.99
+  tau: 0.005
+  policy_delay: 2
+  actor_lr: 3.0e-4
+  critic_lr: 3.0e-4
+  target_noise: 0.2
+  noise_clip: 0.5
+  q_clip: 200.0
+  hidden: 256
+
+action:
+  parameterized_caes: true
+  joint_feasible_support: true
+
+forecast:
+  enabled: true
+  horizon_hours: 24
+  mode: perfect
+
+replay:
+  physical_fraction: 1.0
+  givesafe_fraction: 0.0
+
+reward:
+  storage_use: false
+
+evaluation:
+  deterministic: true
+  deterministic_max_attempts: 1
+  fallback: false
+
+givesafe:
+  enabled: true
+  use_fallback: false
+  shadow_validation: false
+
+training:
+  warmup_steps: 1024
+  batch_size: 64
+  seeds: [0, 1, 2]
+  stage_c_steps: 30000
+  stage_d_steps: 400000

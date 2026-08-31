@@ -1,0 +1,2031 @@
+对。现在可以把方案冻结成一个**“会议论文版本 v1.0”**：研究对象是**多能源系统安全经济调度**，CAES 混合动作只是其中一个关键技术点，不再围绕“如何把 CAES 调起来”组织全文。
+
+我又对当前 `src.zip` 做了核对。现有代码已经有 24 h 风光负荷预测、24 h 电价前瞻、Hybrid-TD3、GiveSafe、Rolling MILP、全年 8760 h 评估等基础，所以这次不应大改框架，而是完成几处关键的算法语义修正，然后进入正式实验。
+
+---
+
+# 一、先冻结论文和算法主线
+
+论文方法统一命名建议为：
+
+> **PC-HybridTD3: Physics-Constrained Hybrid TD3 for Multi-Energy Scheduling**
+
+论文题目建议：
+
+> **Physics-Constrained Hybrid TD3 for Forecast-Aware Economic Scheduling of Multi-Energy Systems**
+
+研究问题定义为：
+
+$$
+\min_{\pi}
+\mathbb{E}
+\left[
+\sum_{t=0}^{T-1}
+C_t
+\right]
+$$
+
+其中：
+
+$$
+C_t=
+C_t^{grid}
++C_t^{thermal}
++C_t^{carbon}
++C_t^{curtailment}
++C_t^{unserved}
++C_t^{degradation}
++C_t^{startup}
+$$
+
+调度对象统一是：
+
+$$
+\boxed{
+\text{Thermal}+\text{BESS}+\text{CAES}+\text{Grid}
+}
+$$
+
+风电、PV 和负荷构成外生时变边界。
+
+论文核心不是：
+
+$$
+\text{CAES scheduling}
+$$
+
+而是：
+
+$$
+\boxed{
+\text{safe economic coordinated scheduling}
+}
+$$
+
+因此接下来明确**不做**：
+
+* 不重新回到双层 GHTD3；
+* 不增加高层 SOC goal；
+* 不增加 wear/carbon budget 高层目标；
+* 不做 SAC/TD3/GHTD3 来回切换；
+* 不再为“让 CAES 动起来”增加专门奖励；
+* 不把 CAES 使用率作为论文主要优化目标。
+
+Cui 的 GHTD3 用于 Related Work：它解决的是通过 SMDP/GAMDP 和储能 SOC subgoal 处理跨时间尺度规划，并结合 retrospective goal relabeling 稳定分层训练。 我们解决的是另一个问题：**异构设备动作结构 + 非线性 FMU 下联合动态可行域 + 安全经济闭环调度。**
+
+---
+
+# 二、算法最终结构
+
+最终方法固定为：
+
+```text
+当前 FMU 状态 x_t
+        +
+未来 24 h 风/光/负荷预测
+        +
+未来 24 h 购售电价
+        ↓
+PC-HybridTD3 Actor
+        ↓
+异构动作生成
+├── Thermal：连续
+├── BESS：连续
+└── CAES：mode + magnitude
+        ↓
+Joint Feasible-Support Layer
+        ↓
+系统级联合可行动作
+        ↓
+GiveSafe + Shadow FMU
+        ↓
+真实 FMU
+        ↓
+经济 reward
+        ↓
+Physical Replay
+        ↓
+TD3 update
+```
+
+这张图以后基本就是论文 Fig. 2。
+
+---
+
+# 三、状态空间：现有结构保留，不再扩张
+
+现在代码实际上已经基本正确。
+
+论文写：
+
+$$
+s_t=
+[
+x_t,\hat d_{t:t+23},\hat\lambda_{t:t+23},z_t
+]
+$$
+
+其中 \(x_t\) 是 FMU 实时状态，包括：
+
+$$
+\begin{aligned}
+x_t=\{&
+SOC_{bat},
+SOC_{gas},
+SOC_{hot},
+SOC_{cold},\\
+&p_{gas},
+T_{gas},
+T_{hot},
+T_{cold},\\
+&P_{thermal},
+P_{battery},
+P_{CAES},
+P_{grid},\\
+&P_{wind}^{ava},
+P_{wind}^{act},
+P_{PV}^{ava},
+P_{PV}^{act},\\
+&P_{load},
+P_{curt},
+P_{uns}
+\}
+\end{aligned}
+$$
+
+当前代码已有 19 个物理量。
+
+预测：
+
+$$
+\hat d_{t:t+23}
+=
+[
+\hat v,
+\hat G,
+\hat T_a,
+\hat P_{load}
+]
+$$
+
+当前 `env_config.yaml` 已经：
+
+```yaml
+forecast:
+  enabled: true
+  horizon_hours: 24
+```
+
+电价：
+
+$$
+\hat\lambda_{t:t+23}
+=
+[
+\lambda^{buy},
+\lambda^{sell}
+]_{t:t+23}
+$$
+
+`PriceProfile` 当前也已经实现 24 h ahead feature。
+
+### 要求
+
+**不要再加 Transformer、LSTM 到 RL 主算法。**
+
+预测只是调度信息源，不是论文创新主体。
+
+主实验：
+
+```text
+perfect forecast
+```
+
+鲁棒性实验：
+
+```text
+noisy forecast
+```
+
+即可。
+
+---
+
+# 四、动作空间：改成“异构设备统一调度”表述
+
+论文不要写：
+
+> 为 CAES 提出 hybrid action。
+
+改成：
+
+> 为具有不同控制特性的能源设备建立 heterogeneous hybrid action space。
+
+总体动作：
+
+$$
+a_t=
+[
+u_t^{thermal},
+u_t^{battery},
+m_t^{CAES},
+z_t^{CAES}
+]
+$$
+
+其中：
+
+### 火电
+
+$$
+u_t^{thermal}\in[L_T(s_t),H_T(s_t)]
+$$
+
+### 电池
+
+$$
+u_t^{battery}\in[L_B(s_t),H_B(s_t)]
+$$
+
+### CAES
+
+$$
+m_t^{CAES}\in
+\{D,I,C\}
+$$
+
+对应：
+
+$$
+\text{discharge / idle / charge}
+$$
+
+同时：
+
+$$
+z_t^{CAES}\in[0,1]
+$$
+
+控制该模式内部功率幅值。
+
+CAES 只是因为其物理动作空间：
+
+$$
+[-1,-0.33]\cup\{0\}\cup[0.86,1]
+$$
+
+无法合理用单一连续 Box 表示，所以使用 mode–magnitude parameterization。
+
+这个保留为**Contribution 1 中的关键实例**。
+
+---
+
+# 五、P0 修改 1：把当前“分设备可行域”升级成“系统联合动态可行域”
+
+这是下一版代码最重要的修改。
+
+目前 `FeasibilityOracle.compute()` 主要返回：
+
+$$
+[L_T,H_T]
+$$
+
+$$
+[L_B,H_B]
+$$
+
+CAES mode mask 和 CAES interval。
+
+但系统真实约束还有：
+
+$$
+P_{grid}^{min}
+\le P_{grid}
+\le P_{grid}^{max}
+$$
+
+而：
+
+$$
+P_{grid}
+=
+P_Tu_T
+-P_Bu_B
+-P_Cu_C
+-R_t
+$$
+
+定义：
+
+$$
+R_t=
+P_{wind,t}
++
+P_{PV,t}
++
+P_{load,t}
+$$
+
+按你当前代码的符号约定使用即可。
+
+所以真实可行域是：
+
+$$
+\boxed{
+\mathcal A_f(s_t)
+\neq
+\mathcal A_T(s_t)
+\times
+\mathcal A_B(s_t)
+\times
+\mathcal A_C(s_t)
+}
+$$
+
+而是：
+
+$$
+\mathcal A_f(s_t)=
+\left\{
+a_t:
+\begin{array}{l}
+a_T\in\mathcal A_T(s_t)\\
+a_B\in\mathcal A_B(s_t)\\
+a_C\in\mathcal A_C(s_t)\\
+P_{grid}^{min}
+\le P_{grid}(s_t,a_t)
+\le P_{grid}^{max}
+\end{array}
+\right\}
+$$
+
+---
+
+# 六、联合可行域具体怎么实现
+
+不要上在线 QP。
+
+采用**解析式 sequential feasible decoder**。
+
+这是会议版最合适的实现。
+
+## Step 1：设备级边界
+
+Oracle 先算现有：
+
+$$
+u_T\in[L_T,H_T]
+$$
+
+$$
+u_B\in[L_B,H_B]
+$$
+
+以及 CAES：
+
+$$
+u_C\in
+\mathcal I_D
+\cup\{0\}
+\cup\mathcal I_C
+$$
+
+---
+
+## Step 2：先收紧 CAES 的系统级区间
+
+给定 thermal/battery 仍可在各自全范围调整。
+
+当前某个 \(u_C\) 能存在合法 thermal/battery 解，需要：
+
+$$
+P_TL_T-P_BH_B-P_Cu_C-R_t
+\le G_{max}
+$$
+
+并且：
+
+$$
+P_TH_T-P_BL_B-P_Cu_C-R_t
+\ge G_{min}
+$$
+
+所以 CAES 的 grid-compatible interval：
+
+$$
+L_C^{grid}
+=
+\frac{
+P_TL_T-P_BH_B-R_t-G_{max}
+}{P_C}
+$$
+
+$$
+H_C^{grid}
+=
+\frac{
+P_TH_T-P_BL_B-R_t-G_{min}
+}{P_C}
+$$
+
+然后分别与：
+
+$$
+\mathcal I_D,\{0\},\mathcal I_C
+$$
+
+取交集。
+
+如果：
+
+$$
+\mathcal I_D\cap[L_C^{grid},H_C^{grid}]
+=\varnothing
+$$
+
+则：
+
+```text
+discharge mask = false
+```
+
+同理 charge。
+
+idle 只有：
+
+$$
+0\in[L_C^{grid},H_C^{grid}]
+$$
+
+才允许。
+
+---
+
+# 七、Step 3：CAES 选完以后收紧 thermal
+
+选出：
+
+$$
+u_C
+$$
+
+以后 thermal 必须保证至少还存在一个 battery action。
+
+得到：
+
+$$
+L_T^*
+=
+\max
+\left[
+L_T,
+\frac{
+G_{min}+P_BL_B+P_Cu_C+R_t
+}{P_T}
+\right]
+$$
+
+$$
+H_T^*
+=
+\min
+\left[
+H_T,
+\frac{
+G_{max}+P_BH_B+P_Cu_C+R_t
+}{P_T}
+\right]
+$$
+
+然后 actor：
+
+$$
+z_T\rightarrow[L_T^*,H_T^*]
+$$
+
+---
+
+# 八、Step 4：thermal 选完以后收紧 battery
+
+定义：
+
+$$
+A=
+P_Tu_T-P_Cu_C-R_t
+$$
+
+则满足 grid constraint 所允许的 battery 区间：
+
+$$
+L_B^*
+=
+\max
+\left[
+L_B,
+\frac{A-G_{max}}{P_B}
+\right]
+$$
+
+$$
+H_B^*
+=
+\min
+\left[
+H_B,
+\frac{A-G_{min}}{P_B}
+\right]
+$$
+
+actor：
+
+$$
+z_B\rightarrow[L_B^*,H_B^*]
+$$
+
+因此最终天然得到：
+
+$$
+\boxed{
+P_{grid}^{min}
+\le P_{grid}
+\le P_{grid}^{max}
+}
+$$
+
+---
+
+# 九、最终 Actor 的动作生成顺序
+
+变成：
+
+```text
+state
+ ↓
+shared encoder
+ ↓
+CAES mode logits + magnitude
+ ↓
+系统联合 CAES feasible mask / interval
+ ↓
+u_caes
+
+ ↓
+thermal head
+ ↓
+conditional thermal interval
+ ↓
+u_tp
+
+ ↓
+battery head
+ ↓
+conditional battery interval
+ ↓
+u_battery
+```
+
+为什么是这个顺序？
+
+因为 CAES 是动作结构最特殊的设备，先确定模式；火电受爬坡约束且响应较慢；BESS 响应最快，所以最后承担剩余联合可行域调整。
+
+注意：
+
+> 这不是 hierarchical RL。
+
+仍然是一张单层 actor 网络，只是**动作解码采用条件可行域参数化**。
+
+---
+
+# 十、具体代码文件修改
+
+## 1. `actions/feasibility_oracle.py`
+
+当前 `compute()` 保留做 device-level bounds。
+
+新增至少三个接口：
+
+```python
+joint_caes_support(...)
+```
+
+输入：
+
+```text
+outputs
+base feasible
+```
+
+输出：
+
+```text
+joint discharge interval
+joint charge interval
+joint idle feasible
+joint mode mask
+```
+
+再增加：
+
+```python
+conditional_thermal_bounds(
+    outputs,
+    feasible,
+    u_caes,
+)
+```
+
+以及：
+
+```python
+conditional_battery_bounds(
+    outputs,
+    feasible,
+    u_caes,
+    u_tp,
+)
+```
+
+所有公式只写一处。
+
+不要让 actor、random policy、MILP wrapper 各自复制一份计算公式。
+
+---
+
+## 2. `actions/feasible_set.py`
+
+扩展 metadata / dataclass。
+
+至少能够返回：
+
+```text
+base_u_tp_low/high
+base_u_battery_low/high
+
+joint_caes_discharge
+joint_caes_charge
+joint_mode_mask
+
+grid_low_w
+grid_high_w
+grid_residual_w
+```
+
+论文和日志以后都从这里取。
+
+---
+
+# 十一、`training/hybrid_td3/actor.py`
+
+当前已经有：
+
+```python
+caes_mode_head
+caes_mag_head
+```
+
+保留。
+
+但是现在内部：
+
+```python
+u_from_mode_onehot_torch(onehot, mag)
+```
+
+还是先映射到静态 CAES band，`act_numpy()` 最后才：
+
+```python
+clamp_u_caes_to_spec()
+```
+
+这必须改。
+
+应该直接：
+
+```text
+mode + magnitude
+↓
+当前 joint CAES interval
+↓
+u_caes
+```
+
+不是：
+
+```text
+mode + magnitude
+↓
+static band
+↓
+clamp
+```
+
+### Actor 返回值也增加
+
+```python
+{
+    "u_tp": ...,
+    "u_battery": ...,
+    "u_caes": ...,
+
+    "caes_mode_onehot": ...,
+    "caes_magnitude": ...
+}
+```
+
+后两个主要用于 target smoothing 和诊断。
+
+---
+
+# 十二、Critic 暂时不要大改
+
+这里我建议比之前更克制。
+
+当前：
+
+```python
+Q(s, u_tp, u_battery, u_caes)
+```
+
+**先保留。**
+
+不要为了论文一次性改成：
+
+```text
+mode onehot + magnitude + physical action
+```
+
+原因是：
+
+1. 最终环境真正执行的仍然是三个物理控制量；
+2. 当前会议论文的主要问题是系统经济调度；
+3. Actor 的 hybrid topology 已经解决最严重的动作死区；
+4. 现在最应该降低工程风险。
+
+只有 Stage C 后出现明显：
+
+* Q 在 CAES 模式边缘异常；
+* mode learning 不稳定；
+* actor 持续在 mode boundary 震荡；
+
+才把 Critic 改成：
+
+$$
+Q(s,u_T,u_B,m_C,z_C)
+$$
+
+这一项列为 **P1 optional**，不是当前 P0。
+
+---
+
+# 十三、P0 修改 2：TD3 target 必须 deterministic mode
+
+当前 `algorithm.py` 中：
+
+```python
+actor_target.act(
+    ...,
+    deterministic=False,
+)
+```
+
+需要改。
+
+target policy：
+
+$$
+a'=\mu_{\bar\theta}(s')
+$$
+
+必须用 deterministic CAES mode：
+
+$$
+m'
+=
+\arg\max_m \pi_m(s')
+$$
+
+然后：
+
+### thermal
+
+正常：
+
+$$
+u_T'+\epsilon_T
+$$
+
+### battery
+
+正常：
+
+$$
+u_B'+\epsilon_B
+$$
+
+### CAES
+
+**mode 不变。**
+
+只给 magnitude：
+
+$$
+z_C' + \epsilon_C
+$$
+
+然后：
+
+$$
+z_C'\leftarrow
+clip(z_C',0,1)
+$$
+
+再映射到下一状态下对应 mode 的联合动态区间。
+
+也就是说：
+
+```text
+CAES mode:
+NO target noise
+
+CAES magnitude:
+YES target noise
+```
+
+当前虽然已有：
+
+```python
+perturb_u_caes_keep_mode()
+```
+
+但正式版本最好直接对 magnitude 加 noise，而不是对最终 physical scalar 加 noise 后再“保持模式修复”。
+
+---
+
+# 十四、P0 修改 3：GiveSafe 不再承担正常动作搜索
+
+GiveSafe 的最终定位：
+
+> **final physical safety validator**
+
+不是：
+
+> rejection-sampling action generator。
+
+当前训练可以 stochastic resample。
+
+但 deterministic eval：
+
+```python
+max_attempts = 1
+```
+
+必须改。
+
+`GiveSafeController.select_safe_action()`：
+
+```python
+attempt_budget = 1 if deterministic else self.max_attempts
+```
+
+然后：
+
+```python
+for attempt in range(attempt_budget):
+```
+
+这样：
+
+> deterministic policy 出了非法动作 = 一个真实的 deployability failure。
+
+不能重复同一个动作 64 次。
+
+---
+
+# 十五、P0 修改 4：evaluation failure 不再把程序炸死
+
+现在必须把：
+
+```text
+training success
+```
+
+和：
+
+```text
+deployment evaluation failure
+```
+
+区分开。
+
+`evaluate_policy()` 遇到：
+
+```python
+NoSafeActionFoundError
+FeasibleSetEmpty
+```
+
+正式评估不能 fallback。
+
+但是也不能让整个 Python process exit 1。
+
+改为返回：
+
+```json
+{
+  "eval_status": "failed_no_safe_action",
+  "completed_steps": 37,
+  "failed_step": 37,
+  "failure_type": "NoSafeActionFound",
+  "failure_detail": {...}
+}
+```
+
+同时保存已经完成的 partial trajectory。
+
+---
+
+# 十六、评估失败日志必须足够详细
+
+保存：
+
+```text
+time
+step
+state
+raw policy action
+decoded physical action
+CAES mode/magnitude
+
+device-level bounds
+joint CAES support
+conditional thermal support
+conditional battery support
+
+predicted p_grid
+grid limits
+
+oracle rejection stage
+oracle rejection reason
+
+shadow rejection reason
+```
+
+这样以后不能再靠猜：
+
+> “可能是火电”
+
+或者：
+
+> “可能是 CAES”。
+
+直接能确定是哪条约束。
+
+---
+
+# 十七、`summary.json` 必须无条件写盘
+
+`run_hybrid_training()` 最后改成：
+
+```python
+try:
+    training
+    evaluation
+except ...
+    record
+finally:
+    write_summary()
+```
+
+至少包括：
+
+```json
+{
+  "training_status": "...",
+  "evaluation_status": "...",
+  "training_valid_steps": 5000,
+  "eval_completed_steps": ...,
+  "formal_gate_passed": false
+}
+```
+
+队列逻辑只在真正的软件/FMU crash 时停止。
+
+下面这种情况：
+
+```text
+training completed
+greedy policy infeasible
+```
+
+必须继续后续诊断任务。
+
+---
+
+# 十八、P0 修改 5：Economic Critic 只学习真实 FMU transition
+
+当前：
+
+```yaml
+replay_sampling:
+  physical_fraction: 0.7
+  givesafe_fraction: 0.3
+```
+
+正式论文主配置修改：
+
+```yaml
+replay_sampling:
+  physical_fraction: 1.0
+  givesafe_fraction: 0.0
+```
+
+因为：
+
+$$
+(s,a_{reject},r_c,s)
+$$
+
+不是系统真实动力学：
+
+$$
+P(s'|s,a)
+$$
+
+所以不能污染 economic Bellman critic。
+
+拒绝动作继续进入：
+
+```text
+SafetyDataset
+```
+
+用于：
+
+* rejection statistics；
+* failure taxonomy；
+* Oracle calibration；
+* safety analysis。
+
+---
+
+# 十九、Reward 修改：去掉“为了储能而储能”
+
+当前：
+
+```yaml
+storage_use:
+  enabled: true
+```
+
+论文正式主配置改成：
+
+```yaml
+storage_use:
+  enabled: false
+```
+
+这一点很重要。
+
+否则 reviewer 可以合理质疑：
+
+> CAES/BESS 被更多调用，是因为你显式奖励 storage usage。
+
+而我们真正想证明的是：
+
+> 策略因为经济目标本身认为储能值得使用。
+
+主优化目标只保留真实系统调度项：
+
+$$
+C^{grid}
++
+C^{thermal}
++
+C^{CO_2}
++
+C^{curt}
++
+C^{uns}
++
+C^{deg}
++
+C^{startup}
+$$
+
+以及 terminal inventory。
+
+---
+
+# 二十、Terminal SOC 保留
+
+现有：
+
+$$
+SOC^{battery}_T\approx SOC^{battery}_0
+$$
+
+$$
+SOC^{gas}_T\approx SOC^{gas}_0
+$$
+
+保留。
+
+当前：
+
+```yaml
+tolerance: 0.06
+```
+
+可以继续用。
+
+但论文里不要只报告 terminal bonus。
+
+必须直接报告：
+
+$$
+E_T=
+|SOC^{bat}_T-SOC^{bat}_0|
++
+|SOC^{gas}_T-SOC^{gas}_0|
+$$
+
+避免策略通过最后榨空储能制造低成本。
+
+你目前环境里的 `soc_recovery_horizon=0`，也就是说正式协议没有用末端启发式动作强行接管，这是好的，保持为 0。
+
+---
+
+# 二十一、探索策略也改成“联合可行探索”
+
+当前 warm-up 已经能做到 D/I/C：
+
+$$
+331/348/345
+$$
+
+说明 hybrid CAES dead-zone 问题基本解决。
+
+下一步只需要：
+
+> random action 也必须从 **joint feasible support** 采样。
+
+而不是先分别：
+
+```text
+thermal feasible
+battery feasible
+CAES feasible
+```
+
+再组合。
+
+修改：
+
+```python
+RandomFeasiblePolicy
+```
+
+调用同一套 joint decoder。
+
+绝对不要为 random policy 单独实现另一套 constraint logic。
+
+---
+
+# 二十二、正式训练数据划分必须冻结
+
+当前 `episode_starts.py` 还是：
+
+```text
+environment variables
+→ fallback annual windows
+```
+
+对正式论文不够严格。
+
+新增：
+
+```text
+config/experiment_protocol.yaml
+```
+
+固定：
+
+```yaml
+weekly_split:
+  train: 36
+  validation: 8
+  test: 8
+```
+
+52 个完整周。
+
+要求：
+
+* 春夏秋冬分层；
+* split 生成一次后冻结；
+* seed 固定；
+* train 只能读 train weeks；
+* checkpoint 选择只能看 validation；
+* test 完全不得参与训练/超参数选择。
+
+代码不要再：
+
+```text
+没有 eval week
+→ 自动拿第一个 train week
+```
+
+正式模式遇到 test/val 未配置直接报 configuration error。
+
+---
+
+# 二十三、正式实验配置只保留一份
+
+新建：
+
+```text
+config/paper_pc_hybrid_td3.yaml
+```
+
+不要让几十个历史 GHTD3 配置继续干扰。
+
+核心：
+
+```yaml
+algorithm:
+  name: pc_hybrid_td3
+  gamma: 0.99
+  tau: 0.005
+  policy_delay: 2
+  actor_lr: 3e-4
+  critic_lr: 3e-4
+
+action:
+  parameterized_caes: true
+  joint_feasible_support: true
+
+forecast:
+  horizon_hours: 24
+
+replay:
+  physical_fraction: 1.0
+  givesafe_fraction: 0.0
+
+reward:
+  storage_use: false
+
+evaluation:
+  deterministic: true
+  deterministic_max_attempts: 1
+  fallback: false
+
+training:
+  warmup_steps: 1024
+```
+
+正式实验所有参数从这一份文件读取。
+
+---
+
+# 二十四、Stage A–D 重新定义
+
+## Stage A：Joint action support
+
+不跑长训练。
+
+随机测试至少：
+
+$$
+10^4
+$$
+
+个状态/动作组合。
+
+必须满足：
+
+$$
+a_t\in\mathcal A_f(s_t)
+$$
+
+检查：
+
+```text
+device-bound violation = 0
+grid violation = 0
+illegal CAES mode = 0
+NaN/Inf = 0
+```
+
+---
+
+## Stage B：FMU interaction
+
+你现在已经基本通过旧版 B。
+
+修 joint support 后重新跑：
+
+$$
+5000
+$$
+
+physical transitions。
+
+要求：
+
+* FMU crash = 0；
+* hard violation = 0；
+* warm-up 各合法模式都能被访问；
+* GiveSafe rejection rate 足够低；
+* 系统运行没有明显异常。
+
+CAES mode coverage 只是**动作实现诊断指标**，不再是论文主 KPI。
+
+---
+
+# 二十五、Stage C：短训练
+
+$$
+20k\sim50k
+$$
+
+steps。
+
+需要过四类 gate。
+
+### 1. 数值稳定
+
+```text
+critic_loss finite
+actor_loss finite
+Q finite
+no persistent q_clip saturation
+```
+
+### 2. 调度可部署
+
+held-out validation：
+
+$$
+NoSafeAction=0
+$$
+
+$$
+FMUfailure=0
+$$
+
+### 3. 系统调度有效
+
+至少：
+
+$$
+C_{policy}<C_{random}
+$$
+
+并且：
+
+$$
+E_{unserved}\approx0
+$$
+
+### 4. 设备行为合理
+
+不能出现明显退化：
+
+```text
+thermal 永远满发
+battery 永远充/放
+CAES 永远因算法死区 idle
+```
+
+但注意：
+
+> **不要求每一个测试周 CAES 必须启动。**
+
+这点要彻底改过来。
+
+---
+
+# 二十六、判断 CAES 是否“没学会”的正确标准
+
+不能：
+
+> CAES 不动 → 算法失败。
+
+应该和 Rolling MILP 比。
+
+如果：
+
+```text
+MILP：CAES≈0
+RL：CAES≈0
+```
+
+很可能经济最优本来就不需要 CAES。
+
+真正异常是：
+
+```text
+MILP：
+明显通过 CAES 降低弃电/成本
+
+RL：
+长期完全不用 CAES
+
+且
+system cost / curtailment 明显更差
+```
+
+这时才判断：
+
+> RL 存在 storage coordination deficiency。
+
+这才符合能源调度论文逻辑。
+
+---
+
+# 二十七、Stage D：正式训练
+
+通过 Stage C 后：
+
+$$
+3\text{ seeds}
+\times
+300k\sim500k
+$$
+
+physical interactions。
+
+seed：
+
+```text
+0
+1
+2
+```
+
+所有 RL baseline 必须完全相同 interaction budget。
+
+不要：
+
+```text
+ours 500k
+TD3 100k
+```
+
+---
+
+# 二十八、论文 Baseline 固定四类
+
+## 1. Price-aware Rule
+
+已有：
+
+```text
+controllers/price_aware_rule.py
+```
+
+代表实际工程启发式。
+
+---
+
+## 2. Rolling MILP
+
+已有：
+
+```text
+optimization/rolling_milp.py
+```
+
+24 h rolling horizon：
+
+$$
+t:t+23
+$$
+
+优化后只执行：
+
+$$
+a_t^\star
+$$
+
+然后真实 FMU：
+
+$$
+s_{t+1}=F_{FMU}(s_t,a_t)
+$$
+
+再重新优化。
+
+---
+
+## 3. Continuous-Projection TD3
+
+作为传统连续 RL baseline：
+
+$$
+u_{CAES}\in[-1,1]
+$$
+
+然后投影。
+
+主要用于证明 heterogeneous hybrid action representation 的必要性。
+
+---
+
+## 4. PC-HybridTD3
+
+完整方法。
+
+---
+
+# 二十九、只保留两个关键消融
+
+不要再做一堆 Cui 风格 ablation。
+
+### Ablation A
+
+$$
+Continuous\ TD3
+\quad vs\quad
+HybridTD3
+$$
+
+证明：
+
+> hybrid action representation。
+
+---
+
+### Ablation B
+
+$$
+HybridTD3_{\text{component support}}
+\quad vs\quad
+PC\text{-}HybridTD3_{\text{joint support}}
+$$
+
+证明：
+
+> 系统级联合 feasible-support。
+
+这两个正好对应两个方法贡献。
+
+足够。
+
+---
+
+# 三十、论文主结果指标必须重新排序
+
+主 Table 首先报告**系统级指标**：
+
+| 一级指标                    | 含义    |
+| ----------------------- | ----- |
+| Total operating cost    | 主目标   |
+| Grid trading cost       | 电网经济性 |
+| Renewable curtailment   | 新能源消纳 |
+| Curtailment rate        | 新能源消纳 |
+| Unserved energy         | 可靠性   |
+| Carbon cost / emissions | 低碳性   |
+| Grid contract excess    | 联络线运行 |
+| Hard violations         | 安全性   |
+| FMU failures            | 可部署性  |
+| Decision time           | 在线效率  |
+
+然后设备级解释指标：
+
+| 二级指标                        | 用途     |
+| --------------------------- | ------ |
+| Thermal generation          | 机组承担情况 |
+| Thermal ramp                | 调节强度   |
+| Battery throughput          | 短期储能行为 |
+| Battery SOC range           | 库存行为   |
+| CAES throughput             | 长期储能行为 |
+| CAES charge/discharge hours | 运行方式   |
+| CAES SOC range              | 能量转移   |
+| CAES mode switches          | 设备启停   |
+
+论文中不能把 CAES 指标放到主表最前面。
+
+---
+
+# 三十一、Results 的论证顺序也冻结
+
+不是：
+
+> CAES 能动了 → 算法有效。
+
+而是：
+
+### Result 1：经济性
+
+$$
+C_{total}
+$$
+
+有没有下降。
+
+### Result 2：新能源消纳和可靠性
+
+$$
+E_{curt},
+E_{unserved}
+$$
+
+有没有改善。
+
+### Result 3：系统安全
+
+$$
+N_{violation},
+N_{FMUfailure}
+$$
+
+是不是为 0。
+
+### Result 4：为什么会改善
+
+再分析：
+
+* 火电如何配合；
+* BESS 如何处理快波动；
+* CAES 是否发生更长时间尺度搬移；
+* Grid import/export 如何变化。
+
+这样 CAES 是**机制解释的一部分**。
+
+---
+
+# 三十二、论文 Fig. 1–6 直接固定
+
+## Fig. 1 系统拓扑
+
+Wind/PV/Thermal/BESS/CAES/Grid/Load。
+
+---
+
+## Fig. 2 PC-HybridTD3
+
+突出三个模块：
+
+```text
+Forecast-aware state
+      ↓
+Hybrid Actor
+      ↓
+Joint Feasible Support
+      ↓
+GiveSafe
+      ↓
+FMU
+```
+
+---
+
+## Fig. 3 Training curves
+
+三 seed：
+
+```text
+Continuous TD3
+Hybrid TD3
+PC-HybridTD3
+```
+
+mean ± std。
+
+---
+
+## Fig. 4 典型测试周系统调度
+
+第一张就是：
+
+$$
+P_{load},
+P_{wind},
+P_{PV},
+P_{thermal},
+P_{battery},
+P_{CAES},
+P_{grid}
+$$
+
+---
+
+## Fig. 5 储能 + 电价
+
+包括：
+
+$$
+SOC_{battery}
+$$
+
+$$
+SOC_{CAES}
+$$
+
+$$
+price
+$$
+
+CAES mode 可作为底部小条带。
+
+---
+
+## Fig. 6 系统 KPI
+
+cost / curtailment / emissions / safety。
+
+不要再把 Fig. 6 做成大幅 CAES 专项图。
+
+---
+
+# 三十三、全年 8760 h 作为完整性验证
+
+最佳 validation checkpoint：
+
+$$
+8760h
+$$
+
+直接连续 rollout。
+
+不重新训练。
+
+报告：
+
+$$
+C_{annual}
+$$
+
+$$
+E^{annual}_{curtailment}
+$$
+
+$$
+E^{annual}_{unserved}
+$$
+
+$$
+CO_2^{annual}
+$$
+
+$$
+N_{violation}
+$$
+
+$$
+N_{FMUfailure}
+$$
+
+和设备 throughput。
+
+它是：
+
+> deployment-scale evaluation
+
+不是算法创新。
+
+---
+
+# 三十四、论文 Introduction 具体改法
+
+Introduction 建议四段。
+
+### 第一段：多能源调度问题
+
+高比例风光导致波动，火电、BESS、CAES 和电网需要协同。
+
+强调：
+
+* heterogeneous dynamics；
+* temporal coupling；
+* operational constraints；
+* nonlinear plant behavior。
+
+---
+
+### 第二段：传统优化
+
+MILP/MPC 优势：
+
+* explicit constraints；
+* predictable optimization。
+
+不足：
+
+* 高保真模型非线性；
+* 在线求解开销；
+* model simplification。
+
+---
+
+### 第三段：DRL 与现有不足
+
+讲 single-level DRL 和 hierarchical DRL。
+
+这里引 Cui：
+
+其 GHTD3 通过高层 SOC increment goals 和低层执行解决跨时间尺度规划，是 HRL 方向代表。
+
+然后指出我们关注不同 gap：
+
+> Existing DRL scheduling methods generally assume regular continuous action spaces or treat feasibility through post-hoc clipping/penalties, which is problematic for heterogeneous devices and strongly coupled physical constraints.
+
+---
+
+### 第四段：本文
+
+提出：
+
+> forecast-aware, physics-constrained hybrid TD3。
+
+然后列三条 contributions。
+
+---
+
+# 三十五、最终贡献点正式冻结
+
+## Contribution 1 — 异构设备混合动作调度
+
+推荐正文：
+
+> **A heterogeneous hybrid action formulation is developed for coordinated multi-energy scheduling, allowing continuous regulation of thermal generation and battery storage while explicitly representing the discrete operating modes and continuous loading levels of CAES. This formulation avoids the policy degeneration caused by applying conventional continuous-action projection to disconnected device operating regions.**
+
+中文：
+
+> **面向火电、电池和压缩空气储能等控制特性不同的异构能源设备，建立统一的连续–离散混合动作调度模型，在同一策略中同时实现连续功率调节与离散运行模式–连续幅值决策，避免传统连续动作投影在非连续运行域中导致的策略退化。**
+
+CAES 是这里的技术实现，不是全文研究对象。
+
+---
+
+# 三十六、Contribution 2 — 系统级联合动态可行域
+
+> **A state-dependent joint feasible-support mechanism is incorporated into policy action generation. Device-level operating limits and system-level coupling constraints—including thermal ramping, storage inventory limits, CAES thermodynamic restrictions, and grid interchange limits—are jointly considered so that the policy acts directly inside a dynamically admissible scheduling region, with GiveSafe retained as a final physical validation layer.**
+
+中文：
+
+> **构建状态相关的系统级联合动态可行域，将火电爬坡、储能库存、CAES 热力学限制以及联络线容量等设备约束与系统耦合约束联合嵌入动作生成，使强化学习策略直接在动态可行调度域内决策，并由 GiveSafe 进行最终物理验证。**
+
+核心公式：
+
+$$
+\boxed{
+a_t\in\mathcal A_f(s_t)
+}
+$$
+
+这是第二个核心方法贡献。
+
+---
+
+# 三十七、Contribution 3 — 预测感知 FMU 闭环经济调度
+
+> **A forecast-aware FMU-in-the-loop scheduling framework is established to coordinate thermal generation, heterogeneous storage, renewable generation, and grid exchange under a unified economic objective. Its scheduling performance and deployability are evaluated using held-out operating weeks and a full 8760-h rollout against rule-based control, rolling MILP, and conventional continuous-action TD3.**
+
+中文：
+
+> **建立预测感知的 FMU 闭环经济调度框架，将实时设备状态、日前风光负荷预测和电价信息统一输入策略，在经济成本、新能源消纳、可靠性与安全约束下协调火电、异构储能和电网交互，并通过独立测试周和 8760 h 全年运行进行验证。**
+
+这个是系统和验证贡献。
+
+---
+
+# 三十八、论文里必须删除或弱化的内容
+
+如果以后开始写稿，以下内容不要占大量篇幅：
+
+### 弱化
+
+* CAES 单独的控制讨论；
+* CAES 为什么“必须启动”；
+* GHTD3 goal relabeling；
+* 双层网络；
+* 对 Cui 逐公式复现；
+* storage-use reward；
+* 十几个 reward coefficient；
+* GiveSafe rejected replay 学习。
+
+### 强化
+
+* coordinated scheduling；
+* heterogeneous actions；
+* coupled feasible set；
+* forecast-aware dispatch；
+* same-FMU comparison；
+* cost / renewable / reliability / safety；
+* rolling MILP versus RL；
+* annual deployment.
+
+---
+
+# 三十九、代码层面的任务优先级
+
+### P0——不完成不能进入正式长训练
+
+1. Joint feasible-support。
+2. Actor 直接使用 joint CAES/thermal/battery interval。
+3. Deterministic GiveSafe = 1 attempt。
+4. Eval failure 正常落盘。
+5. Physical-only economic replay。
+6. CAES target deterministic mode + magnitude-only smoothing。
+7. Formal experiment split 固定。
+8. `storage_use=false`。
+
+### P1——Stage C 后按结果决定
+
+1. Critic 改 mode-onehot + magnitude。
+2. Gumbel temperature annealing。
+3. Oracle residual margins 微调。
+
+### 不做
+
+1. GHTD3 重构。
+2. 高层 controller。
+3. SAC 主线。
+4. 新奖励强迫储能运行。
+5. 更复杂 forecasting model。
+
+---
+
+# 四十、给 Codex 的验收标准
+
+可以直接让它按下面标准执行。
+
+```text
+Goal:
+将当前 Hybrid-TD3 主线整理为用于会议论文的
+PC-HybridTD3（Physics-Constrained Hybrid TD3），
+研究对象为多能源系统安全经济协同调度，不以 CAES 单设备调度为中心。
+
+必须完成：
+
+1. 保持单层 TD3，不修改/启用 GHTD3 主线。
+2. 保留 24h 风光/负荷预测和 24h 电价前瞻。
+3. 将 FeasibilityOracle 从分设备动态区间扩展为系统级联合动态可行域：
+   - thermal ramp / bounds
+   - battery SOC / power bounds
+   - CAES mode + dynamic magnitude bounds
+   - grid interchange coupling
+4. 实现 sequential joint feasible decoder：
+   - 先求 CAES 与系统 grid coupling 的联合区间并更新 mode mask
+   - 根据 u_caes 求 conditional thermal bounds
+   - 根据 u_caes, u_tp 求 conditional battery bounds
+   - 最终生成动作必须满足 grid hard bound
+5. HybridActor 直接在联合动态区间中生成物理动作，
+   不允许先映射到静态 CAES band 再事后 clamp。
+6. TD3 target：
+   - CAES mode deterministic argmax
+   - mode 不加 target noise
+   - noise 只作用于 CAES magnitude
+   - thermal/battery 保持正常 clipped smoothing
+7. deterministic GiveSafe evaluation 每步只尝试 1 次。
+8. NoSafeActionFound / FeasibleSetEmpty：
+   - 判该 evaluation episode 失败
+   - 不 fallback
+   - 不使整个训练进程退出
+   - 保存 partial trajectory 和详细 failure JSON
+9. summary.json 必须在成功、评估失败、训练失败时均写盘。
+10. economic replay 只采样真实执行的 FMU physical transition：
+    physical_fraction=1.0
+    givesafe_fraction=0.0
+11. GiveSafe rejection 保留 SafetyDataset，只用于安全审计。
+12. 正式 reward_config 关闭 storage_use learning bonus。
+13. 固定 36/8/8 train/validation/test weekly split，
+    正式模式禁止训练/评估周隐式回退。
+14. RandomFeasiblePolicy 同样使用 joint feasible decoder。
+15. 新增单元测试：
+    - 10k joint-support actions 无 device/grid violation
+    - deterministic GiveSafe attempts == 1
+    - rejected transitions 不进入 economic replay
+    - CAES target smoothing 不改变 mode
+16. 重新跑 Stage B 5k physical steps。
+17. 跑 Stage C 20k-50k diagnostic training。
+18. Stage C formal gate：
+    - NaN/Inf = 0
+    - FMU hard failure = 0
+    - held-out validation NoSafeAction = 0
+    - unserved energy ≈ 0
+    - policy cost 优于 random feasible baseline
+19. Gate 通过后才允许启动 3 seeds × 300k-500k formal training。
+20. 输出中文工程报告，报告所有修改、单元测试、Stage B/C KPI、
+    failure taxonomy、系统级 cost/curtailment/unserved/safety 指标。
+```
+
+---
+
+这版方案我认为已经可以冻结。**以后任何新修改都应该回答一个问题：它是否直接提高“多能源系统安全经济调度”的正确性、经济性或可部署性。**如果只是为了让某一个设备看起来更活跃，或者为了增加算法复杂度，就不再进入论文主线。
+
+这样最终文章的三个关键词就是：
+
+$$
+\boxed{
+\text{heterogeneous scheduling}
++
+\text{joint physical feasibility}
++
+\text{forecast-aware economic dispatch}
+}
+$$
+
+而 CAES 的 mode–magnitude 只是第一个关键词下面最有代表性的技术实现。

@@ -12,7 +12,6 @@ from actions.caes_u import (
     DISCHARGE_LO,
     apply_mode_mask_to_u_torch,
     caes_intervals_from_feasible,
-    clamp_u_caes_to_spec,
     gumbel_mode_onehot,
     legalize_mode_mask,
     mask_mode_logits,
@@ -190,6 +189,8 @@ class HybridActor(nn.Module):
         if onehot is not None:
             packed["mode_onehot"] = onehot
             packed["mag"] = mag
+            packed["caes_mode_onehot"] = onehot
+            packed["caes_magnitude"] = mag
         return packed
 
     def act_numpy(self, obs, feasible, deterministic: bool = True, device="cpu", explore_noise_std: float = 0.0):
@@ -215,9 +216,7 @@ class HybridActor(nn.Module):
                 chg_hi=iv["u_caes_charge_high"],
                 use_dynamic_support=self.use_dynamic_support,
             )
-        u_raw = float(out["u_caes"][0].cpu())
-        u_caes, clamped = clamp_u_caes_to_spec(u_raw, feasible)
-        _ = clamped  # audit only; live path already decodes inside A_f(s)
+        u_caes = float(out["u_caes"][0].cpu())
         u_tp = float(out["u_tp"][0].cpu())
         u_bat = float(out["u_battery"][0].cpu())
         ctx = coupling_from_feasible(feasible)
@@ -232,4 +231,8 @@ class HybridActor(nn.Module):
                 u_tp,
                 u_bat,
             )
-        return physical_dict(u_tp, u_bat, float(u_caes))
+        packed = physical_dict(u_tp, u_bat, float(u_caes))
+        if "caes_mode_onehot" in out:
+            packed["caes_mode_onehot"] = out["caes_mode_onehot"][0].detach().cpu().numpy()
+            packed["caes_magnitude"] = float(out["caes_magnitude"][0].cpu())
+        return packed
