@@ -226,6 +226,7 @@ class SafetySample:
     episode: int | None = None
     step: int | None = None
     run_id: str | None = None
+    extra: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为字典。
@@ -289,6 +290,7 @@ class SafetyDataset:
                 episode=rec.get("episode"),
                 step=rec.get("step"),
                 run_id=rec.get("run_id"),
+                extra=rec.get("extra") if isinstance(rec.get("extra"), dict) else None,
             )
         )
 

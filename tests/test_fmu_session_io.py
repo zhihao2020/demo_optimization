@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from fmu.session import ACTION_NAMES, DEFAULT_INITIAL_INPUTS, DEFAULT_OUTPUTS
+from fmu.session import ACTION_NAMES, DEFAULT_INITIAL_INPUTS, DEFAULT_OUTPUTS, FmuSession
 from fmu.validate import validate_inputs
 
 
@@ -52,6 +52,13 @@ def test_default_outputs_cover_physical_groups() -> None:
     assert "OPT_goal" not in names
     assert "P_res" not in names
     assert "battery_penalty" not in names
+
+
+def test_try_get_exists_and_mdot_not_in_default_outputs() -> None:
+    """0831 FMU has no independent Mdot VR; diagnostics must not invent one."""
+    assert hasattr(FmuSession, "try_get")
+    assert "Mdot_c1" not in DEFAULT_OUTPUTS
+    assert "Mdot_c2" not in DEFAULT_OUTPUTS
 
 
 def test_default_initial_inputs_are_valid() -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 from dataclasses import replace
+import json
 import os
 
 import gymnasium as gym
@@ -146,7 +147,20 @@ class PowerSystemEnv(gym.Env):
         ]
         reward_config["episode_steps"] = int(self.config["fmu"]["episode_steps"])
         # 并行 job：每进程/每 JOB_ID 独立 FMU 副本，减少 ZIP 争用
-        self.fmu_path = resolve_fmu_path(self.root / self.config["fmu"]["path"])
+        fmu_cfg = self.config.get("fmu") or {}
+        self.fmu_path = resolve_fmu_path(
+            self.root / fmu_cfg["path"],
+            expected_sha256=str(fmu_cfg.get("expected_sha256") or "") or None,
+        )
+        want_guid = str(fmu_cfg.get("expected_guid") or "").strip()
+        if want_guid and self.fmu_path.is_file():
+            from fmu.session import describe_fmu
+
+            ident = describe_fmu(self.fmu_path)
+            if ident.get("guid") and ident["guid"] != want_guid:
+                raise RuntimeError(
+                    f"FMU guid {ident.get('guid')} != expected {want_guid}"
+                )
         self.registry = build_registry(
             self.fmu_path,
             self.config,
@@ -255,6 +269,10 @@ class PowerSystemEnv(gym.Env):
         self.run_id = run_id
         self.last_outputs: dict[str, float] | None = None  # 上一时刻FMU的输出值
         self.previous_thermal = 0.0  # 上一时刻火电功率
+        self.previous_u_caes: float | None = None
+        self.episode_start_time = 0.0
+        self.executed_log_path: Path | None = None
+        self._episode_actions: list[dict[str, Any]] = []
         self.initial_soc: dict[str, float] | None = None
         self.episode_failed = False
         self.caes_locked = caes_locked_from_config(self.config)
@@ -472,6 +490,9 @@ class PowerSystemEnv(gym.Env):
         self.episode_failed = False
         self.caes_min_run.reset()
         self.previous_thermal = float(self.last_outputs["p_thermal"])
+        self.previous_u_caes = None
+        self.episode_start_time = start
+        self._episode_actions = []
         self.reward_calculator.reset(self.last_outputs)
         self.initial_soc = {
             k: float(self.last_outputs[k])
@@ -493,6 +514,44 @@ class PowerSystemEnv(gym.Env):
         }
         self.episode_index += 1
         return observation, info
+
+    def _log_executed_step(
+        self,
+        physical: PhysicalFmuAction,
+        outputs: dict[str, float] | None,
+        *,
+        post_step_ok: bool,
+    ) -> dict[str, Any]:
+        """Append the action actually sent to the main FMU (not the actor proposal)."""
+        readback = {}
+        if hasattr(self.adapter, "last_input_readback"):
+            readback = dict(self.adapter.last_input_readback or {})
+        pre = self.last_outputs or {}
+        row: dict[str, Any] = {
+            "episode_index": int(self.episode_index - 1),
+            "start_time": float(self.episode_start_time),
+            "scenario_id": self.scenario_id,
+            "step": int(self.step_index),
+            "u_tp_executed": float(physical.u_tp),
+            "u_battery_executed": float(physical.u_battery),
+            "u_caes_executed": float(physical.u_caes),
+            "u_caes_readback": readback.get("u_caes"),
+            "u_tp_readback": readback.get("u_tp"),
+            "u_battery_readback": readback.get("u_battery"),
+            "caes_mode": int(mode_from_u(physical.u_caes)),
+            "previous_u_caes": self.previous_u_caes,
+            "cold_soc_before": float(pre["caes_cold_soc"]) if "caes_cold_soc" in pre else None,
+            "cold_soc_after": float(outputs["caes_cold_soc"]) if outputs else None,
+            "p_caes_before": float(pre["p_caes"]) if "p_caes" in pre else None,
+            "p_caes_after": float(outputs["p_caes"]) if outputs else None,
+            "post_step_ok": bool(post_step_ok),
+        }
+        self._episode_actions.append(row)
+        if self.executed_log_path is not None:
+            self.executed_log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.executed_log_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        return row
 
     def step(self, action: dict | PhysicalFmuAction):
         """执行一步：预检 → FMU 子步 → 后验硬约束 → 奖励。"""
@@ -592,6 +651,7 @@ class PowerSystemEnv(gym.Env):
                 )
             post_ok, post_reason = self.oracle.post_step_hard_ok(outputs)
             if not post_ok:
+                self._log_executed_step(physical, outputs, post_step_ok=False)
                 fine, trig = classify_failure(
                     failure_type="PostStepHardConstraintViolation",
                     reason=post_reason,
@@ -691,8 +751,10 @@ class PowerSystemEnv(gym.Env):
             decision_interval_hours=dt_hours,
         )
         self.reward_calculator.step_in_episode = self.valid_episode_steps
+        self._log_executed_step(physical, outputs, post_step_ok=True)
         self.step_index = next_step
         self.previous_thermal = float(outputs["p_thermal"])
+        self.previous_u_caes = float(physical.u_caes)
         self.last_outputs = outputs
         self._current_feasible = self._constrain_caes_min_run(
             self.oracle.compute(outputs, self.previous_thermal)
@@ -961,6 +1023,13 @@ class PowerSystemEnv(gym.Env):
             safety_probability=info.get("safety_probability"),
             safety_threshold=info.get("safety_threshold"),
             safety_model_version=info.get("safety_model_version"),
+            extra={
+                "fmu_input_readback": dict(
+                    getattr(self.adapter, "last_input_readback", {}) or {}
+                ),
+                "previous_u_caes": self.previous_u_caes,
+                "action_prefix": list(self._episode_actions),
+            },
         )
         self.failure_records.append(rec)
         info["failure_record"] = rec.to_dict()

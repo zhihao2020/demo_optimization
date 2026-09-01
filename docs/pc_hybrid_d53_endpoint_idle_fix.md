@@ -1,6 +1,6 @@
 # PC-HybridTD3 d5.3：endpoint snap 与 idle robust guard
 
-文档更新：2026-08-31 23:10 (+08:00)
+文档更新：2026-09-01 09:40 (+08:00)
 
 按 `检查.txt` 只修 **safety / action interface**。未改 TD3 \(\gamma,\tau,\) lr、网络宽度、reward、Gumbel、GiveSafe `n_try=1`、Shadow（主线仍 `enable_shadow=False`），未开 `storage_use`，**未启动 Stage D**。
 
@@ -68,3 +68,19 @@ Modelica `TypicalScenarios.mo` idle 分支把六路 `Mdot_*.mflow_in=0`；`Tank`
 仓库默认路径现已换成 **0831 新导出**（2026-08-31T15:05:31Z，guid `9b0edb50-…`，sha256 `31c8fec7…`，有边界口）。它与服务器 8-17 训练 FMU（guid `433bca45-…`）仍不是同一份。0831 上：`u_caes` read-back=0 时 idle 5 h 从 SOC=0.5 **冷罐不变**；ep13 气候下充/idle 前缀后 idle 一步 Δcold **= 0**。不是 0.08–0.12。
 
 因此 **不能**把 14 条 false-safe 写成「FMU idle 天然掉 0.1」。在证实那 14 小时的前缀动作可复现之前，禁止用 0.12 裕度掩盖。下一步需要 episode 13 / step 125 的动作前缀 replay（当前 run 只有 eval 轨迹，没有训练逐步 `u_caes`）。summary 现写入 `fmu_sha256` / `guid` / `model_description_hash` / `git_commit`。
+
+## 2026-09-01：hash lock、read-back、完整 prefix（未改 Oracle）
+
+未改 idle residual、未加 previous-mode guard、未改 TD3/reward。D 三 seed 已确认同一 0831 binary（`31c8fec7…` / `{9b0edb50-…}`）。
+
+| 项 | 现状 |
+|----|------|
+| FMU cache | `resolve_fmu_path` 按 SHA256 复制；`env_config.expected_sha256` / `expected_guid` fail-fast |
+| `git_commit` | 可读 `OPTIMAL_DEMO_GIT_COMMIT`；另写 `source_manifest` |
+| input read-back | `FmuSession.set_inputs` 后 `getFloat64`；`last_input_readback` |
+| 内部 Mdot | **0831 无独立 VR**。`Mdot_c1/c2`、`coldtank.port_*.m_flow` 不在 95 个变量里。`mflow_*.x3` 与 `t_air_in` 同 VR（读到的是 262.4 K，不是质量流） |
+| prefix 日志 | `trajectories/executed_actions.jsonl`：GiveSafe 通过后送入主 FMU 的 physical action + read-back + cold/p_caes before/after。失败记录 `extra.action_prefix` 含整集 |
+| C2 130 条 | 128 idle `caes_cold_soc_low` + 2 `caes_temperature_high`（s0 idle 一条、s2 放电一条）。无 unknown |
+| 低 SOC 矩阵 | 从 SOC=0.5 充放 400 h 冷罐下限约 **0.40**，到不了 0.10–0.25。该下限再充 8 h 后 idle：`u_rb=0`，Δcold **+0.003**，Mdot=null。0.08–0.17 依赖更长 episode 前缀 |
+
+下一步：用新 prefix 日志 exact replay `s1 ep10/step153`；需要内部流量时必须 **只加只读诊断输出、不改方程** 的 diagnostic FMU。C5 独立，不在修 C2 时动 reward。C1–C5 全过前不开 3×400k。

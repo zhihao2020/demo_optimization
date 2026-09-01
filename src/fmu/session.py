@@ -225,6 +225,7 @@ class FmuSession:
         self._unzipdir: str | None = None
         self._fmu: FMU3Slave | None = None
         self.time = 0.0
+        self.last_input_readback: dict[str, float] = {}
 
     def _ensure_extracted(self) -> str:
         """解压 FMU 包（懒加载，仅一次）。
@@ -293,6 +294,9 @@ class FmuSession:
         validate_inputs(action)
         for name in ACTION_NAMES:
             self._fmu.setFloat64([self._vrs[name]], [float(action[name])])
+        self.last_input_readback = {
+            name: float(self._fmu.getFloat64([self._vrs[name]])[0]) for name in ACTION_NAMES
+        }
 
     def set_boundaries(self, boundaries: dict[str, float]) -> None:
         """写外部边界输入；与动作严格分离。
@@ -335,6 +339,26 @@ class FmuSession:
         result = dict(zip(self.outputs, (float(value) for value in values)))
         validate_outputs(result)
         return result
+
+    def try_get(self, name: str) -> float | None:
+        """Read one FMU variable by name; None if missing or instance not live.
+
+        0831 modelDescription has 95 entries and **no** independent
+        ``Mdot_c1`` / ``coldtank.port_*.m_flow``. Several ``mflow_*.x3``
+        names share the ``t_air_in`` valueReference — do not treat them
+        as mass flow.
+        """
+        if self._fmu is None or name not in self._vrs:
+            return None
+        try:
+            return float(self._fmu.getFloat64([self._vrs[name]])[0])
+        except Exception:
+            return None
+
+    def value_reference(self, name: str) -> int | None:
+        """FMI valueReference for ``name``, or None if absent."""
+        vr = self._vrs.get(name)
+        return int(vr) if vr is not None else None
 
     def step(
         self,

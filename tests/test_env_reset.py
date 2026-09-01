@@ -16,6 +16,7 @@ class FakeAdapter:
         self.closed = False
         self.set_calls = 0
         self.step_calls = 0
+        self.last_input_readback = {}
 
     def _out(self):
         """构造默认 FMU 输出快照。
@@ -62,6 +63,17 @@ class FakeAdapter:
         self.set_calls += 1
         self.step_calls += 1
         self.time += 3600
+        if isinstance(action, dict):
+            u = action.get("u_caes", 0.0)
+            try:
+                u = float(np.asarray(u).reshape(-1)[0])
+            except Exception:
+                u = 0.0
+            self.last_input_readback = {
+                "u_tp": float(np.asarray(action.get("u_tp", 1.0)).reshape(-1)[0]),
+                "u_battery": float(np.asarray(action.get("u_battery", 0.0)).reshape(-1)[0]),
+                "u_caes": u,
+            }
         return self._out()
 
     def close(self):

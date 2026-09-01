@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 from pathlib import Path
@@ -74,45 +75,77 @@ def fmu_isolate_enabled() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
-def resolve_fmu_path(src: str | Path) -> Path:
+def file_sha256(path: Path) -> str:
+    """SHA-256 of a file; empty string if unreadable."""
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _copy_verified(src: Path, dest: Path, want_sha: str) -> None:
+    """Copy ``src`` to ``dest`` unless dest already has ``want_sha``."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.is_file():
+        try:
+            if file_sha256(dest) == want_sha:
+                return
+        except OSError:
+            pass
+    tmp = dest.parent / f"{dest.name}.partial.{os.getpid()}"
+    shutil.copy2(src, tmp)
+    os.replace(tmp, dest)
+    got = file_sha256(dest)
+    if got != want_sha:
+        dest.unlink(missing_ok=True)
+        raise RuntimeError(f"FMU copy hash mismatch: {dest} got {got} expected {want_sha}")
+
+
+def resolve_fmu_path(src: str | Path, expected_sha256: str | None = None) -> Path:
     """解析本进程应打开的 FMU 路径。
 
     优先级：
       1. OPTIMAL_DEMO_FMU_PATH（显式副本）
-      2. OPTIMAL_DEMO_FMU_ISOLATE=1 时复制到 cache/fmu_copies/<job_id>/
+      2. OPTIMAL_DEMO_FMU_ISOLATE=1 时复制到 content-addressed
+         ``fmu_copies/<sha256[:16]>/`` 再拷到 ``fmu_copies/<job_id>/``
       3. 原始 src
 
-    多 job 并行时复制可避免同时读同一 ZIP、以及杀软对单文件锁。
+    副本是否更新按 **SHA256**，不再用 mtime+size。
+    ``expected_sha256`` 或 ``OPTIMAL_DEMO_FMU_SHA256`` 与实际不符则 fail-fast。
     """
+    expected = (
+        os.environ.get("OPTIMAL_DEMO_FMU_SHA256") or expected_sha256 or ""
+    ).strip().lower()
     override = os.environ.get("OPTIMAL_DEMO_FMU_PATH", "").strip()
     if override:
         p = Path(override)
         if not p.is_file():
             raise FileNotFoundError(f"OPTIMAL_DEMO_FMU_PATH not found: {p}")
+        actual = file_sha256(p)
+        if expected and actual != expected:
+            raise RuntimeError(
+                f"OPTIMAL_DEMO_FMU_PATH sha256={actual} != expected {expected}"
+            )
         return p.resolve()
 
     src_p = Path(src)
     if not src_p.is_file():
-        # 允许调用方再拼 root；此处不强制
         return src_p
+
+    actual_src = file_sha256(src_p)
+    if expected and actual_src != expected:
+        raise RuntimeError(
+            f"FMU sha256 mismatch: {src_p} got {actual_src} expected {expected}"
+        )
 
     if not fmu_isolate_enabled():
         return src_p.resolve()
 
-    dest_dir = fmu_copies_root() / job_id()
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / src_p.name
-    try:
-        need = (not dest.is_file()) or (dest.stat().st_mtime < src_p.stat().st_mtime) or (
-            dest.stat().st_size != src_p.stat().st_size
-        )
-    except OSError:
-        need = True
-    if need:
-        # 先写临时名再 replace，避免半截文件被并发打开
-        tmp = dest.parent / f"{dest.name}.partial.{os.getpid()}"
-        shutil.copy2(src_p, tmp)
-        os.replace(tmp, dest)
+    master = fmu_copies_root() / actual_src[:16] / src_p.name
+    _copy_verified(src_p, master, actual_src)
+    dest = fmu_copies_root() / job_id() / src_p.name
+    _copy_verified(master, dest, actual_src)
     return dest.resolve()
 
 

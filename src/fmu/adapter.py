@@ -50,6 +50,11 @@ class FmuAdapter:
         """
         return self._session.time
 
+    @property
+    def last_input_readback(self) -> dict[str, float]:
+        """Last ``setFloat64`` then ``getFloat64`` of u_tp/u_battery/u_caes."""
+        return dict(getattr(self._session, "last_input_readback", {}) or {})
+
     def reset(
         self,
         start_time: float,

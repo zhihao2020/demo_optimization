@@ -1,577 +1,264 @@
- 但这里有一个更重要的问题：真正的 idle 为什么会让 cold SOC 一小时掉 0.08–0.12？
+### 下一步不要只加 previous mode，要直接抓内部流量
 
-这一步我认为**必须先查清楚**。
-
-我同时重新看了你之前提供的 Modelica CAES 源码。按照那份模型：
-
-在
+我建议 exact-prefix replay 时，把诊断层再往 FMU 内部伸一层。失败那一小时至少要拿到：
 
 $$
-u_{\mathrm{dispatch}}=0
+u_{\rm caes}^{readback},
+\quad
+Mdot_{c1},
+\quad
+Mdot_{c2},
+\quad
+coldtank.port_a.m\_flow,
+\quad
+coldtank.port_b.m\_flow,
+\quad
+coldtank.m,
+\quad
+coldtank.SOC.
 $$
 
-时，CAES idle 分支明确把冷热罐、气罐两端质量流量全部设为 0。
+先检查 `modelDescription.xml` 里这些 local variable 是否已经有 VR；如果有，不需要重新导 FMU，诊断程序直接 `getFloat64()` 读。如果没有，再考虑做**仅增加只读诊断输出、不修改方程**的 diagnostic FMU。
 
-而 `Tank` 模型中：
+这样 exact-prefix replay 会直接分成四种情况：
 
-$$
-\frac{dm}{dt}
-=
-\dot m_a+\dot m_b
-$$
+| 结果                                        | 真正含义                          |
+| ----------------------------------------- | ----------------------------- |
+| read-back `u_caes ≠ 0`                    | FMI 输入写入/动作链问题                |
+| read-back = 0，但 `Mdot_c2` 仍≈上一小时 charge 值 | **FMU 输入切换/代数分支/Co-Sim 同步问题** |
+| read-back = 0、Mdot 两端 = 0，但 cold mass 仍下降 | **Tank/FMU 数值状态推进问题**         |
+| FMU 内部都正常，但外部 failure 显示下降                | **日志时序/状态映射错位**               |
 
-并且：
-
-$$
-m=1000V,
-\qquad
-SOC=\frac{\mathrm{level}}{V_0/A}.
-$$
-
-也就是说，如果服务器上的 FMU 确实由这套模型导出，那么在真正：
-
-$$
-u_{CAES}=0
-$$
-
-且两端质量流量均为 0 时，应有：
-
-$$
-\frac{dm}{dt}=0
-$$
-
-从而：
-
-$$
-SOC_{cold,t+1}\approx SOC_{cold,t}.
-$$
-
-**从 0.13 一小时直接掉到约 0.045，并不像普通模型 residual。**
-
-而且你说 14 次“全部相同”，这更像一个结构性的现象，而不是随机误差。
-
-所以现在不能只说：
-
-> “FMU idle 冷罐天然会掉 0.1，Oracle margin 太小。”
-
-还要先排除四件事：
-
-1. 服务器正在用的 FMU 是否真的是当前这份 Modelica 源码导出的版本；
-2. 日志里的 `u_caes=0` 是否就是传入 FMU 的最终动作，而不是 policy/GiveSafe 层记录的动作；
-3. `caes_cold_soc` 顶层输出是否确实对应 `compressedAirEnergyStorage.coldtank.SOC`；
-4. false-safe 日志中的 pre-state/post-state 是否存在一个小时的错位。
-
-这很重要，因为当前 GitHub **没有跟踪实际运行的 FMU 文件**。`env_config.yaml` 指向 `data/TypicalScensrio_Example_TypicalScene_PowerSystem_8760h.fmu`，但这个二进制文件并不在仓库里，所以仅看 commit 无法证明服务器使用的 FMU 和源码完全一致。
-
-FMI 执行路径本身看起来没有明显 action lag：`FmuSession.step()` 是：
-
-```text
-set_inputs
-→ set_boundaries
-→ doStep
-→ read
-```
-
-而且通信步长就是 3600 s。
-
-所以最好直接做一个 FMU replay probe。
+一旦有这个证据，根因就不是猜测了。
 
 ---
 
-# 我建议 Agent 现在按这个顺序做
+### 不用等下一次 400k，先做一个“定向预处理 probe”
 
-### 第一阶段：不要改 margin，先复现一条 14 次中的 false-safe
+你现在虽然没有 D 的完整 action prefix，但完全没必要马上重新训练才能继续定位。
 
-从 Stage C 中找一条典型记录：
+现有“从 SOC=0.5 充 8 h→idle”的 probe 太单一。D 失败显然集中在**低 cold SOC + 前一小时大功率 charge**。
+
+可以直接构造一个小矩阵：
+
+* `cold SOC before idle`：0.25 / 0.20 / 0.15 / 0.12 / 0.10；
+* previous charge magnitude：0.86 / 0.93 / 1.0；
+* continuous charge length：1 / 2 / 4 / 8 / 16 h；
+* 然后切 `u_caes=0` 一小时；
+* 同时读上述内部 Mdot。
+
+核心不是扫描几万个点，而是回答：
+
+$$
+\Delta SOC_{\rm cold}^{idle}
+=
+f(SOC_{\rm cold},u_{t-1},L_{\rm charge},\text{thermal state})?
+$$
+
+如果：
+
+$$
+SOC=0.12,\quad u_{t-1}=0.93
+$$
+
+就能稳定产生：
+
+$$
+\Delta SOC=-0.10,
+$$
+
+那么即使没有 ep10/step153 的完整 prefix，也已经证明**charge→idle 转换本身存在状态相关的 transition artifact**。
+
+如果这个矩阵仍然完全复现不了，才说明真正依赖更长的全系统 trajectory，exact-prefix 就必须做。
+
+---
+
+### prefix 日志这次不要只存“前4小时”
+
+前4小时适合 taxonomy，但**不足以 exact replay**。
+
+一个 episode 才 168 步，存完整 executed physical action 几乎没有成本。直接每个 episode 保存：
 
 ```text
-pre cold SOC ≈ 0.13
-executed u_caes = 0
-post cold SOC ≈ 0.045
-failure = caes_cold_soc_low
+episode_index
+start_time
+scenario_id
+step
+
+u_tp_executed
+u_battery_executed
+u_caes_executed
 ```
 
-恢复到对应 episode start，然后 replay 前缀到失败前一小时。
-
-失败小时必须额外记录：
+最好再带：
 
 ```text
-simulation_time_before
-simulation_time_after
-
-policy_u_caes
-givesafe_safe_action_u_caes
-env_final_u_caes
-FMU input u_caes          # 最好 set 后直接 read-back
-
-p_caes_before
-p_caes_after
-
+u_caes_readback
+caes_mode
 cold_soc_before
 cold_soc_after
-hot_soc_before/after
-gas_soc_before/after
-
-cold_temperature_before/after
-
-oracle_predicted_cold_soc
+p_caes_before
+p_caes_after
 ```
 
-关键验收：
+真正用于 replay 的必须是：
 
-$$
-u_{CAES}^{FMU}=0
-$$
+> **canonicalized + GiveSafe 通过后 + 实际送入主 FMU 的 physical action**
 
-并且：
+而不是 actor proposal。
 
-$$
-P_{CAES}^{act}\approx0.
-$$
+边界条件是按 start time 从 CSV 再生的，所以没必要把每小时风光负荷都重复保存。
 
-如果这两个成立，而 cold SOC 仍：
-
-$$
-0.13\rightarrow0.045,
-$$
-
-才能把这个现象正式归为：
-
-> **FMU idle state drift**。
-
-否则应该先修动作/日志/模型映射，不要靠安全 margin 掩盖。
+400k 行这种数据非常小，完全不值得为了省日志把根因证据丢掉。
 
 ---
 
-# 第二阶段：把 FMU 身份也固定下来
+### Oracle 最终怎么改，现在先不要定死成 previous-mode guard
 
-现在实验报告缺一个非常有价值的东西。
-
-每个 run 的 `summary.json` 增加：
-
-```text
-fmu_sha256
-fmu_filename
-model_identifier
-model_description_hash
-oracle_version
-git_commit
-```
-
-这样以后我们不会再碰到：
-
-> “代码是这一版，但服务器到底跑的是哪个 FMU？”
-
-这种问题。
-
-对于论文实验尤其重要。
-
----
-
-# 第三阶段：如果 direct replay 确认 idle cold drift 确实存在，再重新标定 guard
-
-这时也**不要只拿14条失败样本直接写 `0.12`**。
-
-因为这14条是被筛选出来的“已经越界的坏样本”，存在 selection bias。
-
-应该从这次 30k Stage C 的所有真实 physical transitions 中提取：
+你判断：
 
 $$
-u_{CAES}=0
+\delta(SOC_t,m_{t-1})
 $$
 
-的全部 idle transition。
-
-对每一个算：
+比现在：
 
 $$
-d_t^{cold}
+\delta(SOC_t)
+$$
+
+更合理，这个方向没错。
+
+但如果最终发现异常幅度和：
+
+* 前一时刻 `p_caes`；
+* 连续 charge 时长；
+* 上一步 \(\Delta SOC_{cold}\)；
+* cold temperature；
+
+有明显关系，那么仅仅 `previous mode = charge` 还是太粗。
+
+更合理的最小扩展可能是：
+
+$$
+x_t^{safe}=
+[
+SOC_t,\,
+u_{t-1}^{CAES},\,
+p_{t-1}^{CAES},\,
+\Delta SOC_{t-1}
+].
+$$
+
+甚至可以不用 ML，继续保持论文方法干净：
+
+$$
+\widehat{\Delta SOC}_{cold,t+1}
 =
-SOC_{cold,t}
--
-SOC_{cold,t+1}.
+f_{\rm mode}
+(SOC_t,p_{t-1}^{CAES},\Delta SOC_{t-1})
 $$
 
-只关注危险方向：
+再加危险方向 residual envelope。
 
-$$
-d_{t,+}^{cold}
-=
-\max(d_t^{cold},0).
-$$
-
-然后得到：
-
-$$
-q_{95},q_{99},q_{max}
-$$
-
-特别报告：
-
-$$
-Q_{0.99}
-\left(
-\max(SOC_t-SOC_{t+1},0)
-\right).
-$$
-
-当前配置里的：
-
-```yaml
-residual_p99_cold: 0.01
-```
-
-显然来自旧 probe，它已经不能代表当前运行分布。配置自己也写明这些 residual 来自旧的 probe 数据。
-
----
-
-# 第四阶段：决定用固定 guard 还是 state-dependent guard
-
-会议论文版本我仍建议**优先保持简单**。
-
-如果统计出来 idle cold drift 比较集中，例如：
-
-```text
-P95 = 0.083
-P99 = 0.101
-max = 0.112
-```
-
-那直接使用：
-
-$$
-\delta^{idle}_{cold}
-=
-Q_{0.99}
-+
-m_{cold}
-$$
-
-即可。
-
-假设：
-
-$$
-Q_{0.99}=0.105,
-\qquad
-m=0.015,
-$$
-
-则：
-
-$$
-\delta^{idle}_{cold}=0.12.
-$$
-
-由于物理下界：
-
-$$
-SOC_{cold}^{min}=0.05,
-$$
-
-则 idle 的实际下安全界变成：
+如果最后证明只是一个明确的 `charge→idle` 单步 carry-over，那么更简单：
 
 $$
 SOC_{cold,t}
-\ge
-0.05+0.12
-=
-0.17.
-$$
-
-这就会把：
-
-$$
-SOC_{cold}=0.13
-$$
-
-的 idle 直接 mask 掉。
-
-这正是我们需要的。
-
-但如果统计发现：
-
-```text
-SOCcold = 0.7 时 drift ≈ 0.005
-SOCcold = 0.3 时 drift ≈ 0.03
-SOCcold = 0.13 时 drift ≈ 0.10
-```
-
-那说明 drift 强烈依赖状态。
-
-这时不应该粗暴设置：
-
-$$
-\delta=0.12
-$$
-
-覆盖整个状态空间，因为会让 idle 过度保守。
-
-可以做一个非常简单的 state-dependent lower envelope，例如按冷罐 SOC 分 3–4 个 bin：
-
-$$
-\delta_{cold}(SOC)
-=
-Q_{0.99}
-(
-d^{cold}
-\mid SOC\in B_j
-).
-$$
-
-这仍然不是复杂 ML，也不会扩大论文。
-
----
-
-# 第五阶段：idle guard 最好改成方向化，而不是永远双边用同一个数
-
-现在代码对 idle 使用的是：
-
-$$
-SOC_{\min}+\delta
-\le SOC
-\le
-SOC_{\max}-\delta.
-$$
-
-这是上一轮为了安全快速做的对称 envelope。
-
-但如果这次 30k 数据证明 idle cold SOC 的危险方向几乎全部是：
-
-$$
-\Delta SOC_{cold}<0,
-$$
-
-那么应该改成明确的：
-
-```yaml
-idle:
-  residual_p99_cold_low: ...
-  residual_p99_cold_high: ...
-```
-
-而不是：
-
-```yaml
-residual_p99_cold
-```
-
-于是：
-
-$$
-SOC_{cold}
-\ge
+-
+\widehat d_{\rm switch}
+>
 SOC_{cold}^{min}
+$$
+
+只在：
+
+$$
+m_{t-1}=charge,\quad m_t=idle
+$$
+
+时启用。
+
+这比把**所有 idle** 的 margin 从 0.02 扩到 0.12合理得多，也不会把整个可行域砍掉。
+
+---
+
+### 还有两个问题不要被 C2 抢走注意力
+
+第一，你给出的 taxonomy 数字现在还有 **1 条没对上**：
+
+$$
+8+114+8=130,
+$$
+
+但：
+
+$$
+128\ \text{cold-low}
 +
-r_{cold,low}^{idle}
-+
-m_{cold,low}
+1\ \text{temperature-high}
+=129.
 $$
 
-和：
+所以在报告里暂时不要写“130 条已全部归类”。把剩下那 **1/130** 查清楚。可能只是汇总口径/笔误，但 C2 是零容忍门，这里不能留一个 unknown。
+
+第二，**C5 是独立 blocker，而且目前不是小问题。**
+
+s0/s2：
 
 $$
-SOC_{cold}
-\le
-SOC_{cold}^{max}
--
-r_{cold,high}^{idle}
--
-m_{cold,high}
+C_{\rm policy}\approx-7.04M
 $$
 
-分别计算。
+而 random：
 
-这和 charge/discharge 现在已经采用 `_low/_high` 的方向化配置是一致的。当前 charge/discharge 已经这么设计了，而 idle 还是一个对称标量。
+$$
+C_{\rm random}\approx-13.5M.
+$$
 
-我建议借这次机会把 idle 也统一成 direction-aware。
+代码当前就是只有 policy 完整、random 完整以后才直接比较 `policy_cost < random_cost`。 因此即使明天 C2 被彻底修掉，**现在这两个 seed 的经济策略仍然没有资格进入主结果。**
+
+所以后续实际上存在两个阶段：
+
+$$
+\boxed{\text{先解决 C2：安全模型可信}}
+$$
+
+然后：
+
+$$
+\boxed{\text{再解决 C5：TD3 是否真的学到经济调度}}
+$$
+
+千万不要在修 C2 时顺便改 reward、TD3 超参，否则 safety root cause 和 policy-quality root cause 会重新混在一起。
 
 ---
 
-# C4/C5 的 gate 逻辑我也建议顺便改一下
+### 我会把现在的正式执行顺序冻结成这样
 
-你说得对：
+1. `expected_sha256` fail-fast + content-addressed FMU cache；同时解决 `git_commit` 为空的问题，服务器没 `.git` 时由 launcher 显式传 `OPTIMAL_DEMO_GIT_COMMIT`，或者写 source manifest hash。当前缓存确实只是 mtime/size 判定。
+2. 补 FmuSession input read-back，并优先尝试读取 CAES 内部 `Mdot_c1/Mdot_c2`。
+3. collector 保存**完整 episode executed-action prefix**。
+4. 先跑低 SOC `charge→idle` 定向 probe，不训练。
+5. 再 exact replay `s1 ep10/step153`。
+6. 只有确认异常机制后，才对 **0831** transition 数据重新标定 Oracle。
+7. 做 ≥20k boundary stress，要求全部 post-step hard = 0。
+8. 重跑 Stage C 30k。
+9. C1–C4 过后再单独解决 C5，不要直接开 3×400k。
+10. C1–C5 都稳定后，才重新启动 D + projection + component-support ablation + rule + rolling MILP + 固定 8 TEST weeks。
 
-> 当前评估已经完整跑了 168/168，C3 也通过，unserved 已经是 0；只是训练阶段 C2 有 false-safe。
+所以你的最后一句我会再精确一点：
 
-那么：
+> **Method implementation ready; FMU–Oracle switching consistency unresolved; economic policy superiority not yet demonstrated; comparative evidence incomplete.**
 
-### C2
-
-应该：
-
-```text
-FAIL
-```
-
-没有争议。
-
-### C4
-
-如果 evaluation 本身满足：
+现在最有价值的不是再训练，而是验证这个很具体的假设：
 
 $$
-valid\_steps=168
+\boxed{
+0.08\sim0.17\ 的 cold\ SOC\ 下降
+\approx
+一小时上一充电工况的冷罐质量流量
+}
 $$
 
-$$
-eval\_status=ok
-$$
-
-那么就应该独立计算：
-
-$$
-E_{unserved}.
-$$
-
-如果为 0，则：
-
-```text
-C4 = PASS
-```
-
-### C5
-
-同样，如果：
-
-* policy 168 h 完整；
-* random baseline 168 h 完整；
-* 两边成本口径一致；
-
-就应该直接比较：
-
-$$
-C_{policy}<C_{random}.
-$$
-
-不应该因为：
-
-$$
-C2=false
-$$
-
-就自动写：
-
-```text
-C4=false
-C5=false
-```
-
-**最终的 `stage_c_passed` 当然仍然必须是：**
-
-$$
-C1\land C2\land C3\land C4\land C5.
-$$
-
-因此即使：
-
-```text
-C1 PASS
-C2 FAIL
-C3 PASS
-C4 PASS
-C5 PASS
-```
-
-最终依然：
-
-```text
-stage_c_passed = false
-```
-
-这才是干净的实验报告。
-
-否则现在的结果会错误表达成：
-
-> 方法缺供能力不过门、经济性不过门，
-
-实际上它们根本没有失败，只是被 safety gate 连带置 False。
-
-建议把：
-
-```text
-complete_week
-```
-
-严格定义为：
-
-$$
-eval\_status=ok
-\land
-eval\_valid\_steps=168
-$$
-
-**不要包含 C2。**
-
-这个修复不改变 Stage D 的阻断，只让诊断更准确。
-
----
-
-# 修完后的 C2 不能只要求“14→0”
-
-新一版至少做三层验证。
-
-1. **失败状态 replay**
-   把14条 false-safe 的 pre-state 全部重放：
-
-   $$
-   14/14
-   $$
-
-   必须在主 FMU 前被 mask/reject，或者生成恢复动作。
-
-2. **所有 idle physical transitions 离线回放**
-   用新的 guard 检查旧 30k 数据：
-   所有已知会造成：
-
-   $$
-   SOC_{cold,t+1}<0.05
-   $$
-
-   的 idle 必须全部提前判 unsafe。
-
-3. **新 Stage C 30k**
-   重新从头训练，要求：
-
-   $$
-   N_{\mathrm{false-safe}}=0
-   $$
-
-   不是只看 cold：
-
-   ```text
-   pressure low = 0
-   cold SOC low = 0
-   temperature = 0
-   all post-step hard = 0
-   ```
-
-然后才：
-
-$$
-C2=\text{PASS}.
-$$
-
----
-
-## 我给当前问题的最终判断
-
-**`7515e7e` 可以保留，不需要回滚。**它把上一轮 numerical contract 的两个漏洞确实闭合了，而且 commit 自己也正确地没有声称解决 C2。
-
-现在真正的 blocker 的确已经收敛到：
-
-$$
-\boxed{\text{idle CAES one-step cold-storage feasibility}}
-$$
-
-但我会比“直接把 0.02 改到 0.12”多加一个硬步骤：
-
-> **先证明服务器真实 FMU 在最终输入 `u_caes=0` 下确实存在 0.08–0.12 的 cold-SOC 一步下降。**
-
-因为按照你之前提供的 Modelica 储罐方程，真正 idle 下这种大幅 SOC 漂移并不自然。如果这个检查跳过了，很可能是用一个越来越大的 Oracle margin 去遮住 FMU/日志/变量映射的问题。
-
-一旦 direct FMU replay 证明漂移是真的，就按**全部 idle transitions 的危险方向 P99 + engineering margin**重新标定 cold guard，再跑新 Stage C。论文里不用写 0.93、ULP、14 条 bug 这些工程排错过程；正文只需要保留一句：
-
-> *Mode-specific one-step residual envelopes calibrated from FMU transitions are incorporated into the feasible-support layer to account for model mismatch.*
-
-这就够了。Stage D 仍然保持冻结。
+如果内部 Mdot 日志证实这一点，整个 C2 为什么反复出现就基本被抓住了。

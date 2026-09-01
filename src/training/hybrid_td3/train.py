@@ -41,6 +41,9 @@ def _soft_shell_enabled(explicit: bool | None = None) -> bool:
 
 
 def _git_commit(root: Path) -> str:
+    env = os.environ.get("OPTIMAL_DEMO_GIT_COMMIT", "").strip()
+    if env:
+        return env[:40]
     head = root / ".git" / "HEAD"
     try:
         raw = head.read_text(encoding="utf-8").strip()
@@ -50,6 +53,25 @@ def _git_commit(root: Path) -> str:
         return raw[:40]
     except OSError:
         return ""
+
+
+def _source_manifest(root: Path) -> str:
+    """Short hash of safety/train sources when the box has no .git."""
+    import hashlib
+
+    files = (
+        "src/actions/feasibility_oracle.py",
+        "src/training/hybrid_td3/train.py",
+        "src/config/feasibility_margins.yaml",
+        "src/config/env_config.yaml",
+        "src/fmu/session.py",
+    )
+    digest = hashlib.sha256()
+    for rel in files:
+        path = root / rel
+        if path.is_file():
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:40]
 
 
 def _paper_cfg(root: Path) -> dict[str, Any]:
@@ -379,6 +401,9 @@ def run_hybrid_training(
             forecast_enabled=forecast_enabled,
             forecast_mode=forecast_mode,
         )
+        traj_dir = Path(run_dir) / "trajectories"
+        traj_dir.mkdir(parents=True, exist_ok=True)
+        env.executed_log_path = traj_dir / "executed_actions.jsonl"
     except IncompleteRewardConfigError as exc:
         return {"status": "blocked_incomplete_reward", "error": str(exc)}
 
@@ -498,6 +523,7 @@ def run_hybrid_training(
         "shadow_validation": shadow.capabilities() if shadow else {"enabled": False},
         "oracle_version": env.oracle.oracle_version,
         "git_commit": _git_commit(root),
+        "source_manifest": _source_manifest(root),
         **{k: v for k, v in describe_fmu(env.fmu_path).items()},
         "annual_horizon_hours": env.config["fmu"].get("annual_horizon_hours"),
         "episode_start_schedule": "annual_cycling_windows",
