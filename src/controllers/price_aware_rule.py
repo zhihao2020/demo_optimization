@@ -24,6 +24,7 @@ class PriceAwareRuleController(RuleBasedController):
         battery_soc_high: float = 0.75,
         charge_mag: float = 0.6,
         discharge_mag: float = 0.6,
+        thermal_at_min: bool = False,
     ) -> None:
         super().__init__(env_or_space, oracle)
         self.charge_threshold = charge_threshold
@@ -32,6 +33,7 @@ class PriceAwareRuleController(RuleBasedController):
         self.battery_soc_high = battery_soc_high
         self.charge_mag = charge_mag
         self.discharge_mag = discharge_mag
+        self.thermal_at_min = bool(thermal_at_min)
 
     def _current_buy_price(self) -> float | None:
         env = self.env
@@ -66,10 +68,14 @@ class PriceAwareRuleController(RuleBasedController):
         if getattr(self.env, "initial_soc", None):
             target_soc = float(self.env.initial_soc.get("battery_soc", 0.5))
 
-        # 火电：仍取可行上界（托底），谷时可略降给储能腾空间
-        u_tp = float(feasible.u_tp_high)
-        if buy is not None and buy <= self.charge_threshold and not recovery:
-            u_tp = float(0.7 * feasible.u_tp_high + 0.3 * feasible.u_tp_low)
+        # 火电：默认取可行上界（托底），谷时可略降给储能腾空间。
+        # thermal_at_min：始终贴动态下限，用来分解“压火电”与储能规则的贡献。
+        if self.thermal_at_min:
+            u_tp = float(feasible.u_tp_low)
+        else:
+            u_tp = float(feasible.u_tp_high)
+            if buy is not None and buy <= self.charge_threshold and not recovery:
+                u_tp = float(0.7 * feasible.u_tp_high + 0.3 * feasible.u_tp_low)
 
         # 电池：价低充、价高放；回收段朝 target_soc 修正
         u_bat = 0.0

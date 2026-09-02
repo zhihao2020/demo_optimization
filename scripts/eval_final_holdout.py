@@ -45,22 +45,40 @@ def write_out(run_dir: Path, payload: dict) -> None:
     (run_dir / "summary.json").write_text(text, encoding="utf-8")
 
 
-def eval_rule(run_dir: Path, start: float) -> dict:
+def apply_grid_hard_mw(env: PowerSystemEnv, grid_hard_mw: float | None) -> None:
+    """Tighten Oracle/joint-support interchange to ±grid_hard_mw (MW). FMU plant cap unchanged."""
+    if grid_hard_mw is None:
+        return
+    watts = abs(float(grid_hard_mw)) * 1e6
+    grid = env.oracle.params.setdefault("grid", {})
+    grid["P_max_buy_W"] = watts
+    grid["P_max_sell_W"] = -watts
+
+
+def eval_rule(
+    run_dir: Path,
+    start: float,
+    *,
+    thermal_at_min: bool = False,
+    grid_hard_mw: float | None = None,
+) -> dict:
     from controllers.price_aware_rule import PriceAwareRuleController
 
     env = PowerSystemEnv(run_id=run_dir.name, forecast_enabled=True)
+    apply_grid_hard_mw(env, grid_hard_mw)
     try:
         t0 = time.perf_counter()
         ev = evaluate_policy(
             env,
-            PriceAwareRuleController(env),
+            PriceAwareRuleController(env, thermal_at_min=thermal_at_min),
             run_dir / "trajectories" / "eval.csv",
             reset_options={"start_time": start},
         )
         wall = time.perf_counter() - t0
     finally:
         env.close()
-    return {"status": "completed", "method": "rule", "eval": ev, "kpi": extract_kpi_from_eval(ev), "wall_s": wall}
+    method = "pmin_rule" if thermal_at_min else "rule"
+    return {"status": "completed", "method": method, "eval": ev, "kpi": extract_kpi_from_eval(ev), "wall_s": wall}
 
 
 def eval_milp(run_dir: Path, start: float) -> dict:
@@ -119,7 +137,7 @@ def eval_pso(run_dir: Path, start: float, seed: int, n_iters: int, n_particles: 
     }
 
 
-def eval_td3(run_dir: Path, start: float, ckpt: Path) -> dict:
+def eval_td3(run_dir: Path, start: float, ckpt: Path, *, grid_hard_mw: float | None = None) -> dict:
     import numpy as np
     from safety import GiveSafeController, load_givesafe_config
     from training.hybrid_common.policy_wrapper import HybridGiveSafePolicyWrapper
@@ -127,6 +145,7 @@ def eval_td3(run_dir: Path, start: float, ckpt: Path) -> dict:
     from training.hybrid_td3.train import _paper_algo_cfg, _pin_torch_threads, _torch_device
 
     env = PowerSystemEnv(run_id=run_dir.name, forecast_enabled=True)
+    apply_grid_hard_mw(env, grid_hard_mw)
     gs_cfg = load_givesafe_config()
     ctrl = GiveSafeController(oracle=env.oracle, shadow=None, config=gs_cfg)
     paper_algo = _paper_algo_cfg(ROOT)
@@ -167,11 +186,12 @@ def eval_td3(run_dir: Path, start: float, ckpt: Path) -> dict:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--method", choices=("rule", "milp", "pso", "td3"), required=True)
+    p.add_argument("--method", choices=("rule", "pmin_rule", "milp", "pso", "td3"), required=True)
     p.add_argument("--week", type=int, required=True, choices=list(FINAL_WEEKS))
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--ckpt", type=str, default=None)
     p.add_argument("--run-dir", type=str, required=True)
+    p.add_argument("--grid-hard-mw", type=float, default=None, help="Oracle interchange hard band, MW")
     p.add_argument("--pso-iters", type=int, default=25)
     p.add_argument("--pso-particles", type=int, default=12)
     args = p.parse_args()
@@ -180,7 +200,9 @@ def main() -> None:
     run_dir = Path(resolve_run_dir(args.run_dir))
     start = week_start_seconds(args.week)
     if args.method == "rule":
-        out = eval_rule(run_dir, start)
+        out = eval_rule(run_dir, start, thermal_at_min=False, grid_hard_mw=args.grid_hard_mw)
+    elif args.method == "pmin_rule":
+        out = eval_rule(run_dir, start, thermal_at_min=True, grid_hard_mw=args.grid_hard_mw)
     elif args.method == "milp":
         out = eval_milp(run_dir, start)
     elif args.method == "pso":
@@ -189,7 +211,7 @@ def main() -> None:
         ckpt = Path(args.ckpt or "")
         if not ckpt.is_file():
             raise SystemExit(f"missing checkpoint: {ckpt}")
-        out = eval_td3(run_dir, start, ckpt)
+        out = eval_td3(run_dir, start, ckpt, grid_hard_mw=args.grid_hard_mw)
     out.update(
         {
             "eval_week": args.week,
@@ -197,6 +219,7 @@ def main() -> None:
             "seed": args.seed,
             "eval_start_time_seconds": start,
             "protocol": "paper_min_final_holdout_w12_25_38_51",
+            "grid_hard_mw": args.grid_hard_mw,
         }
     )
     write_out(run_dir, out)

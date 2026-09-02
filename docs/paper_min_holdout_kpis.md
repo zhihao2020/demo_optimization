@@ -40,10 +40,33 @@ Seed 2 failed Stage D C5 (worse than random on the default eval week) and is kep
 
 PC mean decision time: 4.01 ms/step.
 
-## Seed-0 utilization (paper Table `tab:util`)
+## \(P_{\min}\) + storage rule (paper baseline)
+
+Same price-aware storage heuristic as Rule, thermal locked to the dynamic feasible lower bound. Closed-loop FMU, weeks 12/25/38/51:
+
+| week | CC |
+|------|-----|
+| 12 | -17160635.56825184 |
+| 25 | -13812312.447092013 |
+| 38 | -17727034.73864601 |
+| 51 | -18987680.457178134 |
+| four-week mean | -16921915.802791999 |
+
+Thermal mean 51.04 MW every week (same as PC). Four-week mean CC matches PC (\(-16.92\) vs \(-16.89\) million CNY/week).
+
+## Oracle interchange \(\pm200\) MW hard-band (hours completed)
+
+Nominal paper table uses \(\pm500\) MW. Abort = `DynamicStateConstraintViolation` before the FMU step.
+
+| method | w12 | w25 | w38 | w51 |
+|--------|-----|-----|-----|-----|
+| rule ±200 | 87 | 7 | 10 | 10 |
+| pmin ±200 | 10 | 7 | 10 | 2 |
+
+## Utilization (paper Table `tab:util`)
 
 Source: `runs/paper_min/{rule,milp,pso,pc_s0}_w{12,25,38,51}/summary.json` pulled 2026-09-02.
 
 PC-HybridTD3 seed 0 on **all four** weeks: thermal mean \(51.04\) MW (\(P_{\min}\) to numerical precision), BESS throughput \(168.9\) MWh, terminal battery SoC \(0.156\). CAES charge/idle/discharge hours and settled buy/sell vary by week; settled sell is \(20\)--\(26\) GWh vs buy \(0.8\)--\(4.3\) GWh. Live paper title is **Economic** scheduling (not Coordinated).
 
-文档更新：2026-09-02 18:00 (+08:00)
+文档更新：2026-09-02 20:30 (+08:00)
