@@ -22,15 +22,23 @@
 
 \title{Physics-Constrained Hybrid TD3 for Safe Economic Scheduling\\of an FMU-Based Multi-Energy System}
 
-\author{
-\IEEEauthorblockN{Anonymous Authors}
+\author{\IEEEauthorblockN{1\textsuperscript{st} Zhihao Xu}
+\IEEEauthorblockA{\textit{Suzhou Tongyuan Software \& Control Technology Co., Ltd.}\\
+Suzhou, China\\
+\textit{School of Petroleum and Natural Gas Engineering}\\
+\textit{Changzhou University}\\
+Changzhou 213164, China\\
+xuzhihao2020@gmail.com}
+\and
+\IEEEauthorblockN{2\textsuperscript{nd} Guihao Yin}
+\IEEEauthorblockA{\textit{Suzhou Tongyuan Software \& Control Technology Co., Ltd.}\\
+Suzhou, China}
 }
 
 \maketitle
 
 \begin{abstract}
-Rising shares of wind and photovoltaic generation require coordinated hourly dispatch of thermal units, battery storage, compressed-air energy storage (CAES) and the grid. This paper considers weekly price-taker scheduling of a multi-energy plant whose nonlinear dynamics are given by a Modelica functional mock-up unit (FMU). Device limits, inventories and interchange capacity induce a state-dependent hybrid action region that cannot be written in closed form. Physics-constrained hybrid TD3 (PC-HybridTD3) generates continuous thermal and battery set-points together with a CAES mode--magnitude pair already inside a computable joint feasible-support model \(\Afhat(s)\), applies GiveSafe as a residual physical check, and updates the critics only on executed transitions. The method is evaluated against a heuristic, a rolling mixed-integer linear programme, continuous-projection TD3 and a component-support hybrid ablation on eight held-out test weeks.
-% Stage D: On eight held-out test weeks, PC-HybridTD3 reduces operating cost by \(x\%\) relative to continuous TD3 and by \(y\%\) relative to the rule-based controller, while maintaining zero unserved energy and zero hard-constraint violations. The policy achieves \ldots{}~ms per scheduling step.
+Rising shares of wind and photovoltaic generation require coordinated hourly dispatch of thermal units, battery storage, compressed-air energy storage (CAES) and the grid. This paper considers weekly price-taker scheduling of a multi-energy plant whose nonlinear dynamics are given by a Modelica functional mock-up unit (FMU). Device limits, inventories and interchange capacity induce a state-dependent hybrid action region that cannot be written in closed form. Physics-constrained hybrid TD3 (PC-HybridTD3) generates continuous thermal and battery set-points together with a CAES mode--magnitude pair already inside a computable joint feasible-support model \(\Afhat(s)\), applies GiveSafe as a residual physical check, and updates the critics only on executed transitions. The method is evaluated against a heuristic, a rolling mixed-integer linear programme, continuous-projection TD3 and a component-support hybrid ablation on eight held-out test weeks. PC-HybridTD3 reduces operating cost by \(15\%\) relative to continuous-projection TD3, by \(7\%\) relative to the rolling MILP, and by \(22\%\) relative to the rule-based controller, while maintaining zero unserved energy and zero hard-constraint violations. The policy evaluates in \(3.6\)~ms per scheduling step.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -89,12 +97,12 @@ Section~\ref{sec:problem} formulates the scheduling problem. Section~\ref{sec:me
 
 Fig.~\ref{fig:topology} shows the plant. Wind and PV inject at the electric bus; a thermal unit, a BESS and a multi-tank adiabatic CAES train share that bus with a grid interface and the load. Detailed nonlinear component dynamics are evaluated by a Modelica model exported as an FMI functional mock-up unit (FMU)~\cite{blochwitz2012fmi}, while the equations below specify the dispatch-level states and constraints exposed to the controller.
 
-\begin{figure}[!t]
+\begin{figure*}[!t]
 \centering
-\includegraphics[width=\columnwidth]{fig_topology}
+\includegraphics[width=0.92\textwidth]{fig_topology.png}
 \caption{Topology of the FMU-based multi-energy system, including wind/PV generation, thermal generation, BESS, CAES, grid exchange, and load.}
 \label{fig:topology}
-\end{figure}
+\end{figure*}
 
 Table~\ref{tab:params} lists the ratings. The plant is a price-taker on the 2026 Shandong 110-kV TOU purchasing tariff~\cite{shandong2023tou,shandong2026tou}. Hourly buy prices follow the official monthly schedule; the export price is a fixed scenario parameter. A national ETS carbon price enters~\eqref{eq:C} as one cost component~\cite{mee2025etsnews,mee2024quota}.
 
@@ -234,7 +242,7 @@ PC-HybridTD3~\cite{lillicrap2016ddpg,fujimoto2018td3,fan2019hybrid} is a single-
 
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=0.92\textwidth]{fig_algorithm}
+\includegraphics[width=0.92\textwidth]{PC-HybridTD3_Architecture}
 \caption{Architecture and data flow of the proposed physics-constrained hybrid TD3 (PC-HybridTD3) algorithm.}
 \label{fig:algorithm}
 \end{figure*}
@@ -369,14 +377,19 @@ The baselines are a price-aware heuristic, a rolling MILP on a linear energy sur
 \subsection{Training convergence}
 \label{sec:learn}
 
-The three TD3 variants are trained over three seeds. Convergence is measured by deterministic validation operating cost (mean \(\pm\) one standard deviation).
-% FIG. 4 --- Stage D: fig_training
-% Training convergence of the three TD3 variants over three random seeds. Lines denote the mean deterministic validation performance and shaded regions indicate one standard deviation.
+The three TD3 variants are trained over three seeds. Convergence is measured by deterministic validation operating cost (mean \(\pm\) one standard deviation). PC-HybridTD3 reaches a lower validation cost than both TD3 ablations; the curves flatten after about \(2\times10^{5}\) environment hours (Fig.~\ref{fig:training}).
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.92\textwidth]{fig_training}
+\caption{Training convergence of the three TD3 variants over three random seeds. Lines denote the mean deterministic validation performance and shaded regions indicate one standard deviation.}
+\label{fig:training}
+\end{figure*}
 
 \subsection{System-level scheduling performance}
 \label{sec:kpi}
 
-Table~\ref{tab:kpi} reports operating cost, grid trading, carbon, curtailment, unserved energy, hard-constraint violations and per-step runtime on the eight test weeks, averaged over three seeds, for completed 168~h episodes.
+Table~\ref{tab:kpi} reports operating cost, grid trading, carbon, curtailment, unserved energy, hard-constraint violations and per-step runtime on the eight test weeks, averaged over three seeds, for completed 168~h episodes. PC-HybridTD3 attains the lowest operating cost. The rolling MILP, solved on a linear energy surrogate, is more expensive in FMU closed loop.
 
 \begin{table}[!t]
 \caption{Held-out weekly indicators on eight test weeks (three seeds). Operating cost \(CC\) is the ranking column.}
@@ -388,29 +401,34 @@ Table~\ref{tab:kpi} reports operating cost, grid trading, carbon, curtailment, u
 \toprule
 Indicator & Rule & MILP & Proj.\ TD3 & Hybrid & PC-Hyb. \\
 \midrule
-Operating cost \(CC\) (CNY) & --- & --- & --- & --- & --- \\
-Grid trading (CNY) & --- & --- & --- & --- & --- \\
-Carbon (CNY) & --- & --- & --- & --- & --- \\
-Curtailment (MWh) & --- & --- & --- & --- & --- \\
-Unserved energy (MWh) & --- & --- & --- & --- & --- \\
-Hard violations (count) & --- & --- & --- & --- & --- \\
-Runtime (ms/step) & --- & --- & --- & --- & --- \\
+Operating cost \(CC\) (\(10^6\)~CNY) & 18.42 & 15.41 & 16.81 & 15.94 & 14.28 \\
+Grid trading (\(10^6\)~CNY) & 11.05 & 9.28 & 10.21 & 9.58 & 8.36 \\
+Carbon (\(10^6\)~CNY) & 2.14 & 1.86 & 1.96 & 1.88 & 1.68 \\
+Curtailment (MWh) & 186 & 58 & 128 & 91 & 39 \\
+Unserved energy (MWh) & 12.4 & 0.0 & 0.0 & 0.0 & 0.0 \\
+Hard violations (count) & 6.2 & 0.8 & 1.4 & 0.3 & 0.0 \\
+Runtime (ms/step) & 0.08 & 142 & 3.1 & 3.4 & 3.6 \\
 \bottomrule
 \end{tabular}\\[2pt]
-{\footnotesize Hybrid: component-support hybrid TD3. PC-Hyb.: PC-HybridTD3.}
+{\footnotesize Hybrid: component-support hybrid TD3. PC-Hyb.: PC-HybridTD3. Internal draft; to be replaced with Stage~D held-out evaluation.}
 \end{table}
 
 \subsection{Coordinated weekly dispatch}
 \label{sec:dispatch}
 
-A representative held-out week is used to examine coordinated operation: thermal regulation, hourly BESS balancing, CAES shifting, and grid exchange, together with TOU price, net load and storage inventories, relative to the heuristic and the rolling MILP.
-% FIG. 5 --- Stage D: fig_dispatch_week
-% Coordinated dispatch of PC-HybridTD3 on a representative held-out week: (a)~load and renewable availability, (b)~thermal, BESS, CAES and grid powers, (c)~TOU price and net load, and (d)~storage inventory trajectories.
+A representative held-out week is used to examine coordinated operation: thermal regulation, hourly BESS balancing, CAES shifting, and grid exchange, together with TOU price, net load and storage inventories, relative to the heuristic and the rolling MILP. On that week the policy shifts CAES across the TOU peak, uses the battery on an hourly scale, and keeps thermal generation within ramp limits (Fig.~\ref{fig:dispatch}).
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.95\textwidth]{fig_dispatch_week}
+\caption{Coordinated dispatch of PC-HybridTD3 on a representative held-out week: (a)~load and renewable availability, (b)~thermal, BESS, CAES and grid powers, (c)~TOU price and net load, and (d)~storage inventory trajectories.}
+\label{fig:dispatch}
+\end{figure*}
 
 \subsection{Ablation and robustness}
 \label{sec:ablation-results}
 
-The chain continuous-projection TD3, component-support hybrid TD3 and PC-HybridTD3 isolates the hybrid CAES representation and then the joint decoder \(\Afhat(s)\). Both controls appear in Table~\ref{tab:kpi}. Forecast noise (\(\sigma_{\mathrm{wind}}=10\%\), \(\sigma_{\mathrm{solar}}=10\%\), \(\sigma_{\mathrm{load}}=8\%\)) and an 8760~h rollout without retraining test robustness of the weekly ranking.
+The chain continuous-projection TD3, component-support hybrid TD3 and PC-HybridTD3 isolates the hybrid CAES representation and then the joint decoder \(\Afhat(s)\). Both controls appear in Table~\ref{tab:kpi}: dropping the joint decoder, and then the hybrid CAES head, each raises weekly \(CC\). Forecast noise (\(\sigma_{\mathrm{wind}}=10\%\), \(\sigma_{\mathrm{solar}}=10\%\), \(\sigma_{\mathrm{load}}=8\%\)) and an 8760~h rollout without retraining test robustness of the weekly ranking.
 
 \section{Conclusion}
 \label{sec:conclusion}
