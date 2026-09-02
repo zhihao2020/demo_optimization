@@ -20,7 +20,7 @@
 
 \begin{document}
 
-\title{Economic Scheduling Optimization of Multi-Energy Systems\\via Physics-Constrained Hybrid-Action Reinforcement Learning}
+\title{Economic Scheduling of Multi-Energy Systems\\via Physics-Constrained Hybrid-Action Reinforcement Learning}
 
 \author{\IEEEauthorblockN{1\textsuperscript{st} Zhihao Xu}
 \IEEEauthorblockA{\textit{Suzhou Tongyuan Software \& Control Technology Co., Ltd.}\\
@@ -38,7 +38,7 @@ Suzhou, China}
 \maketitle
 
 \begin{abstract}
-Rising shares of wind and photovoltaic generation require economic hourly dispatch of thermal units, battery storage, compressed-air energy storage (CAES) and the grid. This paper considers weekly price-taker scheduling of a multi-energy plant whose nonlinear dynamics are given by a Modelica functional mock-up unit (FMU). Device limits, inventories and interchange capacity induce a state-dependent hybrid action region that cannot be written in closed form. Physics-constrained hybrid TD3 (PC-HybridTD3) generates continuous thermal and battery set-points together with a CAES mode--magnitude pair already inside a computable joint feasible-support model \(\Afhat(s)\), applies a residual safety filter termed GiveSafe, and updates the critics only on executed transitions. The method is evaluated in closed loop on the Sysplorer FMU against a price-aware heuristic, the same heuristic with thermal generation held at \(P_{\min}\), a rolling mixed-integer linear programme and a week-wise FMU-based parametric PSO on four seasonal final-holdout weeks. Ranking uses the modeled weekly net objective \(CC\) (\(10^6\)~CNY/week; lower is better). The four-week mean \(CC\) of PC-HybridTD3 is \(-16.89\), matching the thermal-\(P_{\min}\) heuristic (\(-16.92\)) and improving on the unconstrained heuristic, the rolling linear-surrogate MILP and the week-wise PSO, with zero unserved energy and zero hard-constraint violations, at \(3.8\)~ms per step versus \(225\)~ms for the MILP.
+Rising shares of wind and photovoltaic generation require economic hourly dispatch of thermal units, battery storage, compressed-air energy storage (CAES) and the grid. This paper considers weekly price-taker scheduling of a multi-energy plant whose nonlinear dynamics are given by a Modelica functional mock-up unit (FMU). Device limits, inventories and interchange capacity induce a state-dependent hybrid action region that cannot be written in closed form. Physics-constrained hybrid TD3 (PC-HybridTD3) generates continuous thermal and battery set-points together with a CAES mode--magnitude pair already inside a computable joint feasible-support model \(\Afhat(s)\), applies a residual safety filter termed GiveSafe, and updates the critics only on executed transitions. Closed-loop evaluation is conducted on four seasonally separated holdout weeks against heuristic, rolling MILP and parametric-search baselines. PC-HybridTD3 achieves a four-week mean modeled objective of \(-16.89\) million CNY/week, comparable to a thermal-floor heuristic (\(-16.92\)) and lower than the price-aware rule, rolling linear-surrogate MILP and week-wise parametric PSO. All holdout rollouts complete without unserved energy or hard-constraint violation, while policy inference requires \(3.8\)~ms per decision.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -48,28 +48,22 @@ multi-energy system, economic scheduling, hybrid-action reinforcement learning, 
 \section{Introduction}
 \label{sec:introduction}
 
-Wind and photovoltaic (PV) variability couple thermal generation, battery energy storage (BESS), compressed-air energy storage (CAES) and grid interchange through a shared bus and shared inventories~\cite{zhou2023iesdrl,yang2024planning}. A thermal ramp, a battery charge and a CAES mode switch all change the same power balance. This paper studies weekly price-taker operation of a thermal--BESS--CAES plant~\cite{emmanuel2020market,pei2024pricetaker} under a time-of-use (TOU) tariff and an emissions-trading charge. The objective is the expected operating cost
+Wind and photovoltaic (PV) variability couple thermal generation, battery energy storage (BESS), compressed-air energy storage (CAES) and grid interchange through a shared bus and shared inventories~\cite{zhou2023iesdrl,yang2024planning}. A thermal ramp, a battery charge and a CAES mode switch all change the same power balance. This paper studies weekly price-taker operation of a thermal--BESS--CAES plant~\cite{emmanuel2020market,pei2024pricetaker} under a time-of-use (TOU) tariff and an emissions-trading charge. The ranking objective is the expected weekly cash cost
 \begin{equation}
-\begin{aligned}
 \min_{\pi}\;
 \mathbb{E}\Biggl[\sum_{t=0}^{T-1} C_t\Biggr],
 \quad
 C_t
-&=
-C_t^{\mathrm{grid}}
-+C_t^{\mathrm{thermal}}
-+C_t^{\mathrm{carbon}}\\
-&\quad
-+C_t^{\mathrm{curt}}
-+C_t^{\mathrm{uns}}
-+C_t^{\mathrm{deg}}
-+C_t^{\mathrm{su}}.
-\end{aligned}
+=
+C_t^{\mathrm{th}}
++C_t^{\mathrm{buy}}
+-C_t^{\mathrm{sell}}
++C_t^{\mathrm{dev}},
 \label{eq:C}
 \end{equation}
-Wind, PV and load are exogenous, so the controller must dispatch the thermal unit, BESS, CAES and the grid interchange jointly rather than schedule any one of them in isolation.
+where \(C_t^{\mathrm{th}}\) is thermal device cash, \(C_t^{\mathrm{buy}}-C_t^{\mathrm{sell}}\) is TOU settlement and \(C_t^{\mathrm{dev}}\) is load and renewable device cash. Wind, PV and load are exogenous, so the controller must dispatch the thermal unit, BESS, CAES and the grid interchange jointly rather than schedule any one of them in isolation.
 
-Mixed-integer linear programmes (MILP) and model-predictive control make constraints explicit~\cite{cui2025ghtd3,ceusters2021mpcrl}, but on a nonlinear multi-physics plant they typically convexify thermodynamics or incur a non-trivial online solve. Deep reinforcement learning (DRL)~\cite{sutton2018rl,lillicrap2016ddpg,fujimoto2018td3,haarnoja2018sac} learns a closed-loop policy and, once trained, evaluates a command in a single forward pass. Continuous DRL schedulers for integrated energy and CAES--PV plants~\cite{zhou2023iesdrl,li2025iesdrl,wu2024pricing,sun2024constrained,dolatabadi2023caes} typically act in a regular box, or restore feasibility by clipping after the fact. Parameterized-action methods factor a discrete choice and a continuous magnitude~\cite{hausknecht2016pas,masson2016paa,fan2019hybrid}, yet they do not place a same-hour policy on a plant-wide, state-dependent support. Constrained RL has been applied to integrated energy dispatch~\cite{sun2024constrained}, and a CAES energy hub has been scheduled with safe RL~\cite{garmroodi2023caes}. Hierarchical option and goal methods plan across time scales~\cite{cui2024caesbess,cui2025ghtd3,jendoubi2023hier,ochoa2024bidding}. The remaining gap is heterogeneous device actions generated on a joint feasible region and executed on a nonlinear FMU.
+Mixed-integer linear programmes (MILP) and model-predictive control make constraints explicit~\cite{cui2025ghtd3,ceusters2021mpcrl}, but on a nonlinear multi-physics plant they typically convexify thermodynamics or incur a non-trivial online solve. Deep reinforcement learning (DRL)~\cite{sutton2018rl,lillicrap2016ddpg,fujimoto2018td3,haarnoja2018sac} learns a closed-loop policy and, once trained, evaluates a command in a single forward pass. Continuous DRL schedulers for integrated energy and CAES--PV plants~\cite{zhou2023iesdrl,li2025iesdrl,wu2024pricing,sun2024constrained,dolatabadi2023caes} typically act in a regular box, or restore feasibility by clipping after the fact. Parameterized-action methods factor a discrete choice and a continuous magnitude~\cite{hausknecht2016pas,masson2016paa,fan2019hybrid}, yet they do not place a same-hour policy on a plant-wide, state-dependent support. Constrained RL has been applied to integrated energy dispatch~\cite{sun2024constrained}, and a CAES energy hub has been scheduled with safe RL~\cite{garmroodi2023caes}. Hierarchical option and goal methods plan across time scales~\cite{cui2024caesbess,cui2025ghtd3,jendoubi2023hier,ochoa2024bidding}. However, existing studies rarely combine heterogeneous hybrid actions with plant-wide state-dependent feasible-support generation and nonlinear closed-loop execution.
 
 The set of commands the FMU will execute, \(\AFMU(s)\), is not available analytically. A computable oracle supplies a joint support \(\Afhat(s)\) that approximates it. Physics-constrained hybrid TD3 (PC-HybridTD3) emits
 \(a_t=(u_t^{\mathrm{th}},u_t^{\mathrm{bat}},m_t,z_t)\)
@@ -80,12 +74,11 @@ a_t\sim\pi_\theta(s_t)\;\Rightarrow\; a_t\in\Afhat(s_t),
 \end{equation}
 rather than \(a_t=\Pi(\pi_\theta(s_t))\). Only transitions advanced by the FMU enter the economic Bellman update.
 
-The paper makes three contributions.
-The resulting framework combines the fast policy inference of DRL with explicit state-dependent feasibility handling, while retaining nonlinear plant verification in the closed loop.
+The resulting framework combines fast policy inference with state-dependent feasibility handling and nonlinear closed-loop verification. The main contributions are as follows:
 \begin{enumerate}
 \item Hybrid-action representation: a parameterized action space that combines continuous thermal/BESS commands with a discrete-continuous CAES mode--magnitude action, avoiding projection across the disconnected CAES operating envelope.
 \item Physics-constrained action generation: a state-dependent joint feasible support that incorporates device limits, inventories, thermal ramps, CAES operating restrictions and grid coupling before the action reaches the plant, complemented by a residual GiveSafe safety filter.
-\item Closed-loop economic performance: seasonal FMU evaluation demonstrates lower modeled weekly \(CC\) than the tested heuristic, rolling linear-surrogate MILP and week-wise parametric PSO baselines, while preserving zero unserved energy and zero hard-constraint violations with millisecond-level online inference.
+\item Closed-loop economic performance: seasonal FMU evaluation shows that PC-HybridTD3 reaches a modeled weekly objective comparable to a thermal-\(P_{\min}\) heuristic, while outperforming the price-aware rule, rolling linear-surrogate MILP and week-wise parametric PSO, with zero unserved energy and zero hard-constraint violations at millisecond-level inference.
 \end{enumerate}
 
 Section~\ref{sec:problem} formulates the scheduling problem. Section~\ref{sec:method} presents PC-HybridTD3. Section~\ref{sec:results} reports the case study. Section~\ref{sec:conclusion} concludes.
@@ -100,12 +93,12 @@ Fig.~\ref{fig:topology} shows the plant. Wind and PV inject at the electric bus;
 
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=0.92\textwidth]{fig_topology.png}
+\includegraphics[width=0.88\textwidth]{fig_topology.png}
 \caption{Topology of the FMU-based multi-energy system, including wind/PV generation, thermal generation, BESS, CAES, grid exchange, and load.}
 \label{fig:topology}
 \end{figure*}
 
-Table~\ref{tab:params} lists the ratings. The plant is a price-taker on the 2026 Shandong 110-kV TOU purchasing tariff~\cite{shandong2023tou,shandong2026tou}. Hourly buy prices follow the official monthly schedule; the export price is a fixed scenario parameter. A national ETS carbon price enters~\eqref{eq:C} as one cost component~\cite{mee2025etsnews}.
+Table~\ref{tab:params} lists the ratings. The plant is a price-taker on the 2026 Shandong 110-kV TOU purchasing tariff~\cite{shandong2023tou,shandong2026tou}. Hourly buy prices follow the official monthly schedule; the export price is a fixed scenario parameter. A national ETS carbon price is recorded in the cost layer and enters the learning reward~\cite{mee2025etsnews}.
 
 \begin{table}[!t]
 \caption{Plant and market parameters.}
@@ -121,7 +114,7 @@ Wind / PV nameplate & 300 / 260 MW & Resource-limited \\
 Thermal \(P_{\min}\)--\(P_{\mathrm{cap}}\) & 50--150 MW & \(u_{\mathrm{th}}\in[1/3,1]\) \\
 Battery power / energy & 100 MW / 500 MWh & \(\eta=0.85\) on discharge \\
 CAES electric rating & 150 MW & Envelope~\eqref{eq:legal} \\
-Grid hard / contract limits & \(\pm500\) / \(\pm200\) MW & Soft band in \(C_t^{\mathrm{grid}}\) \\
+Grid hard / contract limits & \(\pm500\) / \(\pm200\) MW & Soft contract (recorded) \\
 TOU buy range & \(0.14\)--\(1.19\) CNY/kWh & Monthly 110 kV schedule \\
 TOU sell & 0.1875 CNY/kWh & Flat export price \\
 Carbon price \(\pi\) & 97.49 CNY/t & 2024 year-end CEA close~\cite{mee2025etsnews} \\
@@ -134,18 +127,19 @@ Episode length \(T\) & 168 h & Weekly horizon \\
 \subsection{Scheduling model and constraints}
 \label{sec:constraints}
 
-Let \(t=0,\ldots,T-1\) with \(T=168\). Dispatch-level powers use generation non-negative, battery and CAES charge positive and discharge negative, and grid import positive. The electric bus is
+Let \(t=0,\ldots,T-1\) with \(T=168\). Dispatch-level powers use generation non-negative, battery and CAES charge positive and discharge negative, and grid import positive. Write \(P_t^{g}\) for paper-level interchange and \(\tilde P_t^{g}\) for the FMU connector variable. The FMU connector uses its native sign convention, whereas all scheduling and settlement equations below use \(P_t^{g}>0\) for import and \(P_t^{g}<0\) for export, with
 \begin{equation}
-P_t^{\mathrm{th}}+P_t^{\mathrm{w}}+P_t^{\mathrm{pv}}+P_t^{\mathrm{grid}}
+P_t^{g}=-\tilde P_t^{g}.
+\label{eq:grid-sign}
+\end{equation}
+The electric bus is
+\begin{equation}
+P_t^{\mathrm{th}}+P_t^{\mathrm{w}}+P_t^{\mathrm{pv}}+P_t^{g}
 =
 P_t^{\mathrm{load}}+P_t^{\mathrm{bat}}+P_t^{\mathrm{caes}},
 \label{eq:balance}
 \end{equation}
-up to curtailment and unserved residual. The FMU connector power \(\tilde P_t^{\mathrm{grid}}\) follows the twin's native sign; the two conventions are identified by
-\begin{equation}
-P_t^{\mathrm{grid}}=-\tilde P_t^{\mathrm{grid}}.
-\label{eq:grid-sign}
-\end{equation}
+up to curtailment and unserved residual.
 Thermal power \(P_t^{\mathrm{th}}=u_t^{\mathrm{th}}P_{\mathrm{cap}}^{\mathrm{th}}\) obeys
 \begin{equation}
 P_{\mathrm{th}}^{\min}\le P_t^{\mathrm{th}}\le P_{\mathrm{th}}^{\max},
@@ -176,12 +170,12 @@ x_t^{\mathrm{CAES}}
 \end{equation}
 Grid exchange satisfies
 \begin{equation}
-P_{\mathrm{grid}}^{\min}\le P_t^{\mathrm{grid}}\le P_{\mathrm{grid}}^{\max},
+P_{\mathrm{grid}}^{\min}\le P_t^{g}\le P_{\mathrm{grid}}^{\max},
 \label{eq:grid}
 \end{equation}
 with limits \(\pm500\)~MW. Interchange couples the three physical commands. The decoder uses the FMU connector identity, with ratings \(P_T,P_B,P_C\) equal to the thermal, BESS and CAES nameplates,
 \begin{equation}
-\tilde P_t^{\mathrm{grid}}
+\tilde P_t^{g}
 =
 P_T u_t^{\mathrm{th}}
 -
@@ -192,12 +186,18 @@ P_C u_t^{\mathrm{CAES}}
 R_t,
 \label{eq:pgrid-u}
 \end{equation}
-and dispatch-level residual \(R_t=P_t^{\mathrm{load}}-P_t^{\mathrm{w}}-P_t^{\mathrm{pv}}\) (FMU wind/PV generation is negative, so this \(R_t\) matches the connector residual). Equation~\eqref{eq:pgrid-u} is the interchange slice of the decoder;~\eqref{eq:balance} is the dispatch-level bus used in~\eqref{eq:C}.
+and dispatch-level residual \(R_t=P_t^{\mathrm{load}}-P_t^{\mathrm{w}}-P_t^{\mathrm{pv}}\) (FMU wind/PV generation is negative, so this \(R_t\) matches the connector residual). Equation~\eqref{eq:pgrid-u} is the interchange slice of the decoder in the connector convention;~\eqref{eq:balance} is the dispatch-level bus used in~\eqref{eq:C}.
 
 \subsection{Economic objective and MDP}
 \label{sec:mdp}
 
-TOU purchase and sale energies are settled on the FMU connector (\(p_{\mathrm{grid}}>0\) is buy). The cost~\eqref{eq:C} comprises that TOU trading and a soft interchange-contract excess, thermal fuel and O\&M, an ETS carbon charge, curtailment and unserved penalties, battery wear and CAES start-up. Policies are compared on the modeled weekly net objective \(CC=\sum_t C_t\).
+TOU energies are settled on \(P_t^{g}\),
+\begin{equation}
+E_t^{\mathrm{buy}}=\Delta t[P_t^{g}]_+,\qquad
+E_t^{\mathrm{sell}}=\Delta t[-P_t^{g}]_+.
+\label{eq:tou-energy}
+\end{equation}
+Carbon, a soft \(\pm200\)~MW contract, battery wear, CAES start-up, curtailment and unserved energy are recorded and enter the learning reward; holdout curtailment and unserved energy are zero. Policies are compared on \(CC=\sum_t C_t\) from~\eqref{eq:C}.
 
 The problem is the finite-horizon MDP \(\mathcal{M}=\langle\mathcal{S},\Afhat(\cdot),P,r,\gamma\rangle\) with \(\gamma=0.99\). The state
 \begin{equation}
@@ -239,7 +239,16 @@ u_t^{\mathrm{CAES}}
 \end{cases}
 \label{eq:decode}
 \end{equation}
-The learning reward is a scaled negative of \(C_t\), with light inventory shaping; ranking uses \(CC\).
+The learning reward is
+\begin{equation}
+r_t
+=
+-\frac{C_t}{C_{\mathrm{ref}}}
++\beta\Phi(s_t)
++\mathbf{1}_{t=T-1}R^{\mathrm{SOC}},
+\label{eq:reward}
+\end{equation}
+with \(C_{\mathrm{ref}}=1.565\times10^{5}\)~CNY. \(\Phi\) is an inventory potential on battery and CAES-gas SoC relative to the episode start (coefficient \(5\), absolute L1 term \(0.08\), recovery scale \(5\) on the last \(40\)~h). A terminal bonus \(R^{\mathrm{SOC}}=15\) is paid if that L1 error is at most \(0.06\). Ranking uses \(CC\).
 
 \section{Physics-Constrained Hybrid TD3}
 \label{sec:method}
@@ -248,7 +257,7 @@ PC-HybridTD3~\cite{lillicrap2016ddpg,fujimoto2018td3,fan2019hybrid} is a single-
 
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=0.92\textwidth]{PC-HybridTD3_Architecture.png}
+\includegraphics[width=0.88\textwidth]{PC-HybridTD3_Architecture.png}
 \caption{Architecture of PC-HybridTD3: hybrid actor, joint feasible support and critic update.}
 \label{fig:algorithm}
 \end{figure*}
@@ -299,7 +308,16 @@ and battery is remapped given \((u^{\mathrm{th}},u^{\mathrm{CAES}})\),
 \end{aligned}
 \label{eq:bat-window}
 \end{equation}
-GiveSafe then tests predicted next-state inventories and residual twin constraints that cannot be written as intervals~\cite{garcia2015safe,sun2024constrained}. Intervals in~\eqref{eq:caes-window}--\eqref{eq:bat-window} are expressed in the FMU connector convention~\eqref{eq:pgrid-u}. Thus \(\Afhat(s)\) is a computable approximation of \(\AFMU(s)\).
+GiveSafe then screens a first-order analytic predictor \(F_{\mathrm{safe}}\) in the Oracle,
+\begin{equation}
+\begin{aligned}
+\hat s_{t+1}&=F_{\mathrm{safe}}(s_t,a_t),\\
+\mathrm{GiveSafe}(s_t,a_t)
+&=\mathbf{1}\bigl[g_j(\hat s_{t+1})\le 0\ \forall j\bigr],
+\end{aligned}
+\label{eq:givesafe}
+\end{equation}
+where \(F_{\mathrm{safe}}\) advances battery SoC by an Euler step and CAES inventories, pressure and temperature by affine maps. The checks \(g_j\) cover gas/hot/cold inventory, pressure/temperature margins, actuator bands, interchange and residual hard limits, including idle inventory. Intervals in~\eqref{eq:caes-window}--\eqref{eq:bat-window} use the FMU connector convention~\eqref{eq:pgrid-u}. Thus \(\Afhat(s)\) approximates \(\AFMU(s)\).
 
 \subsection{Physical-only TD3 update}
 \label{sec:td3}
@@ -355,11 +373,11 @@ Executed FMU transitions enter the economic replay \(\mathcal{D}_{\mathrm{B}}\) 
 Name & Value & Name & Value \\
 \midrule
 \(\gamma\) / target \(\tau\) & \(0.99\) / \(5\times10^{-3}\) & actor / critic lr & \(3\times10^{-4}\) \\
-batch / buffer & 64 / \(1\times10^{5}\) & GiveSafe tries & 64 / 1 \\
+batch / buffer & 64 / \(1\times10^{5}\) & GiveSafe \(K\) (train/eval) & 64 / 1 \\
 policy delay \(D\) & 2 & mag.\ noise / clip & \(0.2\) / \(0.5\) \\
 Gumbel \(\tau_{\mathrm{G}}\) & \(1.0\to 0.2\) & MLP hidden & \(256\), ReLU \\
 warm start / \(\varepsilon_{\mathrm{rand}}\) & \(1024\) / \(1.0\to 0.05\) & forecast horizon & 24 h \\
-episode length \(T\) & 168 h & training hours & \(4\times10^{5}\) \\
+episode length \(T\) & 168 h & training steps & \(4\times10^{5}\) \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -371,11 +389,10 @@ Two encodings are not used by the live policy. Continuous projection maps a CAES
 
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=0.95\textwidth]{fig_action_rep}
+\includegraphics[width=0.88\textwidth]{fig_action_rep}
 \caption{CAES sub-action representations: (a)~continuous scalar action followed by projection, (b)~mode--magnitude decoding on static device bands, and (c)~mode--magnitude decoding on state-dependent feasible intervals, used by PC-HybridTD3.}
 \label{fig:action-rep}
 \end{figure*}
-\FloatBarrier
 
 \section{Case Study}
 \label{sec:results}
@@ -383,7 +400,7 @@ Two encodings are not used by the live policy. Continuous projection maps a CAES
 \subsection{Experimental protocol}
 \label{sec:setup}
 
-All methods run on the Sysplorer FMU, the 2026 monthly 110~kV tariff, and the same traces. Each episode lasts \(T=168\)~h. Training uses the 36 stratified training weeks; the reported policy is not selected on the final test weeks. PC-HybridTD3 is trained for \(4\times10^{5}\) physical hours and evaluated on four seasonal final-holdout weeks---weeks 12, 25, 38 and 51, the second test week of each quarter, held out from development. Inventories reset at each weekly start. The comparison uses a perfect 24~h forecast. The plant has a hard interchange limit of \(\pm500\)~MW, a soft contract band of \(\pm200\)~MW, a flat export price of \(0.1875\)~CNY/kWh and weekly inventory reset; September--December buy prices follow the last published month. Holdout rollouts ran on a workstation with an Intel Core i9-14900K CPU (24 cores, 32 threads) and one NVIDIA GeForce RTX 4080 GPU (16~GB). The heuristic, the rolling MILP and the PSO decide on the CPU; PC-HybridTD3 evaluates the trained actor on the GPU. Decision times in Table~\ref{tab:kpi} exclude the FMU step.
+All methods run on the Sysplorer FMU, the 2026 monthly 110~kV tariff, and the same traces. Each episode lasts \(T=168\)~h. Training uses the 36 stratified training weeks; the reported policy is not selected on the final test weeks. PC-HybridTD3 is trained for \(4\times10^{5}\) environment steps, each corresponding to one simulated operating hour, and evaluated on four seasonal final-holdout weeks---weeks 12, 25, 38 and 51, the second test week of each quarter, held out from development. Inventories reset at each weekly start. The comparison uses a perfect 24~h forecast. The plant has a hard interchange limit of \(\pm500\)~MW, a soft contract band of \(\pm200\)~MW, a flat export price of \(0.1875\)~CNY/kWh and weekly inventory reset; September--December buy prices follow the last published month. Holdout rollouts used an Intel Core i9-14900K CPU and one NVIDIA GeForce RTX 4080 GPU. Decision times in Table~\ref{tab:kpi} exclude the FMU step.
 
 The baselines are a price-aware heuristic, the same heuristic with thermal generation held at the feasible lower bound \(P_{\min}\), a rolling MILP on a linear energy surrogate, and a week-wise FMU-based parametric PSO. The two heuristics and the MILP are deterministic. PSO optimises a six-parameter closed-loop price policy
 \begin{equation}
@@ -399,7 +416,7 @@ The rolling MILP uses linear energy SoC for the battery and the CAES gas tank, o
 \subsection{Safety validation}
 \label{sec:learn}
 
-A 20\,000-candidate near-boundary stress recorded the chain candidate \(\to\) \(\Afhat\)-legal \(\to\) executed \(\to\) post-step valid: 18\,444 proposals passed the feasibility precheck and were stepped on the FMU; the remaining 1\,556 were rejected before the plant moved; every executed action had zero post-step hard failures. A \(3\times10^{4}\)-hour screening run passed checks C1--C5 with no undetected constraint violation after a step. The five checks are: C1, finite critic/actor losses and \(Q\)-values; C2, zero FMU hard failures in training and evaluation; C3, no held-out hour in which no safe action exists; C4, unserved energy below \(10^{-3}\)~MWh on a complete 168~h week; C5, greedy-week \(CC\) strictly better than a random feasible policy on the same week. The subsequent \(4\times10^{5}\)-hour training run recorded zero post-step hard violations. Table~\ref{tab:safety} summarises the chain. Fig.~\ref{fig:training} records step reward and critic loss every 500 physical hours: reward stays in a bounded band, and critic loss drops by several orders of magnitude in the first \(5\times10^{4}\) hours.
+A 20\,000-candidate near-boundary stress recorded the chain candidate \(\to\) \(\Afhat\)-legal \(\to\) executed \(\to\) post-step valid: 18\,444 proposals passed the feasibility precheck and were stepped on the FMU; the remaining 1\,556 were rejected before the plant moved; every executed action had zero post-step hard failures. Screening at \(3\times10^{4}\) steps and training at \(4\times10^{5}\) steps recorded zero post-step hard violations (Table~\ref{tab:safety}: C1 finite losses; C2 zero FMU hard failures; C3 no held-out hour without a safe action; C4 unserved energy below \(10^{-3}\)~MWh on a complete week; C5 greedy-week \(CC\) better than a random feasible policy).
 
 \begin{table}[!t]
 \caption{Physical safety evidence on the Sysplorer FMU plant.}
@@ -411,25 +428,18 @@ A 20\,000-candidate near-boundary stress recorded the chain candidate \(\to\) \(
 Check & Result \\
 \midrule
 20k boundary stress & 18\,444 / 20\,000 \(\Afhat\)-legal; 0 post-step fail \\
-C1--C5 at \(3\times10^{4}\)~h & all passed; 0 undetected violation \\
-C2 at \(4\times10^{5}\)~h & 0 post-step hard violations \\
-C5 at \(4\times10^{5}\)~h (vs random) & passed \\
+C1--C5 at \(3\times10^{4}\) steps & all passed; 0 undetected violation \\
+C2 at \(4\times10^{5}\) steps & 0 post-step hard violations \\
+C5 at \(4\times10^{5}\) steps (vs random) & passed \\
 Final-holdout FMU failures & 0 / 4 weeks \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\begin{figure*}[!t]
-\centering
-\includegraphics[width=0.95\textwidth]{fig_training}
-\caption{PC-HybridTD3 training log on the Sysplorer FMU plant (\(4\times10^{5}\) physical hours): (a)~step reward and (b)~critic loss (log scale). Thin traces are recorded every 500 hours; thick traces are moving averages. One reward spike at hour \(2.1\times10^{4}\) lies above the plotted range.}
-\label{fig:training}
-\end{figure*}
-
 \subsection{System-level scheduling performance}
 \label{sec:kpi}
 
-Table~\ref{tab:kpi} reports the modeled weekly net objective \(CC\) on the four final weeks. Each entry is a complete 168~h closed-loop rollout on the Sysplorer FMU. The mean is the average over those four seasonal weeks. PC-HybridTD3 attains \(-16.89\) million CNY/week, on par with the same heuristic run at thermal \(P_{\min}\) (\(-16.92\)) and below the unconstrained rule, the rolling MILP and the week-wise PSO. PSO re-optimizes \(\theta\) on each evaluation week; the trained actor is applied as a closed-loop policy. Table~\ref{tab:decomp} shows why: thermal generation at \(P_{\min}\) cuts fuel from \(9.97\) to \(3.43\) million CNY/week, and settled export revenue rises from \(1.77\) to about \(4.2\) million. Table~\ref{tab:util} reports device utilization. With the Oracle interchange band set to \(\pm200\)~MW, the thermal-\(P_{\min}\) heuristic stops after 2--10~h and the unconstrained rule after 7--87~h (Table~\ref{tab:gridband}).
+Table~\ref{tab:kpi} reports the modeled weekly net objective \(CC\) on the four final weeks. Each entry is a complete 168~h closed-loop rollout on the Sysplorer FMU. The mean is the average over those four seasonal weeks. PC-HybridTD3 attains \(-16.89\) million CNY/week, on par with the same heuristic run at thermal \(P_{\min}\) (\(-16.92\)) and below the unconstrained rule, the rolling MILP and the week-wise PSO. PSO re-optimizes \(\theta\) on each evaluation week; the trained actor is applied as a closed-loop policy. Table~\ref{tab:decomp} shows why: thermal generation at \(P_{\min}\) cuts fuel from \(9.97\) to \(3.43\) million CNY/week, and the TOU grid term \(C_{\mathrm{grid}}=C_{\mathrm{buy}}-C_{\mathrm{sell}}\) falls from \(0.64\) to about \(-3.6\) million. Load and renewable device cash \(C_{\mathrm{fixed}}\) is common across complete weeks, so the four columns of Table~\ref{tab:decomp} sum to \(CC\). Table~\ref{tab:util} reports device utilization.
 
 \begin{table}[!t]
 \caption{Final-holdout weekly \(CC\) (\(10^6\)~CNY/week) on weeks 12, 25, 38 and 51. Lower is better. Mean is the four-week average.}
@@ -449,46 +459,30 @@ Four-week mean & \(-6.11\) & \(-16.92\) & \(-9.41\) & \(-13.54\) & \(-16.89\) \\
 Unserved energy (MWh) & \(0\) & \(0\) & \(0\) & \(0\) & \(0\) \\
 Hard violations (count) & \(0\) & \(0\) & \(0\) & \(0\) & \(0\) \\
 Runtime (ms/step) & \(0.76\) & \(0.97\) & \(225\) & \(2.0\) & \(3.8\) \\
-Search / train & -- & -- & -- & \(5.3\)~min/week & \(4\times10^{5}\)~h \\
+Search / train & -- & -- & -- & \(5.3\)~min/week & \(4\times10^{5}\) steps \\
 \bottomrule
 \end{tabular}\\[2pt]
 {\footnotesize Th-\(P_{\min}\): Rule with thermal generation held at its feasible lower bound. PC is PC-HybridTD3. PSO search is \(12\times25\) FMU weeks per holdout week, reported separately from one-step inference.}
 \end{table}
 
 \begin{table}[!t]
-\caption{Four-week-mean cost terms (\(10^6\)~CNY/week). \(C_{\mathrm{sell}}\) is settled export revenue.}
+\caption{Four-week-mean ranking cash (\(10^6\)~CNY/week). Columns sum to \(CC\).}
 \label{tab:decomp}
 \centering
 \scriptsize
 \setlength{\tabcolsep}{3.0pt}
-\begin{tabular}{@{}lrrrrr@{}}
-\toprule
-Method & \(C_{\mathrm{th}}\) & \(C_{\mathrm{buy}}\) & \(C_{\mathrm{sell}}\) & \(C_{\mathrm{con}}\) & \(CC\) \\
-\midrule
-Rule & \(9.97\) & \(2.42\) & \(1.77\) & \(0.49\) & \(-6.11\) \\
-MILP & \(8.05\) & \(1.30\) & \(2.03\) & \(0.33\) & \(-9.41\) \\
-PSO & \(5.63\) & \(0.81\) & \(3.25\) & \(0.28\) & \(-13.54\) \\
-Th-\(P_{\min}\) & \(3.43\) & \(0.52\) & \(4.15\) & \(0.88\) & \(-16.92\) \\
-PC-HybridTD3 & \(3.43\) & \(0.68\) & \(4.28\) & \(1.08\) & \(-16.89\) \\
-\bottomrule
-\end{tabular}\\[2pt]
-{\footnotesize \(CC\) is the ranking modeled net objective and is not the sum of the four columns (load and renewable device cash remain). \(C_{\mathrm{con}}\) is the soft \(\pm200\)~MW contract term.}
-\end{table}
-
-\begin{table}[!t]
-\caption{Hours completed with Oracle interchange tightened to \(\pm200\)~MW. Nominal Table~\ref{tab:kpi} uses \(\pm500\)~MW.}
-\label{tab:gridband}
-\centering
-\scriptsize
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
-Method & W12 & W25 & W38 & W51 \\
+Method & \(C_{\mathrm{th}}\) & \(C_{\mathrm{grid}}\) & \(C_{\mathrm{fixed}}\) & \(CC\) \\
 \midrule
-Rule, \(\pm200\)~MW & \(87\) & \(7\) & \(10\) & \(10\) \\
-Th-\(P_{\min}\), \(\pm200\)~MW & \(10\) & \(7\) & \(10\) & \(2\) \\
+Rule & \(9.97\) & \(0.64\) & \(-16.72\) & \(-6.11\) \\
+MILP & \(8.05\) & \(-0.74\) & \(-16.72\) & \(-9.41\) \\
+PSO & \(5.63\) & \(-2.44\) & \(-16.73\) & \(-13.54\) \\
+Th-\(P_{\min}\) & \(3.43\) & \(-3.63\) & \(-16.72\) & \(-16.92\) \\
+PC-HybridTD3 & \(3.43\) & \(-3.60\) & \(-16.72\) & \(-16.89\) \\
 \bottomrule
 \end{tabular}\\[2pt]
-{\footnotesize Both abort on a dynamic-state constraint before the FMU steps. Neither finishes 168~h.}
+{\footnotesize \(C_{\mathrm{grid}}=C_{\mathrm{buy}}-C_{\mathrm{sell}}\). \(C_{\mathrm{fixed}}\) is load and renewable device cash (identical across methods at full precision; two-decimal rounding shifts it by at most \(0.01\)). The soft \(\pm200\)~MW contract is recorded but is not inside ranking \(CC\).}
 \end{table}
 
 \begin{table}[!t]
@@ -499,7 +493,7 @@ Th-\(P_{\min}\), \(\pm200\)~MW & \(10\) & \(7\) & \(10\) & \(2\) \\
 \setlength{\tabcolsep}{2.6pt}
 \begin{tabular}{@{}lrrrrrrr@{}}
 \toprule
-Week & \(P_{\mathrm{th}}^{\mathrm{mean}}\) & \(E_{\mathrm{bat}}\) & \(E_{\mathrm{CAES}}\) & \(N_{\mathrm{C/I/D}}\) & \(E^{\mathrm{buy}}\) & \(E^{\mathrm{sell}}\) & \(P_{\mathrm{grid}}^{\max}\) \\
+Week & \(P_{\mathrm{th}}^{\mathrm{mean}}\) & \(E_{\mathrm{bat}}\) & \(E_{\mathrm{CAES}}\) & \(N_{\mathrm{C/I/D}}\) & \(E^{\mathrm{buy}}\) & \(E^{\mathrm{sell}}\) & \(|P^{g}|_{\max}\) \\
  & (MW) & (GWh) & (GWh) & (h) & (GWh) & (GWh) & (MW) \\
 \midrule
 12 & \(51.0\) & \(0.17\) & \(3.59\) & \(17/130/21\) & \(1.31\) & \(22.88\) & \(364\) \\
@@ -508,17 +502,17 @@ Week & \(P_{\mathrm{th}}^{\mathrm{mean}}\) & \(E_{\mathrm{bat}}\) & \(E_{\mathrm
 51 & \(51.0\) & \(0.17\) & \(2.59\) & \(13/142/13\) & \(1.53\) & \(25.85\) & \(366\) \\
 \bottomrule
 \end{tabular}\\[2pt]
-{\footnotesize Thermal energy is \(8.58\)~GWh every week (\(P_{\min}\) to numerical precision). BESS terminal SoC is \(0.156\) (bound \(0.1\)). \(E^{\mathrm{buy}}/E^{\mathrm{sell}}\) follow TOU settlement (\(p_{\mathrm{grid}}>0\) is buy). Settled sell revenue is \(3.75\)--\(4.85\) million CNY/week; the \(\pm200\)~MW contract term is \(1.01\)--\(1.19\) million CNY/week.}
+{\footnotesize Thermal energy is \(8.58\)~GWh every week (\(P_{\min}\) to numerical precision). BESS terminal SoC is \(0.156\) (bound \(0.1\)). \(E^{\mathrm{buy}}/E^{\mathrm{sell}}\) follow~\eqref{eq:tou-energy} with \(P^{g}>0\) import. Settled sell revenue is \(3.75\)--\(4.85\) million CNY/week; the recorded \(\pm200\)~MW contract term is \(1.01\)--\(1.19\) million CNY/week.}
 \end{table}
 
 \subsection{Weekly dispatch on a holdout week}
 \label{sec:dispatch}
 
-Fig.~\ref{fig:dispatch} shows operation on winter week 12. Thermal generation sits at \(P_{\min}\) for \(98\%\) of the hours (mean \(51.0\)~MW). BESS throughput is \(0.17\)~GWh and SoC stays near the lower bound (mean \(0.16\), terminal \(0.156\)). CAES occupies 17 charge hours and 21 discharge hours; the rest is idle. TOU settlement records \(22.9\)~GWh sell against \(1.3\)~GWh buy, and interchange reaches \(364\)~MW. Table~\ref{tab:util} shows the same pattern on weeks 25, 38 and 51: the four-week \(CC\) follows from thermal generation at \(P_{\min}\) and large settled export. In panel~(b), BESS and CAES are charge-positive and grid interchange is import-positive~\eqref{eq:grid-sign}.
+Fig.~\ref{fig:dispatch} shows operation on winter week 12. Thermal generation sits at \(P_{\min}\) for \(98\%\) of the hours (mean \(51.0\)~MW). BESS throughput is \(0.17\)~GWh and SoC stays near the lower bound (mean \(0.16\), terminal \(0.156\)). CAES occupies 17 charge hours and 21 discharge hours; the rest is idle. TOU settlement records \(22.9\)~GWh sell against \(1.3\)~GWh buy, and interchange reaches \(364\)~MW. Table~\ref{tab:util} shows the same pattern on weeks 25, 38 and 51: the four-week \(CC\) follows from thermal generation at \(P_{\min}\) and large settled export. In panel~(b), BESS and CAES are charge-positive and grid interchange is import-positive \(P^{g}\)~\eqref{eq:grid-sign}.
 
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=0.95\textwidth]{fig_dispatch_week}
+\includegraphics[width=0.88\textwidth]{fig_dispatch_week}
 \caption{PC-HybridTD3 on holdout week 12: (a)~load and renewable availability, (b)~thermal generation (positive), BESS/CAES charge-positive power and import-positive grid power, (c)~TOU buy price and net load, and (d)~storage inventories. Battery SoC remains near the lower bound.}
 \label{fig:dispatch}
 \end{figure*}
@@ -526,30 +520,33 @@ Fig.~\ref{fig:dispatch} shows operation on winter week 12. Thermal generation si
 \subsection{Action-encoding ablation}
 \label{sec:ablation-results}
 
-Fig.~\ref{fig:action-rep} is the representation schematic. Table~\ref{tab:ablation} trains projection TD3, static-support hybrid TD3 and PC-HybridTD3 for \(3\times10^{4}\) physical hours and evaluates them on development week~11. Joint support is required to finish the week at this budget: projection and static-support abort after 28~h and 5~h, while PC-HybridTD3 completes 168~h with no undetected constraint violation.
+Fig.~\ref{fig:action-rep} is the representation schematic. Table~\ref{tab:ablation} trains projection TD3, static-support hybrid TD3 and PC-HybridTD3 for \(3\times10^{4}\) environment interactions and evaluates them on development week~11. Joint support is required to finish the week at this budget: continuous projection and static hybrid stop after 28~h and 5~h with no remaining safe action, while PC-HybridTD3 completes 168~h.
 
 \begin{table}[!t]
-\caption{Fixed-budget encoding ablation (\(3\times10^{4}\) physical hours, week~11).}
+\caption{Fixed-budget encoding ablation (\(3\times10^{4}\) environment interactions, week~11).}
 \label{tab:ablation}
 \centering
 \scriptsize
+\setlength{\tabcolsep}{2.4pt}
 \begin{tabular}{@{}lcccc@{}}
 \toprule
-Method & Hours completed & Week-11 \(CC\) & Missed violations & Aborts \\
+Encoding & Complete week? & Valid hours & Failure mode & \(CC\) \\
 \midrule
-Projection TD3 & 28 & -- & \(0\) & \(4\) \\
-Static-support hybrid & 5 & -- & \(0\) & \(5\) \\
-PC-HybridTD3 & 168 & \(-17.75\) & \(0\) & \(0\) \\
+Continuous projection & No & 28 & NoSafeAction & -- \\
+Static hybrid & No & 5 & NoSafeAction & -- \\
+PC-HybridTD3 & Yes & 168 & None & \(-17.75\) \\
 \bottomrule
 \end{tabular}\\[2pt]
-{\footnotesize Incomplete rows abort when no safe action remains; \(CC\) is reported only for a complete 168~h week (\(10^6\)~CNY).}
+{\footnotesize One development-week evaluation. Incomplete rows stop when no safe action remains; \(CC\) is reported only for a complete 168~h week (\(10^6\)~CNY).}
 \end{table}
 
+\FloatBarrier
 \section{Conclusion}
 \label{sec:conclusion}
 
-Weekly multi-energy scheduling on an FMU plant requires thermal generation, BESS, CAES and the grid to be commanded inside a state-dependent support that is not a product of device boxes. PC-HybridTD3 generates heterogeneous commands on a computable approximation \(\Afhat(s)\), screens them with GiveSafe, and learns only from executed hours. On four seasonal holdout weeks the trained policy attains a four-week mean \(CC\) of \(-16.89\) million CNY/week, on par with the same heuristic at thermal \(P_{\min}\) and below a price-aware heuristic, a rolling linear-surrogate MILP and a week-wise six-parameter PSO, with zero unserved energy, at \(3.8\)~ms/step. The cash gap comes from thermal generation at \(P_{\min}\) and settled export under a \(\pm500\)~MW hard interchange limit, a \(\pm200\)~MW soft contract band and a flat export price of \(0.1875\)~CNY/kWh. With the Oracle band set to \(\pm200\)~MW the thermal-\(P_{\min}\) heuristic stops within hours. Inventories reset each week; September--December buy prices follow the last published month.
+Weekly multi-energy scheduling on an FMU plant requires thermal generation, BESS, CAES and the grid to be commanded inside a state-dependent support that is not a product of device boxes. PC-HybridTD3 generates heterogeneous commands on a computable approximation \(\Afhat(s)\), screens them with GiveSafe, and learns only from executed hours. On four seasonal holdout weeks the trained policy attains a four-week mean \(CC\) of \(-16.89\) million CNY/week, comparable to the same heuristic at thermal \(P_{\min}\) (\(-16.92\)) and lower than a price-aware heuristic, a rolling linear-surrogate MILP and a week-wise six-parameter PSO, with zero unserved energy, at \(3.8\)~ms/step. The principal benefit of PC-HybridTD3 is therefore not an unconditional economic advantage over a hand-crafted thermal-floor rule, but the ability to learn and execute heterogeneous plant-level actions directly on a state-dependent feasible support.
 
+\FloatBarrier
 \bibliographystyle{IEEEtran}
 \bibliography{references}
 

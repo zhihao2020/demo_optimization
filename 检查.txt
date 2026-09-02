@@ -1,229 +1,553 @@
-可以。既然你决定按这类能源调度论文常见的 **单次训练/单固定策略实验范式** 来写，那么正文没必要主动展开 seed 讨论，也没必要把论文变成“随机种子鲁棒性研究”。
+我认为仍有几处应该改，而且其中有 4–5 处相当重要。
 
-关键是把措辞处理干净：**不强调 single seed，但也绝不能写成 multi-seed statistical result。**
+### 先说整体判断
 
-按最新 `801dcf8...`，我建议直接这样收口。
-
-* 删除 Experimental protocol 里的
-
-  > “All reported runs use a single fixed random seed.”
-
-  正文只写：
-
-  > “PC-HybridTD3 is trained for \(4\times10^5\) physical hours and evaluated on four seasonal final-holdout weeks.”
-
-* Table 主结果继续使用当前这一套正式 PC-HybridTD3 policy，也就是现在正文里的四周：
-
-  $$
-  -17.25,\;-13.64,\;-17.74,\;-18.92
-  $$
-
-  四周均值：
-
-  $$
-  -16.89\ \text{million CNY/week}.
-  $$
-
-  这里的 **Mean** 明确是：
-
-  $$
-  \boxed{\text{mean across four seasonal weeks}}
-  $$
-
-  而不是 seed mean。
-
-* Fig. 6、利用率表也直接写：
-
-  > “PC-HybridTD3 on the four final-holdout weeks”
-
-  不需要出现：
-
-  > seed 0 / representative seed / gate-passing seed
-
-* 30k encoding ablation 也不用在 caption 里强调 seed。最新版实际上已经把 caption 中的 `seed 0` 删除了，这个方向是对的。
-
-* Abstract、Conclusion 不说：
-
-  > statistically significant
-  > robust across seeds
-  > low variance
-  > consistently across random initializations
-
-  只报告这套实验事实即可。
-
-这样写就是一个普通的 deterministic experimental protocol：
+现在论文已经形成一条能讲通的主线：
 
 $$
-\boxed{
-\text{one trained policy}
+\text{non-convex hybrid action}
 \rightarrow
-\text{four seasonal unseen weeks}
-}
+\widehat{\mathcal A}_f(s)
+\rightarrow
+\text{PC-HybridTD3}
+\rightarrow
+\text{FMU closed-loop}
+\rightarrow
+\text{economic/safety evaluation}.
 $$
 
-而不是：
+这条线是成立的。
+
+但新的 \(P_{\min}\) baseline 揭示了一个非常重要的结果：
 
 $$
-\text{random-seed robustness study}.
+CC_{\mathrm{PC}}=-16.89,
+\qquad
+CC_{P_{\min}\text{-rule}}=-16.92.
 $$
+
+也就是说，**PC-HybridTD3 并没有在最终经济目标上超过这个非常简单的 thermal-floor heuristic**。当前 Abstract 已经诚实写成 “matching the thermal-\(P_{\min}\) heuristic”，这是对的。
+
+因此现在论文最需要避免的是：
+
+> 一边在结果里承认 \(P_{\min}\)-rule 略优，一边又在 contribution 3 里制造“PC 是性能最好方法”的印象。
+
+当前 contribution 3 写的是：
+
+> “seasonal FMU evaluation demonstrates lower modeled weekly \(CC\) than the tested heuristic, rolling linear-surrogate MILP and week-wise parametric PSO baselines...”
+
+语法上没错，因为它故意没有提 \(P_{\min}\) heuristic；但**审稿阅读体验上会显得选择性陈述**。
+
+我建议这句话直接改成：
+
+> **Closed-loop economic performance: seasonal FMU evaluation shows that PC-HybridTD3 reaches a modeled weekly objective comparable to a thermal-\(P_{\min}\) heuristic, while outperforming the price-aware rule, rolling linear-surrogate MILP and week-wise parametric PSO, with zero unserved energy and zero hard-constraint violations at millisecond-level inference.**
+
+这反而更有力量，因为没有藏最强 baseline。
 
 ---
 
-更重要的是，**现在真正要解决的已经不是 seed**。
+## 现在最需要改的内容，我按优先级排
 
-你刚刚列出的 M1–M6 中，单 seed 我会直接从“Major”里拿掉。今天不应该再为这个花时间。
-
-现在真正影响稿件质量的是三个问题：
-
-### 1. 当前经济优势到底来自什么
-
-最新数据已经非常明确：
+1. **统一并重新检查 grid power 的符号。**
+   现在正文先定义 dispatch-level：
 
 $$
-P_{\mathrm{th}}\approx51.04\text{ MW}
+P_t^{grid}>0 \quad \text{表示进口},
 $$
 
-四周基本锁在 \(P_{\min}\)；
+随后又定义：
 
 $$
-E_{\mathrm{BESS}}\approx168.9\text{ MWh/week}
+P_t^{grid}=-\tilde P_t^{grid}.
 $$
 
-四周完全一样；
+但下一节又写：
 
-而：
+> “TOU purchase and sale energies are settled on the FMU connector (\(p_{\rm grid}>0\) is buy).”
+
+这三句话放在一起仍然容易产生矛盾：到底哪个 `p_grid` 是 FMU connector variable，哪个是论文正号变量？
+
+最稳妥的方式是彻底分开符号：
 
 $$
-E_{\mathrm{sell}}\approx20\sim26\text{ GWh/week}.
+P_t^{g}>0:\text{paper-level grid import},
 $$
 
-最新版已经诚实地把标题从 **Coordinated Scheduling** 改成 **Economic Scheduling**，并明确说这不是 “interior multi-device cycling”。这是正确修改。
+$$
+\tilde P_t^{g}:\text{FMU connector variable},
+$$
 
-但还应该补一个很便宜、很有价值的 baseline：
+然后从此以后**所有经济结算都用 \(P_t^g\)**，不要再说“settled on the FMU connector”。
+
+例如写成：
+
+> The FMU connector uses its native sign convention, whereas all scheduling and settlement equations below use \(P_t^g>0\) for import and \(P_t^g<0\) for export, with \(P_t^g=-\tilde P_t^g\).
+
+然后：
+
+$$
+E_t^{buy}=\Delta t[P_t^g]_+,
+\qquad
+E_t^{sell}=\Delta t[-P_t^g]_+.
+$$
+
+这样一劳永逸。
+
+---
+
+2. **成本分解表还不够“闭合”。**
+   现在 Table decomposition 给出了：
+
+$$
+C_{\rm th},C_{\rm buy},C_{\rm sell},C_{\rm con},CC,
+$$
+
+然后脚注说：
+
+> \(CC\) is not the sum of the four columns because load and renewable device cash remain.
+
+这是审稿人很容易不舒服的地方。
+
+因为一张叫 **cost decomposition** 的表最好满足：
+
+$$
+\boxed{\text{各项相加 = 最终指标}}
+$$
+
+否则 reader 会问：那你到底漏了多少项？
+
+而你的式 (1) 还包括：
+
+$$
+C^{carbon},\;
+C^{deg},\;
+C^{su},\;
+C^{curt},\;
+C^{uns}.
+$$
+
+我的建议不是继续加十几列，而是压缩成：
+
+$$
+CC=
+C_{\rm grid}
++C_{\rm th}
++C_{\rm carbon}
++C_{\rm storage}
++C_{\rm penalty}
++C_{\rm const}.
+$$
+
+其中：
+
+$$
+C_{\rm grid}=C_{\rm buy}-C_{\rm sell}+C_{\rm con},
+$$
+
+$$
+C_{\rm storage}=C_{\rm deg}+C_{\rm su},
+$$
+
+然后做成能严格 reconcile 到 \(CC\) 的表。
+
+或者更好：既然 renewable/load cash 是所有算法共同常量，就**干脆报告 controllable objective / \(\Delta CC\)**，不要让这些公共常量干扰算法比较。
+
+目前这句：
+
+> “load and renewable device cash remain”
+
+会让 reviewer 怀疑 economic objective 的会计定义。
+
+---
+
+3. **\(\pm200\) MW sensitivity 目前其实没有回答你想回答的问题。**
+   最新 Table `gridband` 只测试：
+
+* Rule；
+* thermal-\(P_{\min}\) Rule；
+
+并显示它们在 ±200 MW Oracle band 下都提前 abort。
+
+但是最关键的问题是：
+
+> **PC-HybridTD3 在 ±200 MW 下怎么样？**
+
+现在没有。
+
+所以当前这个 sensitivity table 对论文主方法的说服力其实很低。
+
+甚至 Conclusion 现在专门写：
+
+> “With the Oracle band set to ±200 MW the thermal-\(P_{\min}\) heuristic stops within hours.”
+
+reader 很自然会问：
+
+> And PC-HybridTD3?
+
+如果时间允许，我非常建议补 PC。
+
+哪怕结果是：
+
+$$
+PC\rightarrow\text{also aborts}
+$$
+
+也没有关系。
+
+那结论就是：
+
+> the policy learned under the ±500 MW interconnection does not directly generalize to the tightened ±200 MW feasible region.
+
+这是一个合理 sensitivity finding。
+
+如果不准备跑 PC，我反而建议**删除整个 Table gridband 和 Conclusion 这句话**。现在这个实验属于“提出了问题但没有回答”。
+
+---
+
+4. **GiveSafe 仍然没有达到真正可复现的程度。**
+
+现在已经比上一版好多了：
+
+* reject；
+* safety buffer；
+* same-state resampling；
+* \(K=64\)；
+* Bellman replay only executed transition。
+
+这些都写清楚了。
+
+但核心一句仍然只是：
+
+> “GiveSafe then tests predicted next-state inventories and residual twin constraints that cannot be written as intervals.”
+
+问题是 reviewer 不知道：
+
+$$
+\hat s_{t+1}=?
+$$
+
+到底怎么预测。
+
+是：
+
+* 一个 shadow FMU？
+* 一阶解析近似？
+* empirical predictor？
+* Oracle 内置线性 predictor？
+
+以及接受条件：
+
+$$
+g_j(\hat s_{t+1})\le0?
+$$
+
+是什么。
+
+我建议至少加一个非常简洁的表达：
+
+$$
+\hat s_{t+1}=F_{\rm safe}(s_t,a_t),
+$$
+
+$$
+\mathrm{GiveSafe}(s_t,a_t)
+=
+\mathbf 1
+\left[
+g_j(\hat s_{t+1})\le 0,\ \forall j
+\right].
+$$
+
+然后一句话列出主要检查：
+
+> gas/hot/cold inventory, pressure/temperature margins, actuator bands and residual hard limits.
+
+不用展开成一页，但必须让人知道这个 safety filter 到底干了什么。
+
+同时超参数表：
+
+> GiveSafe tries = 64 / 1
+
+应该直接写：
+
+> **train / eval GiveSafe tries = 64 / 1**
+
+现在读者不一定知道这两个数字是什么。
+
+---
+
+5. **奖励函数还是太模糊，而且现在 BESS 的结果恰好让这个问题更敏感。**
+
+目前只有：
+
+> “The learning reward is a scaled negative of \(C_t\), with light inventory shaping; ranking uses \(CC\).”
+
+但你的最终结果是：
+
+$$
+E_{\rm bat}=0.17\text{ GWh}
+$$
+
+四周完全一样，
+
+$$
+SOC_{\rm bat,end}=0.156.
+$$
+
+所以 reviewer 很容易怀疑：
+
+> inventory shaping 是否影响了这种角点策略？
+
+至少要把 reward 写出来：
+
+$$
+r_t
+=
+-\alpha C_t
++\beta\Phi(s_t)
++\gamma_t^{term}R_{SOC}
+$$
+
+或者按照你真实实现的形式写。
+
+并把：
+
+* cost scale；
+* SOC shaping coefficient；
+* terminal anchor / terminal bonus；
+
+列出来。
+
+否则经济指标是 \(CC\)，训练目标却不是纯 \(CC\)，两者关系不透明。
+
+---
+
+## 写作本身也还有一些很明显可以精修的地方
+
+标题我现在建议进一步改。
+
+当前：
+
+> **Economic Scheduling Optimization of Multi-Energy Systems via Physics-Constrained Hybrid-Action Reinforcement Learning**
+
+`Scheduling Optimization` 有一点重复。
+
+英语论文里更自然的是：
+
+> **Economic Scheduling of Multi-Energy Systems via Physics-Constrained Hybrid-Action Reinforcement Learning**
+
+我现在更推荐这个。
+
+它和你之前给我的那种：
+
+> Collaborative scheduling optimization ... via ...
+
+风格仍然一致，但英文更利落。
+
+---
+
+Introduction 的这两句顺序也有点怪：
+
+> The paper makes three contributions.
+> The resulting framework combines...
+
+然后才 enumerations。
+
+应该改成：
+
+> The resulting framework combines fast policy inference with state-dependent feasibility handling and nonlinear closed-loop verification. **The main contributions are as follows:**
+
+然后直接三条。
+
+---
+
+“remaining gap”也建议软一点。
+
+现在：
+
+> The remaining gap is heterogeneous device actions generated on a joint feasible region...
+
+这类绝对式 literature gap 容易被 reviewer 用一篇你没引用的文章击穿。
+
+改为：
+
+> **However, existing studies rarely combine heterogeneous hybrid actions with plant-wide state-dependent feasible-support generation and nonlinear closed-loop execution.**
+
+会安全很多。
+
+---
+
+还有一个术语建议统一：
+
+现在不断写：
+
+$$
+4\times10^5 \text{ physical hours}
+$$
+
+这容易让人误解成真的训练了 45 年。
+
+更学术、准确的写法是：
+
+> \(4\times10^5\) **environment steps**, each corresponding to one simulated operating hour.
+
+以后统一写：
+
+$$
+4\times10^5\ \text{environment steps}.
+$$
+
+“physical hours”不要再用。
+
+同理：
+
+> 30k physical hours
+
+改成：
+
+> \(3\times10^4\) environment interactions.
+
+---
+
+## Action ablation 这张表还有一个明显的表达问题
+
+Table 现在是：
+
+| Method     | Hours completed |     CC | Missed violations | Aborts |
+| ---------- | --------------: | -----: | ----------------: | -----: |
+| Projection |              28 |     -- |                 0 |      4 |
+| Static     |               5 |     -- |                 0 |      5 |
+| PC         |             168 | -17.75 |                 0 |      0 |
+
+reader 会困惑：
+
+> 既然只有一次 week-11 evaluation，为什么 Projection “Aborts = 4”？
+
+以及：
+
+> 28 hours completed 与 4 aborts 到底什么关系？
+
+建议改列名，直接写：
+
+| Encoding              | Complete week? | Valid hours | Failure mode | \(CC\) |
+| --------------------- | -------------- | ----------: | ------------ | -----: |
+| Continuous projection | No             |          28 | NoSafeAction |     -- |
+| Static hybrid         | No             |           5 | NoSafeAction |     -- |
+| PC-HybridTD3          | Yes            |         168 | None         | -17.75 |
+
+这样审稿人一眼就明白。
+
+---
+
+## Training Figure 现在也是可删项
+
+Fig. training 目前只有：
+
+* reward；
+* critic loss。
+
+正文只能说：
+
+> reward bounded;
+> critic loss decreases.
+
+这不构成 economic convergence evidence。
+
+如果没有 development-week \(CC\) checkpoint curve，我建议：
+
+* 页面宽裕 → 留；
+* 页数紧 → **优先删 Fig. training**。
+
+比它重要的内容是：
+
+* architecture；
+* action representation；
+* actual dispatch；
+* economic table；
+* ablation。
+
+如果能够补：
+
+$$
+CC_{dev}(50k),
+CC_{dev}(100k),
+CC_{dev}(200k),
+CC_{dev}(300k),
+CC_{dev}(400k)
+$$
+
+那 training figure 就值得留。
+
+---
+
+## Abstract 也还能写得更漂亮
+
+当前 Abstract 的结果段其实已经很诚实：
+
+> PC = −16.89，thermal-\(P_{\min}\) = −16.92。
+
+但是一句里面塞了五个 baseline，比较拥挤。
+
+我更推荐这种逻辑：
+
+> Closed-loop evaluation is conducted on four seasonally separated holdout weeks against heuristic, rolling MILP and parametric-search baselines. PC-HybridTD3 achieves a four-week mean modeled objective of \(-16.89\) million CNY/week, comparable to a thermal-floor heuristic (\(-16.92\)) and lower than the price-aware rule, rolling linear-surrogate MILP and week-wise parametric PSO. All holdout rollouts complete without unserved energy or hard-constraint violation, while policy inference requires 3.8 ms per decision.
+
+信息完全一样，但逻辑更清楚：
+
+**实验 → 最强 baseline → 其他 baseline → safety → runtime。**
+
+---
+
+## 目前这篇论文真正应该把“优势”定在哪里
+
+现在有了 \(P_{\min}\) baseline 后，我不再建议把核心优势写成：
+
+$$
+\boxed{\text{PC-HybridTD3 delivers the best economics}}
+$$
+
+因为数据不支持。
+
+最准确的中心结论应该变成：
 
 $$
 \boxed{
-P_{\mathrm{th}}=P_{\min}
+\text{PC-HybridTD3 learns an economically competitive policy}
 +
-\text{simple storage rule}
+\text{generates executable hybrid actions on a state-dependent support}
 }
 $$
 
-它直接回答：
+也就是：
 
-> PC-HybridTD3 的 \(-16.89M\) 到底多少来自 actor，多少只是因为把火电压到最低？
+> **经济性能 competitive，动作可行性是核心方法贡献。**
 
-这比跑第二个 seed 有价值多了。
+这反而和你的算法创新更加一致。
+
+可以把论文最后收束成一句：
+
+> **The principal benefit of PC-HybridTD3 is therefore not an unconditional economic advantage over a hand-crafted thermal-floor rule, but the ability to learn and execute heterogeneous plant-level actions directly on a state-dependent feasible support.**
+
+这句话非常重要。
+
+因为 Table II 已经告诉 reviewer：
+
+$$
+P_{\min}\text{-Rule}=-16.92
+<
+PC=-16.89.
+$$
+
+与其躲，不如主动解释。
 
 ---
 
-### 2. CC 分项应该放正文
+### 我会把现在的修改优先级收敛成
 
-现在最新 commit 已经把数据全提取出来了，例如 week 12：
+**投稿前必须修：** grid sign/settlement 符号；contribution 3 明确提 \(P_{\min}\) baseline；GiveSafe 再定义一层；reward shaping 公式；ablation table 的 “Aborts” 表述。
 
-PC-HybridTD3：
+**非常建议修：** cost decomposition 做成严格可加和；±200 MW sensitivity 要么增加 PC，要么删；`physical hours` 改 `environment steps`；标题去掉 `Optimization`。
 
-$$
-C_{\mathrm{thermal}}\approx3.43M
-$$
+**页面不够时优先删：** training reward/loss figure，其次 partial ±200 MW table。不要删 joint-support 公式、主要 KPI table 和 action encoding ablation。
 
-$$
-C_{\mathrm{sell}}\approx4.29M
-$$
-
-$$
-C_{\mathrm{contract}}\approx1.19M
-$$
-
-而 Rule：
-
-$$
-C_{\mathrm{thermal}}\approx9.99M.
-$$
-
-这已经能非常清楚解释为什么：
-
-$$
-CC_{\mathrm{PC}}-CC_{\mathrm{Rule}}
-$$
-
-差了约 10.8M。
-
-因此我会把重复的四周 CC 柱状图删掉，换成一个紧凑的 **cost decomposition table**。
-
-论文会立刻更有说服力。
-
----
-
-### 3. 同类 DRL baseline 仍是目前真正的 baseline 缺口
-
-如果今天没有时间跑完整 400k vanilla TD3/SAC，那就不要强行补。
-
-当前 30k：
-
-* Projection TD3 → 28 h abort；
-* Static-support → 5 h abort；
-* PC-HybridTD3 → 完整 168 h。
-
-最新版已经正确把它限定成：
-
-> feasibility/encoding evidence
-
-而不是最终经济性能比较。
-
-这就可以。
-
-正文的贡献也应该保持：
-
-> state-dependent joint feasible support enables executable hybrid action generation
-
-而不要扩张成：
-
-> PC-HybridTD3 economically outperforms standard DRL algorithms.
-
-你没有做后一个实验，就不说后一个结论。
-
----
-
-## 所以我建议把你的 Major issues 重新压缩
-
-投稿前真正需要盯的是：
-
-**M1 — Economic mechanism。**
-为什么 PC 最优？补 cost decomposition + \(P_{\min}\) simple baseline；解释 BESS 低利用率。
-
-**M2 — Baseline scope。**
-明确 PSO 是六参数策略、MILP 是线性 surrogate、30k TD3 ablation 只证明 encoding feasibility。没有 400k DRL baseline 是 limitation，不继续扩张 claim。
-
-**M3 — Learning evidence。**
-有 checkpoint 就补 development-week CC curve；没有就把 Fig. 4 继续称作 training diagnostics。
-
-**M4 — Scenario dependence。**
-\(\pm500\) MW hard grid、\(\pm200\) MW soft contract、0.1875 CNY/kWh export price 都必须强调是 scenario assumptions。最好跑一次 \(\pm200\) hard-band sensitivity。
-
-**M5 — Page limit。**
-删掉和 Table II 重复的 CC bar chart，runtime 也可以压回表格。
-
----
-
-因此关于 seed，我会直接定下来：
-
-$$
-\boxed{\textbf{论文按单一正式训练策略报告即可。}}
-$$
-
-正文里**既不用写 “single seed”**，也不用讨论其他 seed。
-
-只需要确保所有诸如：
-
-> mean
-
-指的都是：
-
-$$
-\boxed{\text{four-week mean}}
-$$
-
-不要出现 `mean ± std`、`across seeds`、`random-seed robustness` 之类没有在正文协议中验证的表述。
-
-现在有限的时间应该全部花在 **经济机理解释、cost decomposition、\(P_{\min}\) 基线和场景敏感性** 上，而不是 seed。
+这一版已经不是要大改架构了。真正需要的是把**“算法为什么有价值”和“实验实际上证明了什么”完全对齐**。目前差的主要就是最后这一层。
