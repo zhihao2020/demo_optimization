@@ -1,343 +1,181 @@
-还**不能直接上全量训练**。但现在和前一轮相比，情况已经明显更清楚了：你已经不只是“怀疑 C2”，而是用 0901 diagnostic FMU **稳定复现了一个确定的 plant/FMU transition anomaly**。
+按 GitHub 最新提交看，**今天下午前仍有一条可以投稿的路线，但不能沿用你现在那张“5 方法 × 8 周 × 3 seed”的正文表，也绝不能把 0831 的 D 结果硬填进去。**
 
-最关键的证据就是这一条：
+最重要的一点是：**最新代码主线已经不是 0831。** `1d444b...` 中已经把 production plant 换成 0903 FMU（`e28c6753…c05cbb`），Oracle 换成 `d5.7-0903-charge-headroom`；0903 的 20k boundary stress 是 0 post-step failure，随后 Stage C 30k 的 C1–C5 全过，false-safe=0，greedy 约 \(-1.77\times10^7\)，random 约 \(-1.28\times10^7\)。提交记录也明确写了**旧 0831 C/D 作废**。
 
-$$
-u_{\rm caes}=0,\quad
-\dot m_{c1}=\dot m_{c2}=0,\quad
-\dot m_{\rm tank,net}=0
-$$
-
-但一个 1 h communication step 后却有
+所以你现在列出的这些：
 
 $$
-\Delta SOC_{\rm cold}=-0.0454.
+-7.04M,\quad -8.82M,\quad C2=8/114/8
 $$
 
-只看通信点，这违反了你希望使用的质量守恒关系。它只能说明两种事情之一：**要么 3600 s 内部某段时间其实还有非零质量流，只是你在通信点看不到；要么状态积分/事件处理发生了历史量延续或状态跳变。**
+如果确实来自 `pc_hybrid_td3_0831_s*`，**今天不要再花一分钟分析它们**。它们属于已经修掉的 plant/FMU 版本，不是当前论文实验。
 
-所以现在的主问题已经不是 TD3，也不应该先改 Oracle。
+## 先做一个 5 分钟身份门
 
-## 我认为下一步要先查 FMI Co-Simulation 的事件处理，而不是马上重写 Tank
+你说“3×40 万已经跑完”，而 GitHub 最新 commit 只记录到“0903 d5.7 Stage D 已排队”，所以服务器状态比 GitHub 新。
 
-这里有一个新的、而且很强的嫌疑。
+第一件事只看这三路刚跑完的 `summary.json`：
 
-你的动作是连续 `Float64` 输入，例如：
+| 字段             | 当前论文允许值                                  |
+| -------------- | ---------------------------------------- |
+| FMU SHA        | `e28c6753...c05cbb`                      |
+| GUID           | `{6b3357ac-171b-413e-85d5-7318a860a18d}` |
+| Oracle         | `d5.7-0903-charge-headroom`              |
+| Plant          | 0903                                     |
+| training steps | 400k                                     |
 
-$$
-u_{\rm caes}:0.93\rightarrow0
-$$
+**如果刚跑完的 3×400k 是这组 0903/d5.7：不要重训，马上进入评估。**
 
-这是一个**不连续输入变化**。
+**如果还是 0831：全部扔掉作为历史 debug 结果。今天不要再跑 3×400k。**
 
-FMI 3.0 规范明确指出：对 Co-Simulation 来说，continuous input 的不连续变化属于 input event；如果使用 Event Mode，importer 需要主动进行事件处理；如果不使用 Event Mode，那么 FMU 对这种输入跳变的检测和内部积分器重置只能依赖内部 heuristic。([fmi-standard.org][1])
-
-而你现在的执行路径仍然本质是：
-
-```text
-setFloat64(action)
-→ set boundaries
-→ doStep(3600 s)
-→ get outputs
-```
-
-当前 `FmuSession.step()` 没有显式的 communication-point event handling。
-
-这和你看到的现象非常吻合：
-
-$$
-charge
-\rightarrow
-idle
-$$
-
-在通信点代数量已经变成 0，但内部连续状态可能还拿着前一工况的积分器/history 信息推进一段。
-
-### 所以先做这个判别实验
-
-不要训练。拿你已经能稳定复现的：
-
-> `T=280.65 K + charge → idle → Δcold=-0.0454`
-
-作为**最小失败测例**。
-
-同一动作序列同时跑：
-
-| 测试                     | 目的                    |
-| ---------------------- | --------------------- |
-| Modelica 原生 simulation | 判断 Modelica 方程自身是否有问题 |
-| FMU，step=3600 s        | 当前真实环境                |
-| FMU，step=900 s         | 看误差是否缩小               |
-| FMU，step=300 s         | 看误差是否继续缩小             |
-| FMU，step=60/72 s       | 接近内部积分尺度              |
-
-注意：**RL 决策周期仍然保持 3600 s**。这里只是在一个小时内，把相同动作保持不变，然后 FMU 做：
-
-$$
-12\times300s
-$$
-
-而不是一次：
-
-$$
-1\times3600s.
-$$
-
-同时把 `modelDescription.xml` 的：
-
-```text
-CoSimulation.hasEventMode
-```
-
-查出来，并确认你当前 FMPy `instantiate()` 到底是不是 `eventModeUsed=False`。
-
-FMI 规范也明确说，如果 `hasEventMode=true` 且 importer 选择使用 Event Mode，那么 importer 必须在通信点主动触发 Event Mode。([fmi-standard.org][2])
+这是今天路线的分叉点。
 
 ---
 
-## 这个实验会直接决定修哪一层
+## 更严重的是：当前论文不能原样提交
 
-如果出现：
+当前 `main.tex` 的摘要仍然直接写着：
+
+* 8 held-out test weeks；
+* heuristic / rolling MILP / projection TD3 / component-support / PC-HybridTD3；
+* PC-HybridTD3 比 projection 低 15%；
+* 比 MILP 低 7%；
+* 比 rule 低 22%；
+* zero hard violations；
+* 3.6 ms/step。
+
+而这些数字目前没有完整实验链支撑。
+
+结果段还明确写：
+
+> eight test weeks, averaged over three seeds
+> PC-HybridTD3 attains the lowest operating cost
+
+同样不能保留为既成事实。
+
+**今天最危险的事情不是实验少，而是论文里存在无法由实验目录追溯的具体数字。**
+
+---
+
+# 今天我建议直接切成“可投稿最小实验版本”
+
+不要试图在几个小时内补齐原计划。原正式 protocol 本来要求 36/8/8 周划分，而且 PC-HybridTD3 和 projection TD3 都是 300k–500k physical steps × 3 seeds。 下午前重新完成 projection 3×400k + static-support 3×400k 根本不现实。
+
+今天执行下面这一个计划：
+
+1. **立即确认刚完成的 3×400k 是不是 0903+d5.7。** 如果是，直接用三个 checkpoint；如果不是，就以已经通过的 0903 Stage-C s0 为基础，马上并行/顺序补 `s1/s2` 的 **30k 固定预算**，不要跑 400k。三 seed 都固定 30k，论文就老老实实写 30k。
+
+2. **最终测试集不要再写 8 个“完全 held-out”周。** 你之前开发时已经反复看过至少第一个 TEST 周，例如 week 11，严格讲它已经被 development 污染了。今天最稳妥的是把每季度第二个从未参与调参的周作为 final holdout：**week 12 / 25 / 38 / 51**。前提是检查日志确认这四周此前没被用于调 Oracle、选 checkpoint 或改 reward。论文改成“四个季节性最终测试周”。这比虚称 8 个 held-out 强得多。
+
+3. **马上跑最便宜、最有价值的两个 baseline：Rule + rolling MILP。** 它们不需要训练，全部在 **0903 FMU、同一 tariff、同一四个 final weeks** 上闭环评价。冬/过渡/夏旧 MILP 不要混用；重新跑四周，补上秋季。Rule 同理。这两个应该是今天上午机器的第一优先级。
+
+4. **PC-HybridTD3 对四个 final weeks 做真正的 168 h greedy evaluation。** 如果刚完成的 0903 400k 三 seed 全部 C2=0，且经济性能正常，就直接用 400k。若 400k 最终 checkpoint 出现训练后期 collapse，但保存了周期 checkpoint，可以**只根据 VAL weeks 选择 checkpoint**，然后一次性跑 final holdout；绝不能根据 final test 挑 checkpoint。如果刚才那三路实际是 0831，则改用 0903 的 30k×3 seed。
+
+5. **今天把 projection TD3 和 static-support Hybrid 从正式主结果中删掉。** 摘要、实验设置、`tab:kpi`、ablation subsection 都删掉“已经比较”的措辞。`fig_action_rep` 可以留作方法表示方式示意，但不要声称实验已经证明 projection/static-support 更差。如果主表和论文都完成后还有余量，再跑一个 30k single-seed ablation，明确标成 exploratory ablation；它不能承担摘要结论。
+
+6. **正文主表缩成三种方法：Rule / rolling MILP / PC-HybridTD3。** 最好按四个季度分别给 \(CC\)，再给 Mean、Unserved MWh、Hard violations、Decision time。PC 三 seed 在每个周先求 seed mean，再跨四周汇总；Rule/MILP 本身 deterministic，不需要假装有三个 seed。另设一个小的 safety validation 表，真实报告 `20k boundary stress: 0 false-safe` 和 Stage C 的安全门结果。
+
+7. **中午之前设硬停止线。** 四个 final weeks 必须全部完成 168 h；PC 三 seed 不能出现任何 post-step hard violation；Rule/MILP 全部有完整轨迹；所有正文数字必须能追溯到 CSV/summary。满足这些才提交结果型论文。如果 PC 没有成本第一，也照实写，不要再调。若它略差于 MILP但决策速度显著快，可以把结论改成“near-MILP economic performance with substantially lower online decision latency”；若它同时明显差于 Rule，则这篇论文今天就不应该声称经济调度优势，只能把重点退到 safe hybrid action generation。
+
+---
+
+## 还有一个现在必须改的统计措辞
+
+你现在很多 `weekly_raw_total_cost` 是负数，而且定义是：
 
 $$
-\Delta SOC_{3600}=-0.045
+CC_{\text{lower}}\Rightarrow\text{better}.
 $$
-
-而：
-
-$$
-\Delta SOC_{300}\approx-0.004
-$$
-
-甚至：
-
-$$
-\Delta SOC_{60}\approx0,
-$$
-
-同时原生 Modelica simulation 在切 idle 后质量立刻不再变化，那么根因几乎可以定成：
-
-$$
-\boxed{\text{FMI Co-Simulation 通信步/输入事件处理}}
-$$
-
-这时**不要改 Tank 物理方程**。
-
-工程上最稳的修法就是把：
-
-$$
-T_{\rm decision}=3600s
-$$
-
-和：
-
-$$
-T_{\rm FMU\ communication}
-$$
-
-解耦。
 
 例如：
 
 $$
-T_{\rm FMU}=300s,\qquad N=12.
+-17.7M<-12.8M.
 $$
 
-每个 RL step：
+在这种情况下直接写：
 
-```text
-a_t = policy(...)
-for i = 1..12:
-    FMU.step(a_t, boundary(t+i*300s), 300s)
-return final observation
-```
+> reduces operating cost by 15%
 
-也就是：
+很容易产生数学歧义，因为 denominator 本身可能为负。
+
+今天建议主表直接报告：
 
 $$
-a_t
+CC\;[\text{million CNY/week}]
 $$
 
-仍是小时级调度动作，但物理孪生内部按更细时间步演化。
-
-这其实比靠 Oracle 加一个 0.12 的 margin 合理得多。
-
----
-
-如果反过来，**原生 Modelica 也出现 charge→idle 后继续掉质量**，那才真正进入 Modelica 修复。
-
-这时我才建议动两个地方。
-
-第一，`mflow_coldtank` 的：
+以及绝对改进：
 
 $$
-+152.876
-$$
-
-需要根据原始 CAES 数据修正。现在它已经被实际 probe 证明是 active 的，并会在“充电”时向 cold tank 加质量；从同表其他点以及 hot/cold 对称关系看，它高度疑似应为：
-
-$$
-\boxed{-152.876}.
-$$
-
-第二，`Tank` 当前：
-
-```modelica
-if noEvent(SOC > SOC_min and SOC < SOC_max) then
-    der(m) = port_a.m_flow + port_b.m_flow;
-else
-    der(m) = 0;
-end if;
-```
-
-也不适合作为最终安全边界模型。`noEvent()` 的语义就是让其中的 Real relation **不触发状态/时间事件**。([Modelica 语言规范][3])
-
-对于你这篇论文，我更建议 Tank 始终满足：
-
-$$
-\boxed{
-\frac{dm}{dt}
+\Delta CC
 =
-\dot m_a+\dot m_b
-}
+CC_{\rm baseline}-CC_{\rm PC}.
 $$
 
-SOC 上下限由 Oracle / GiveSafe 保证。
-
-如果物理上真的需要“满罐后阀门关闭”，也应该限制**边界流量**：
+例如：
 
 $$
-\dot m_{\rm effective},
+CC_{\rm baseline}=-12.8,\qquad
+CC_{\rm PC}=-17.7
 $$
 
-而不是等 SOC 已经越界以后：
+则写：
+
+> PC-HybridTD3 improves the weekly net economic objective by 4.9 million CNY.
+
+如果一定要百分比，就必须明确定义：
 
 $$
-\dot m=0
+I=
+\frac{CC_{\rm baseline}-CC_{\rm PC}}
+{|CC_{\rm baseline}|}\times100\%.
 $$
 
-把状态冻在那里。
-
-但这一步现在还**不应该先改**，因为还没排除 Co-Simulation 本身。
+不要直接叫“cost reduction”。
 
 ---
 
-## exact-prefix replay 现在是什么地位？
+# 我认为今天最合理的最终论文结构
 
-我会稍微调整你现在的计划：
+**不要追求原来那张大矩阵。**
 
-**exact-prefix 仍然要做，但已经不是证明“有没有 bug”的硬条件。**
+保留：
 
-因为你已经用受控实验复现出了：
+**PC-HybridTD3 method → 0903 FMU physical validation → Rule/MILP comparison → four-season final holdout evaluation → safety evidence。**
 
-$$
-\Delta SOC=-0.0454
-$$
+删掉今天根本补不齐的：
 
-这种同类异常。
+`projection 3 seeds`、`static-support 3 seeds`、`8-week claim`、`8760h robustness`、`forecast-noise robustness`，以及当前摘要里所有预填百分比。
 
-exact-prefix 的作用现在变成：
+这样论文实验量会变小，但**证据链是完整的**。
 
-> 证明 D 中的 \(-0.08\sim-0.17\) 是否也是同一个机制，而不是另一种 failure。
+而且当前 GitHub 其实已经有一条相当不错的方法论故事：0901 诊断发现 FMI/Modelica 模式切换问题 → 0903 修复 plant → d5.5/d5.7 重标 Oracle → 20k stress 0 false-safe → Stage C C1–C5 通过。这比拿一个有 C2 的旧 0831 400k 结果强得多。
 
-因此可以把 frozen s1 prefix-capture 和上面的 Modelica/FMI 判别实验**并行做**。
+### 今天上午的机器优先级
 
-完全没有必要等新的 400k。
+**先不要开任何新的 400k。**
 
----
-
-## 还有一个地方我确认了：V0=60000 不是新问题
-
-我重新检查了你这份最新 Modelica 源码。
-
-虽然 `Tank` 类自身默认参数不是这个值，但 `PowerSystem_8760h` 实例化 CAES 时确实对：
-
-```text
-hottank
-coldtank
-```
-
-做了顶层 modifier：
-
-```text
-V0 = 60000
-A  = 1000
-```
-
-所以你 diagnostic FMU 得到：
-
-$$
-\frac{m}{SOC}=6\times10^7kg
-$$
-
-以及：
-
-$$
-\frac{level}{SOC}=60m
-$$
-
-是和当前系统级 Modelica 实例一致的。
-
-这一项不用再追。
-
----
-
-# 那到底什么时候能全量训练？
-
-我建议把“允许 D 3×400k”的门冻结成这样：
-
-| 阶段               | 必须满足                                          |
-| ---------------- | --------------------------------------------- |
-| Plant/FMU        | charge→idle 最小测例解释清楚；质量守恒残差正常                 |
-| CAES 数据          | `+152.876` 原始数据核实并修复，如确为 typo                 |
-| FMU              | 最终 production FMU 固定新 SHA/GUID                |
-| Oracle           | **基于最终 FMU 重新标定**，不能继续拿 8-17 参数直接用            |
-| Safety stress    | ≥20k targeted stress，post-step false-safe = 0 |
-| Known regression | 原来 charge→idle signature 全部通过                 |
-| Stage C          | 30k，C1–C5 全 PASS                              |
-| Economic sanity  | greedy 至少优于 random；不能再出现旧 s0/s2 那种 C5 倒挂      |
-| Stage D          | 此时才开 3 seed × 400k                            |
-
-其中有一点非常重要：
-
-如果你最终把 FMU communication 从：
-
-$$
-3600s
-$$
-
-改成：
-
-$$
-300s\times12,
-$$
-
-那么这是**plant transition 定义发生了变化**。
-
-因此：
-
-> 旧 Oracle calibration、旧 Stage C、旧 D 结果全部不能继续作为正式实验结果。
-
-都要以新的 production FMU execution protocol 重跑。
-
----
-
-### 所以我现在的判断非常明确
-
-**不建议今天直接提交全量 3×400k。**
-
-现在最值得做的不是再抓几十条 C2，而是花一两个小时把：
+最高优先级是：
 
 $$
 \boxed{
-3600s\rightarrow900s\rightarrow300s\rightarrow60/72s
+\text{确认 3×400k 身份}
+\rightarrow
+\text{4 周 PC evaluation}
+\parallel
+\text{4 周 Rule/MILP}
 }
 $$
 
-这个 communication-step sensitivity 做出来，并和 Modelica 原生仿真对照。
+如果确认那三路是 0831：
 
-如果异常随着 communication step 缩短近似消失，那其实是一个好结果——因为你就不需要把 Oracle 搞成复杂的 previous-mode safety model，根因是**FMU 联合仿真的数值时间尺度**，修完以后算法反而可以继续保持现在这个更干净的无记忆物理安全结构。
+$$
+\boxed{
+0903\;30k\;s1+s2
+\rightarrow
+3\ seed\times4\ final\ weeks
+}
+$$
 
-[1]: https://fmi-standard.org/docs/3.0/?utm_source=chatgpt.com "Functional Mock-up Interface Specification"
-[2]: https://fmi-standard.org/docs/3.0/ "Functional Mock-up Interface Specification"
-[3]: https://specification.modelica.org/master/MLS.pdf?utm_source=chatgpt.com "Modelica® Language Specification version 3.7"
+这条路线才有机会让你**今天下午拿到一张真实、能追溯、能投稿的主表**。

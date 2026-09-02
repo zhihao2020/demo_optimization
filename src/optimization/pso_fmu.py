@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from actions.caes_u import physical_dict, u_from_mode_mag
+from actions.caes_u import physical_dict, u_from_mode_mag_feasible
 
 from actions import CaesMode
 from envs.power_system_env import PowerSystemEnv
@@ -94,7 +94,28 @@ class ParametricPricePolicy:
                 if self.caes_mag > 0.05 and gas > 0.3 and feas.mode_mask.discharge:
                     mode, mag = CaesMode.DISCHARGE, self.caes_mag
 
-        return physical_dict(float(np.clip(u_tp, lo, hi)), float(u_bat), u_from_mode_mag(mode, mag))
+        mask = feas.mode_mask
+        if int(mode) == int(CaesMode.IDLE) and not mask.idle:
+            if mask.discharge:
+                mode, mag = CaesMode.DISCHARGE, max(float(mag), 0.5)
+            elif mask.charge:
+                mode, mag = CaesMode.CHARGE, max(float(mag), 0.5)
+        elif int(mode) == int(CaesMode.DISCHARGE) and not mask.discharge:
+            if mask.idle:
+                mode, mag = CaesMode.IDLE, 0.0
+            elif mask.charge:
+                mode, mag = CaesMode.CHARGE, max(float(mag), 0.5)
+        elif int(mode) == int(CaesMode.CHARGE) and not mask.charge:
+            if mask.idle:
+                mode, mag = CaesMode.IDLE, 0.0
+            elif mask.discharge:
+                mode, mag = CaesMode.DISCHARGE, max(float(mag), 0.5)
+
+        return physical_dict(
+            float(np.clip(u_tp, lo, hi)),
+            float(u_bat),
+            u_from_mode_mag_feasible(feas, mode, mag),
+        )
 
 
 def _fitness_from_eval(kpi: dict[str, Any], cfg: PSOConfig) -> float:
@@ -113,16 +134,17 @@ def evaluate_theta(
     start_time: float,
     seed: int,
     cfg: PSOConfig,
+    env: PowerSystemEnv | None = None,
 ) -> tuple[float, dict[str, Any]]:
-    env = PowerSystemEnv(run_id="pso_eval", forecast_enabled=True)
+    own = env is None
+    if own:
+        env = PowerSystemEnv(run_id=f"pso_eval_{int(seed)}", forecast_enabled=True)
     try:
         pol = ParametricPricePolicy(env, theta)
         t0 = time.perf_counter()
         res = evaluate_policy(env, pol, reset_options={"start_time": float(start_time)})
         wall = time.perf_counter() - t0
         kpi = extract_kpi_from_eval(res, wall_s=wall, fmu_steps=res.get("valid_steps"))
-        # net_cashflow: evaluate 的 economic_cashflow_delta 在 terms 里是累计
-        # 若为末步单值，用 weekly_raw_total_cost 反号近似
         if abs(float(kpi.get("net_cashflow_j") or 0.0)) < 1.0:
             raw = res.get("weekly_raw_total_cost")
             if raw is not None:
@@ -130,9 +152,13 @@ def evaluate_theta(
         fit = _fitness_from_eval(kpi, cfg)
         kpi["fitness"] = fit
         kpi["theta"] = np.asarray(theta, dtype=np.float64).tolist()
+        kpi["eval_status"] = res.get("eval_status")
+        kpi["valid_steps"] = res.get("valid_steps")
+        kpi["weekly_raw_total_cost"] = res.get("weekly_raw_total_cost")
         return fit, kpi
     finally:
-        env.close()
+        if own:
+            env.close()
 
 
 def run_pso(
@@ -155,29 +181,31 @@ def run_pso(
     history: list[dict[str, Any]] = []
     fmu_steps_total = 0
     t0 = time.perf_counter()
-
-    for it in range(cfg.n_iters):
-        for i in range(cfg.n_particles):
-            fit, kpi = evaluate_theta(pos[i], start_time=start_time, seed=cfg.seed + i, cfg=cfg)
-            fmu_steps_total += int(kpi.get("fmu_steps") or 168)
-            if fit > pbest_f[i]:
-                pbest_f[i] = fit
-                pbest[i] = pos[i].copy()
-            if fit > gbest_f:
-                gbest_f = fit
-                gbest = pos[i].copy()
-                gbest_kpi = kpi
-        # velocity update
-        r1 = rng.random(pos.shape)
-        r2 = rng.random(pos.shape)
-        vel = cfg.w * vel + cfg.c1 * r1 * (pbest - pos) + cfg.c2 * r2 * (gbest - pos)
-        pos = np.clip(pos + vel, low, high)
-        history.append({"iter": it, "gbest_f": float(gbest_f)})
-        print(f"[PSO] iter={it+1}/{cfg.n_iters} gbest_f={gbest_f:.4e}")
-
+    env = PowerSystemEnv(run_id=f"pso_search_{int(cfg.seed)}", forecast_enabled=True)
+    try:
+        for it in range(cfg.n_iters):
+            for i in range(cfg.n_particles):
+                fit, kpi = evaluate_theta(
+                    pos[i], start_time=start_time, seed=cfg.seed + i, cfg=cfg, env=env
+                )
+                fmu_steps_total += int(kpi.get("fmu_steps") or kpi.get("valid_steps") or 168)
+                if fit > pbest_f[i]:
+                    pbest_f[i] = fit
+                    pbest[i] = pos[i].copy()
+                if fit > gbest_f:
+                    gbest_f = fit
+                    gbest = pos[i].copy()
+                    gbest_kpi = kpi
+            r1 = rng.random(pos.shape)
+            r2 = rng.random(pos.shape)
+            vel = cfg.w * vel + cfg.c1 * r1 * (pbest - pos) + cfg.c2 * r2 * (gbest - pos)
+            pos = np.clip(pos + vel, low, high)
+            history.append({"iter": it, "gbest_f": float(gbest_f)})
+            print(f"[PSO] iter={it+1}/{cfg.n_iters} gbest_f={gbest_f:.4e}", flush=True)
+        _, final_kpi = evaluate_theta(gbest, start_time=start_time, seed=cfg.seed, cfg=cfg, env=env)
+    finally:
+        env.close()
     wall = time.perf_counter() - t0
-    # 最终再评估一次 gbest
-    _, final_kpi = evaluate_theta(gbest, start_time=start_time, seed=cfg.seed, cfg=cfg)
     final_kpi["method"] = "pso"
     final_kpi["fitness"] = gbest_f
     final_kpi["wall_s_search"] = wall
