@@ -12,4 +12,4 @@ Do not keep a second journal or conference identity in parallel.
 |------|--------|
 | `main.tex` | **Only** manuscript (IEEE conference, PC-HybridTD3) |
 
-Figures: topology (`fig_topology`), algorithm (`fig_algorithm`, not `PC-HybridTD3_Architecture`), action representation, training diagnostics, representative week. Monthly TOU full table: `supplementary_tou.tex` (not compiled into the live paper).
+Figures: topology (`fig_topology`), algorithm (`PC-HybridTD3_Architecture`), action representation, training, representative week. Monthly TOU full table: `supplementary_tou.tex` (not compiled into the live paper).

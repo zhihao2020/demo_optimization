@@ -85,7 +85,7 @@
 
 - 联合 \(\widehat{\mathcal A}_f\) 顺序解码；GiveSafe 残差；physical-only TD3。
 - 消融：Continuous-projection TD3 → Component-support Hybrid TD3 → PC-HybridTD3。
-- **图 / 算法 / 表：** `fig_algorithm`；`fig_action_rep`；Alg. PC-HybridTD3；`tab:hyper`。
+- **图 / 算法 / 表：** `PC-HybridTD3_Architecture`；`fig_action_rep`；Alg. PC-HybridTD3；`tab:hyper`。
 
 ### IV. Case study（约 2.5–3 页；数字 Stage D 后填）
 

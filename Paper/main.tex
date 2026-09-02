@@ -38,7 +38,7 @@ Suzhou, China}
 \maketitle
 
 \begin{abstract}
-Rising shares of wind and photovoltaic generation require economic hourly dispatch of thermal units, battery storage, compressed-air energy storage (CAES) and the grid. This paper considers weekly price-taker scheduling of a multi-energy plant whose nonlinear dynamics are given by a Modelica functional mock-up unit (FMU). Device limits, inventories and interchange capacity induce a state-dependent hybrid action region that cannot be written in closed form. Physics-constrained hybrid TD3 (PC-HybridTD3) generates continuous thermal and battery set-points together with a CAES mode--magnitude pair already inside a computable joint feasible-support model \(\Afhat(s)\), applies a residual safety filter termed GiveSafe, and updates the critics only on executed transitions. The method is evaluated in closed loop on the Sysplorer FMU against a price-aware heuristic, the same heuristic with thermal generation held at \(P_{\min}\), a rolling mixed-integer linear programme and a week-wise FMU-based parametric PSO on four seasonal final-holdout weeks. Ranking uses the modeled weekly net objective \(CC\) (\(10^6\)~CNY/week; lower is better). The four-week mean \(CC\) of PC-HybridTD3 is \(-16.89\), matching the \(P_{\min}\) storage heuristic (\(-16.92\)) and improving on the unconstrained heuristic, the rolling linear-surrogate MILP and the week-wise PSO, with zero unserved energy and zero hard-constraint violations, at \(3.8\)~ms per step versus \(225\)~ms for the MILP.
+Rising shares of wind and photovoltaic generation require economic hourly dispatch of thermal units, battery storage, compressed-air energy storage (CAES) and the grid. This paper considers weekly price-taker scheduling of a multi-energy plant whose nonlinear dynamics are given by a Modelica functional mock-up unit (FMU). Device limits, inventories and interchange capacity induce a state-dependent hybrid action region that cannot be written in closed form. Physics-constrained hybrid TD3 (PC-HybridTD3) generates continuous thermal and battery set-points together with a CAES mode--magnitude pair already inside a computable joint feasible-support model \(\Afhat(s)\), applies a residual safety filter termed GiveSafe, and updates the critics only on executed transitions. The method is evaluated in closed loop on the Sysplorer FMU against a price-aware heuristic, the same heuristic with thermal generation held at \(P_{\min}\), a rolling mixed-integer linear programme and a week-wise FMU-based parametric PSO on four seasonal final-holdout weeks. Ranking uses the modeled weekly net objective \(CC\) (\(10^6\)~CNY/week; lower is better). The four-week mean \(CC\) of PC-HybridTD3 is \(-16.89\), matching the thermal-\(P_{\min}\) heuristic (\(-16.92\)) and improving on the unconstrained heuristic, the rolling linear-surrogate MILP and the week-wise PSO, with zero unserved energy and zero hard-constraint violations, at \(3.8\)~ms per step versus \(225\)~ms for the MILP.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -84,7 +84,7 @@ The paper makes three contributions.
 \begin{enumerate}
 \item A hybrid action that treats thermal generation and BESS as continuous commands and CAES as a mode--magnitude pair, avoiding projection of a disconnected envelope onto idle.
 \item A joint feasible-support model \(\Afhat(s)\) that encodes ramps, inventories, CAES restrictions and interchange capacity in action generation, with GiveSafe as the last physical screen.
-\item Closed-loop FMU evaluation on four seasonal holdout weeks, where joint support yields executable hybrid actions and a four-week \(CC\) on par with a \(P_{\min}\) storage rule and below a price-aware heuristic, a rolling linear-surrogate MILP and a week-wise parametric PSO.
+\item Closed-loop FMU evaluation on four seasonal holdout weeks against a price-aware heuristic, a rolling linear-surrogate MILP and a week-wise parametric PSO.
 \end{enumerate}
 
 Section~\ref{sec:problem} formulates the scheduling problem. Section~\ref{sec:method} presents PC-HybridTD3. Section~\ref{sec:results} reports the case study. Section~\ref{sec:conclusion} concludes.
@@ -104,7 +104,7 @@ Fig.~\ref{fig:topology} shows the plant. Wind and PV inject at the electric bus;
 \label{fig:topology}
 \end{figure*}
 
-Table~\ref{tab:params} lists the ratings. The plant is a price-taker on the 2026 Shandong 110-kV TOU purchasing tariff~\cite{shandong2023tou,shandong2026tou}. Hourly buy prices follow the official monthly schedule; the export price is a fixed scenario parameter. A national ETS carbon price enters~\eqref{eq:C} as one cost component~\cite{mee2025etsnews,mee2024quota}.
+Table~\ref{tab:params} lists the ratings. The plant is a price-taker on the 2026 Shandong 110-kV TOU purchasing tariff~\cite{shandong2023tou,shandong2026tou}. Hourly buy prices follow the official monthly schedule; the export price is a fixed scenario parameter. A national ETS carbon price enters~\eqref{eq:C} as one cost component~\cite{mee2025etsnews}.
 
 \begin{table}[!t]
 \caption{Plant and market parameters.}
@@ -123,7 +123,7 @@ CAES electric rating & 150 MW & Envelope~\eqref{eq:legal} \\
 Grid hard / contract limits & \(\pm500\) / \(\pm200\) MW & Soft band in \(C_t^{\mathrm{grid}}\) \\
 TOU buy range & \(0.14\)--\(1.19\) CNY/kWh & Monthly 110 kV schedule \\
 TOU sell & 0.1875 CNY/kWh & Flat export price \\
-Carbon price \(\pi\) & 97.49 CNY/t & 2024 year-end CEA close \\
+Carbon price \(\pi\) & 97.49 CNY/t & 2024 year-end CEA close~\cite{mee2025etsnews} \\
 Curtailment / unserved & 300 / 1000 CNY/MWh & Objective penalties \\
 Episode length \(T\) & 168 h & Weekly horizon \\
 \bottomrule
@@ -247,8 +247,8 @@ PC-HybridTD3~\cite{lillicrap2016ddpg,fujimoto2018td3,fan2019hybrid} is a single-
 
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=0.92\textwidth]{fig_algorithm}
-\caption{Closed-loop data flow of PC-HybridTD3: joint support \(\Afhat(s)\), GiveSafe residual filter with resample-on-reject, and physical-only TD3 update.}
+\includegraphics[width=0.92\textwidth]{PC-HybridTD3_Architecture.png}
+\caption{Architecture of PC-HybridTD3: hybrid actor, joint feasible support and critic update.}
 \label{fig:algorithm}
 \end{figure*}
 
@@ -428,7 +428,7 @@ Final-holdout FMU failures & 0 / 4 weeks \\
 \subsection{System-level scheduling performance}
 \label{sec:kpi}
 
-Table~\ref{tab:kpi} reports the modeled weekly net objective \(CC\) on the four final weeks. Each entry is a complete 168~h closed-loop rollout on the Sysplorer FMU. The mean is the average over those four seasonal weeks. PC-HybridTD3 attains \(-16.89\) million CNY/week, on par with the \(P_{\min}\) storage heuristic (\(-16.92\)) and below the unconstrained rule, the rolling MILP and the week-wise PSO. PSO re-optimizes \(\theta\) on each evaluation week; the trained actor is applied as a closed-loop policy. Table~\ref{tab:decomp} shows why: thermal generation at \(P_{\min}\) cuts fuel from \(9.97\) to \(3.43\) million CNY/week, and settled export revenue rises from \(1.77\) to about \(4.2\) million. Table~\ref{tab:util} reports device utilization. With the Oracle interchange band set to \(\pm200\)~MW, the \(P_{\min}\) heuristic stops after 2--10~h and the unconstrained rule after 7--87~h (Table~\ref{tab:gridband}).
+Table~\ref{tab:kpi} reports the modeled weekly net objective \(CC\) on the four final weeks. Each entry is a complete 168~h closed-loop rollout on the Sysplorer FMU. The mean is the average over those four seasonal weeks. PC-HybridTD3 attains \(-16.89\) million CNY/week, on par with the same heuristic run at thermal \(P_{\min}\) (\(-16.92\)) and below the unconstrained rule, the rolling MILP and the week-wise PSO. PSO re-optimizes \(\theta\) on each evaluation week; the trained actor is applied as a closed-loop policy. Table~\ref{tab:decomp} shows why: thermal generation at \(P_{\min}\) cuts fuel from \(9.97\) to \(3.43\) million CNY/week, and settled export revenue rises from \(1.77\) to about \(4.2\) million. Table~\ref{tab:util} reports device utilization. With the Oracle interchange band set to \(\pm200\)~MW, the thermal-\(P_{\min}\) heuristic stops after 2--10~h and the unconstrained rule after 7--87~h (Table~\ref{tab:gridband}).
 
 \begin{table}[!t]
 \caption{Final-holdout weekly \(CC\) (\(10^6\)~CNY/week) on weeks 12, 25, 38 and 51. Lower is better. Mean is the four-week average.}
@@ -438,7 +438,7 @@ Table~\ref{tab:kpi} reports the modeled weekly net objective \(CC\) on the four 
 \setlength{\tabcolsep}{1.8pt}
 \begin{tabular}{@{}lrrrrr@{}}
 \toprule
-Week (season) & Rule & \(P_{\min}\) & MILP & PSO & PC \\
+Week (season) & Rule & Th-\(P_{\min}\) & MILP & PSO & PC \\
 \midrule
 12 (winter) & \(-6.47\) & \(-17.16\) & \(-8.97\) & \(-13.90\) & \(-17.25\) \\
 25 (transition) & \(-1.91\) & \(-13.81\) & \(-6.47\) & \(-10.19\) & \(-13.64\) \\
@@ -451,7 +451,7 @@ Runtime (ms/step) & \(0.76\) & \(0.97\) & \(225\) & \(2.0\) & \(3.8\) \\
 Search / train & -- & -- & -- & \(5.3\)~min/week & \(4\times10^{5}\)~h \\
 \bottomrule
 \end{tabular}\\[2pt]
-{\footnotesize \(P_{\min}\): thermal at the feasible lower bound with the same storage heuristic as Rule. PC is PC-HybridTD3. PSO search is \(12\times25\) FMU weeks per holdout week, reported separately from one-step inference.}
+{\footnotesize Th-\(P_{\min}\): Rule with thermal generation held at its feasible lower bound. PC is PC-HybridTD3. PSO search is \(12\times25\) FMU weeks per holdout week, reported separately from one-step inference.}
 \end{table}
 
 \begin{table}[!t]
@@ -467,7 +467,7 @@ Method & \(C_{\mathrm{th}}\) & \(C_{\mathrm{buy}}\) & \(C_{\mathrm{sell}}\) & \(
 Rule & \(9.97\) & \(2.42\) & \(1.77\) & \(0.49\) & \(-6.11\) \\
 MILP & \(8.05\) & \(1.30\) & \(2.03\) & \(0.33\) & \(-9.41\) \\
 PSO & \(5.63\) & \(0.81\) & \(3.25\) & \(0.28\) & \(-13.54\) \\
-\(P_{\min}\) & \(3.43\) & \(0.52\) & \(4.15\) & \(0.88\) & \(-16.92\) \\
+Th-\(P_{\min}\) & \(3.43\) & \(0.52\) & \(4.15\) & \(0.88\) & \(-16.92\) \\
 PC-HybridTD3 & \(3.43\) & \(0.68\) & \(4.28\) & \(1.08\) & \(-16.89\) \\
 \bottomrule
 \end{tabular}\\[2pt]
@@ -484,7 +484,7 @@ PC-HybridTD3 & \(3.43\) & \(0.68\) & \(4.28\) & \(1.08\) & \(-16.89\) \\
 Method & W12 & W25 & W38 & W51 \\
 \midrule
 Rule, \(\pm200\)~MW & \(87\) & \(7\) & \(10\) & \(10\) \\
-\(P_{\min}\), \(\pm200\)~MW & \(10\) & \(7\) & \(10\) & \(2\) \\
+Th-\(P_{\min}\), \(\pm200\)~MW & \(10\) & \(7\) & \(10\) & \(2\) \\
 \bottomrule
 \end{tabular}\\[2pt]
 {\footnotesize Both abort on a dynamic-state constraint before the FMU steps. Neither finishes 168~h.}
@@ -547,7 +547,7 @@ PC-HybridTD3 & 168 & \(-17.75\) & \(0\) & \(0\) \\
 \section{Conclusion}
 \label{sec:conclusion}
 
-Weekly multi-energy scheduling on an FMU plant requires thermal generation, BESS, CAES and the grid to be commanded inside a state-dependent support that is not a product of device boxes. PC-HybridTD3 generates heterogeneous commands on a computable approximation \(\Afhat(s)\), screens them with GiveSafe, and learns only from executed hours. On four seasonal holdout weeks the trained policy attains a four-week mean \(CC\) of \(-16.89\) million CNY/week, on par with a \(P_{\min}\) storage rule and below a price-aware heuristic, a rolling linear-surrogate MILP and a week-wise six-parameter PSO, with zero unserved energy, at \(3.8\)~ms/step. The cash gap comes from thermal generation at \(P_{\min}\) and settled export under a \(\pm500\)~MW hard interchange limit, a \(\pm200\)~MW soft contract band and a flat export price of \(0.1875\)~CNY/kWh. With the Oracle band set to \(\pm200\)~MW the \(P_{\min}\) rule stops within hours. Inventories reset each week; September--December buy prices follow the last published month.
+Weekly multi-energy scheduling on an FMU plant requires thermal generation, BESS, CAES and the grid to be commanded inside a state-dependent support that is not a product of device boxes. PC-HybridTD3 generates heterogeneous commands on a computable approximation \(\Afhat(s)\), screens them with GiveSafe, and learns only from executed hours. On four seasonal holdout weeks the trained policy attains a four-week mean \(CC\) of \(-16.89\) million CNY/week, on par with the same heuristic at thermal \(P_{\min}\) and below a price-aware heuristic, a rolling linear-surrogate MILP and a week-wise six-parameter PSO, with zero unserved energy, at \(3.8\)~ms/step. The cash gap comes from thermal generation at \(P_{\min}\) and settled export under a \(\pm500\)~MW hard interchange limit, a \(\pm200\)~MW soft contract band and a flat export price of \(0.1875\)~CNY/kWh. With the Oracle band set to \(\pm200\)~MW the thermal-\(P_{\min}\) heuristic stops within hours. Inventories reset each week; September--December buy prices follow the last published month.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
