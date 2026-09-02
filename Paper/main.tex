@@ -81,10 +81,11 @@ a_t\sim\pi_\theta(s_t)\;\Rightarrow\; a_t\in\Afhat(s_t),
 rather than \(a_t=\Pi(\pi_\theta(s_t))\). Only transitions advanced by the FMU enter the economic Bellman update.
 
 The paper makes three contributions.
+The resulting framework combines the fast policy inference of DRL with explicit state-dependent feasibility handling, while retaining nonlinear plant verification in the closed loop.
 \begin{enumerate}
-\item A hybrid action that treats thermal generation and BESS as continuous commands and CAES as a mode--magnitude pair, avoiding projection of a disconnected envelope onto idle.
-\item A joint feasible-support model \(\Afhat(s)\) that encodes ramps, inventories, CAES restrictions and interchange capacity in action generation, with GiveSafe as the last physical screen.
-\item Closed-loop FMU evaluation on four seasonal holdout weeks against a price-aware heuristic, a rolling linear-surrogate MILP and a week-wise parametric PSO.
+\item Hybrid-action representation: a parameterized action space that combines continuous thermal/BESS commands with a discrete-continuous CAES mode--magnitude action, avoiding projection across the disconnected CAES operating envelope.
+\item Physics-constrained action generation: a state-dependent joint feasible support that incorporates device limits, inventories, thermal ramps, CAES operating restrictions and grid coupling before the action reaches the plant, complemented by a residual GiveSafe safety filter.
+\item Closed-loop economic performance: seasonal FMU evaluation demonstrates lower modeled weekly \(CC\) than the tested heuristic, rolling linear-surrogate MILP and week-wise parametric PSO baselines, while preserving zero unserved energy and zero hard-constraint violations with millisecond-level online inference.
 \end{enumerate}
 
 Section~\ref{sec:problem} formulates the scheduling problem. Section~\ref{sec:method} presents PC-HybridTD3. Section~\ref{sec:results} reports the case study. Section~\ref{sec:conclusion} concludes.
