@@ -4,7 +4,7 @@
 
 IEEE conference paper, PC-HybridTD3:
 
-> Physics-Constrained Hybrid TD3 for Safe Economic Scheduling of an FMU-Based Multi-Energy System
+> Coordinated Scheduling Optimization of Multi-Energy Systems via Physics-Constrained Hybrid-Action Reinforcement Learning
 
 Do not keep a second journal or conference identity in parallel.
 

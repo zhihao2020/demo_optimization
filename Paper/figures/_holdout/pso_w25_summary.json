@@ -1,0 +1,895 @@
+{
+  "status": "completed",
+  "method": "pso",
+  "eval": {
+    "steps": 168,
+    "valid_steps": 168,
+    "eval_status": "ok",
+    "eval_failed": false,
+    "failure": null,
+    "soft_shell": false,
+    "soft_shell_count": 0,
+    "soft_shell_hours": 0,
+    "episode_reward": 66.95607579222231,
+    "weekly_episode_reward": 66.95607579222231,
+    "weekly_discounted_return": 33.920042400289404,
+    "weekly_raw_total_cost": -10192091.471444879,
+    "weekly_terminal_soc_bonus": 15.0,
+    "terminal_soc_satisfied": true,
+    "cost_terms": {
+      "economic_cashflow_total": 44313428.78439026,
+      "economic_cashflow_delta": 10192091.471444879,
+      "cashflow_delta": 10192091.471444879,
+      "generalized_cashflow_delta": 8779401.250248665,
+      "economic_reward": 56.08413491357991,
+      "raw_total_cost": -10192091.471444879,
+      "raw_generalized_cost": -8779401.250248665,
+      "normalized_cost": -56.08413491357991,
+      "cost_reference": 156539.83544146415,
+      "cost_reference_missing": 0.0,
+      "terminal_soc_bonus": 15.0,
+      "reward": 66.95607579222231,
+      "external_cost_cny": 1412690.2211962107,
+      "terminal_soc_l1_error": 0.01402333787750154,
+      "terminal_soc_l1_full": 67.46284042720274,
+      "terminal_soc_l1_energy": 57.7601725172259,
+      "terminal_soc_l2_error": 0.0001227111442538897,
+      "terminal_soc_tolerance": 0.06,
+      "terminal_soc_satisfied": 1.0,
+      "soc_shaping_reward": -4.128059121357578,
+      "soc_shaping_potential": 1.2776929531559817,
+      "soc_shaping_absolute": -5.405752074513561,
+      "soc_shaping_coef": 1250.0,
+      "soc_recovery_scale": 250.0,
+      "soc_l1_prev": 57.74614917934839,
+      "market_settlement_enabled": 168.0,
+      "market_grid_cashflow": 434530.9546421818,
+      "market_grid_cost": -434530.9546421818,
+      "market_buy_cost": 2582249.067236139,
+      "market_sell_revenue": 3016780.02187832,
+      "market_energy_buy_mwh": 5043.40064500536,
+      "market_energy_sell_mwh": 16089.493450017699,
+      "market_buy_yuan_per_kwh": 107.3119499999998,
+      "market_sell_yuan_per_kwh": 31.5,
+      "p_grid_mw": -11046.092805012338,
+      "fmu_grid_cashflow_delta": -9152051.612628102,
+      "carbon_enabled": 168.0,
+      "carbon_mode": 336.0,
+      "carbon_mass_t": 14928.712004205354,
+      "carbon_mass_thermal_t": 11806.34266488254,
+      "carbon_mass_grid_t": 3122.369339322818,
+      "carbon_cost_cny": 365470.5111524791,
+      "carbon_thermal_step_cny": 0.0,
+      "carbon_grid_step_cny": 304399.78689058154,
+      "carbon_settlement_cny": 61070.724261897565,
+      "carbon_price_cny_per_t": 16378.319999999969,
+      "carbon_eta_thermal": 142.79999999999956,
+      "carbon_eta_grid": 104.00880000000033,
+      "carbon_beta_t_per_mwh": 135.22320000000045,
+      "carbon_e_thermal_mwh": 13889.814899861813,
+      "carbon_e_grid_buy_mwh": 5043.40064500536,
+      "carbon_allowance_t": 788317.4692946953,
+      "carbon_emissions_t": 832488.320164606,
+      "carbon_position_t": -44170.85086991078,
+      "curtailment_enabled": 168.0,
+      "curtailment_energy_mwh": 0.0,
+      "unserved_energy_mwh": 0.0,
+      "curtailment_cost_cny": 0.0,
+      "unserved_cost_cny": 0.0,
+      "cut_total_cost_cny": 0.0,
+      "nu_curt_cny_per_mwh": 50400.0,
+      "nu_uns_cny_per_mwh": 168000.0,
+      "battery_deg_enabled": 168.0,
+      "battery_deg_mode": 336.0,
+      "battery_deg_cost_cny": 2.6329774857987838,
+      "battery_discharge_mwh": 149.2000013589859,
+      "battery_deg_delta_mwh": 22381.600213050842,
+      "battery_deg_delta_prev_mwh": 22232.400211691856,
+      "battery_deg_delta_offset_mwh": 0.0,
+      "battery_deg_a0": 0.017100377912683398,
+      "battery_deg_power_exp": 341.039999999999,
+      "battery_deg_e_life_mwh": 268800000.0,
+      "battery_deg_capex_total_cny": 67200000000.0,
+      "battery_deg_marginal_cny_per_mwh": 5.3727479669200005,
+      "c_lin_cny_per_mwh": 42000.0,
+      "battery_deg_capex_cny_per_kwh": 168000.0,
+      "battery_deg_n_cycles": 840000.0,
+      "battery_deg_dod_eq": 134.39999999999975,
+      "battery_deg_e_cap_mwh": 67200.0,
+      "caes_startup_enabled": 168.0,
+      "caes_startup_cost_cny": 2363.903999999999,
+      "caes_startup_events": 96.0,
+      "caes_startup_c_su_cny": 4136.831999999985,
+      "caes_startup_c_su_usd_ref": 574.5600000000001,
+      "caes_startup_p_ref_w": 134400000.0,
+      "caes_startup_usd_cny": 1209.6000000000038,
+      "caes_mode": 165.0,
+      "caes_mode_prev": 165.0,
+      "caes_mode_idle": 168.0,
+      "grid_contract_enabled": 168.0,
+      "grid_contract_cost_cny": 1044853.1730662457,
+      "grid_contract_excess_mwh": 1741.4219551104097,
+      "grid_contract_p_lim_w": 33600000000.0,
+      "grid_contract_nu_cny_per_mwh": 100800.0,
+      "grid_contract_p_abs_w": 21132894095.023064,
+      "storage_use_enabled": 0.0,
+      "storage_use_reward": 0.0,
+      "storage_use_small": 0.0,
+      "storage_use_large": 0.0,
+      "storage_use_p_disp_w": 0.0,
+      "storage_device_cash_excluded": 168.0,
+      "fmu_battery_cashflow_delta": -24222.122436622158,
+      "fmu_caes_cashflow_delta": -321920.490860939,
+      "storage_bookkeeping_removed_cny": -346142.6132975612,
+      "economic_cashflow_wind": -100461468.39877348,
+      "economic_cashflow_delta_wind": -1801605.545719432,
+      "raw_wind_cost": 1801605.545719432,
+      "economic_cashflow_pv": -228508250.17204177,
+      "economic_cashflow_delta_pv": -2816268.120298175,
+      "raw_pv_cost": 2816268.120298175,
+      "economic_cashflow_thermal": -392211616.89323187,
+      "economic_cashflow_delta_thermal": -5555925.959944725,
+      "raw_thermal_cost": 5555925.959944725,
+      "economic_cashflow_battery": -7609756.069300813,
+      "economic_cashflow_delta_battery": -24222.122436622158,
+      "raw_battery_cost": 24222.122436622158,
+      "economic_cashflow_caes": -79652079.12558317,
+      "economic_cashflow_delta_caes": -321920.490860939,
+      "raw_caes_cost": 321920.490860939,
+      "economic_cashflow_load": 1713410128.453972,
+      "economic_cashflow_delta_load": 19931360.142765038,
+      "raw_load_cost": -19931360.142765038,
+      "economic_cashflow_grid": -860653529.0106499,
+      "economic_cashflow_delta_grid": 434530.9546421818,
+      "raw_grid_cost": -434530.9546421818
+    },
+    "metrics": {
+      "curtailment_energy_mwh": 0.0,
+      "unserved_energy_mwh": 0.0,
+      "battery_throughput_mwh": 326.4893918938469,
+      "caes_throughput_mwh": 7605.527727305889,
+      "thermal_generation_mwh": 13889.814899861813,
+      "max_thermal_ramp_mw": 22.499996423721313,
+      "wind_available_mwh": 5147.444416341213,
+      "pv_available_mwh": 11265.072481192665,
+      "wind_actual_mwh": 5147.444416341213,
+      "pv_actual_mwh": 11265.072481192665,
+      "renewable_available_mwh": 16412.516897533882,
+      "grid_export_max_mw": 329.70925007949523,
+      "grid_import_max_mw": 270.98045852737994,
+      "grid_abs_max_mw": 329.70925007949523,
+      "max_grid_ramp_mw": 277.6107609124221,
+      "grid_contract_excess_mwh": 1741.4219551104097,
+      "grid_contract_violation_hours": 28.0,
+      "solver_timeout_count": 0.0,
+      "solver_fail_count": 0.0,
+      "caes_hours_nonzero": 69.0,
+      "caes_hours_discharge": 36.0,
+      "caes_hours_idle": 99.0,
+      "caes_hours_charge": 33.0,
+      "caes_mode_switches": 58.0,
+      "caes_gas_soc_min": 0.6682518762729944,
+      "caes_gas_soc_max": 0.9125619949804,
+      "curtailment_rate": 0.0,
+      "renewable_utilization": 0.9999999999999998,
+      "wind_utilization": 1.0,
+      "pv_utilization": 1.0,
+      "grid_peak_valley_mw": 600.6897086068752,
+      "decision_time_mean_s": 0.0017392708361426013,
+      "decision_time_p95_s": 0.0019241599831730128,
+      "decision_time_max_s": 0.001987399999052286,
+      "decision_time_sum_s": 0.29219750047195703,
+      "caes_gas_soc_range": 0.2443101187074056
+    },
+    "terminal_soc": {
+      "battery_soc": 0.5035199543426959,
+      "caes_gas_soc": 0.8394966164651944,
+      "caes_hot_soc": 0.48514597547278776,
+      "caes_cold_soc": 0.5148540245272126
+    },
+    "initial_soc": {
+      "battery_soc": 0.5,
+      "caes_gas_soc": 0.85,
+      "caes_hot_soc": 0.5,
+      "caes_cold_soc": 0.5
+    },
+    "e_terminal": 0.01402333787750154,
+    "fmu_failure_count": 0,
+    "forbidden_action_count": 0,
+    "invalid_transition_count": 0,
+    "action_violation_count": 0,
+    "economic_cashflow_total": 259366.29087703733,
+    "economic_cashflow_components": {
+      "wind": -1801605.545719432,
+      "pv": -2816268.120298175,
+      "thermal": -5555925.959944725,
+      "battery": -24222.122436622158,
+      "caes": -321920.490860939,
+      "load": 19931360.142765038,
+      "grid": -9152051.612628102
+    },
+    "caes_run_segments": [
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 15
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 17
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 18
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 19
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 20
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 21
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 22
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 23
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 24
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 25
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 26
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 27
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 28
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 29
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 30
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 31
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 32
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 33
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 34
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 35
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 36
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 37
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 38
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 39
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 40
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 41
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 42
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 43
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 44
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 45
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 46
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 47
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 48
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 49
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 50
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 51
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 52
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 53
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 54
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 55
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 56
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 57
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 58
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 59
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 60
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 61
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 62
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 63
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 64
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 65
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 66
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 70
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 71
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 72
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 97
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 98
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 101
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 102
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 129
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 130
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 131
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 132
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 133
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 134
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 135
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 137
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 141
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 145
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 150
+      }
+    ],
+    "caes_min_run_interruption_count": 0,
+    "caes_min_run_compliance_rate": 1.0,
+    "gamma": 0.99
+  },
+  "kpi": {
+    "episode_reward": 66.95607579222231,
+    "sum_delta_j_gen": 8779401.250248665,
+    "comprehensive_cost_cny": -8779401.250248665,
+    "net_cashflow_j": 10192091.471444879,
+    "raw_total_cost": -10192091.471444879,
+    "economic_reward": 56.08413491357991,
+    "market_buy_cost": 2582249.067236139,
+    "market_sell_revenue": 3016780.02187832,
+    "market_energy_buy_mwh": 5043.40064500536,
+    "market_energy_sell_mwh": 16089.493450017699,
+    "carbon_cost_cny": 365470.5111524791,
+    "curtailment_cost_cny": 0.0,
+    "unserved_cost_cny": 0.0,
+    "cut_cost_cny": 0.0,
+    "battery_deg_cost_cny": 2.6329774857987838,
+    "caes_startup_cost_cny": 2363.903999999999,
+    "grid_contract_cost_cny": 1044853.1730662457,
+    "external_cost_cny": 1412690.2211962107,
+    "curtailment_mwh": 0.0,
+    "renewable_available_mwh": 16412.516897533882,
+    "wind_available_mwh": 5147.444416341213,
+    "pv_available_mwh": 11265.072481192665,
+    "wind_actual_mwh": 5147.444416341213,
+    "pv_actual_mwh": 11265.072481192665,
+    "curtailment_rate": 0.0,
+    "renewable_utilization": 0.9999999999999998,
+    "grid_contract_excess_mwh": 1741.4219551104097,
+    "grid_contract_violation_hours": 28.0,
+    "grid_abs_max_mw": 329.70925007949523,
+    "grid_import_max_mw": 270.98045852737994,
+    "grid_export_max_mw": 329.70925007949523,
+    "grid_peak_valley_mw": 600.6897086068752,
+    "max_grid_ramp_mw": 277.6107609124221,
+    "unserved_mwh": 0.0,
+    "thermal_mwh": 13889.814899861813,
+    "battery_throughput_mwh": 326.4893918938469,
+    "caes_throughput_mwh": 7605.527727305889,
+    "caes_hours_charge": 33.0,
+    "caes_hours_discharge": 36.0,
+    "caes_hours_idle": 99.0,
+    "caes_mode_switches": 58.0,
+    "caes_gas_soc_min": 0.6682518762729944,
+    "caes_gas_soc_max": 0.9125619949804,
+    "caes_gas_soc_range": 0.2443101187074056,
+    "e_terminal": 0.01402333787750154,
+    "terminal_soc_satisfied": true,
+    "terminal_soc_l1": 0.01402333787750154,
+    "terminal_soc_l1_full": 67.46284042720274,
+    "terminal_soc": {
+      "battery_soc": 0.5035199543426959,
+      "caes_gas_soc": 0.8394966164651944,
+      "caes_hot_soc": 0.48514597547278776,
+      "caes_cold_soc": 0.5148540245272126
+    },
+    "fmu_failure_count": 0,
+    "invalid_transition_count": 0,
+    "forbidden_action_count": 0,
+    "soft_shell_count": 0,
+    "givesafe_reject_proxy": 0,
+    "givesafe_rejection_rate": null,
+    "decision_time_mean_ms": 1.7392708361426013,
+    "decision_time_mean_s": 0.0017392708361426013,
+    "decision_time_p95_s": 0.0019241599831730128,
+    "decision_time_max_s": 0.001987399999052286,
+    "decision_time_sum_s": 0.29219750047195703,
+    "solver_timeout_count": 0.0,
+    "solver_fail_count": 0.0,
+    "solver_timeout_rate": 0.0,
+    "wall_s": 0.0,
+    "fmu_steps": 168,
+    "steps": 168,
+    "valid_steps": 168
+  },
+  "wall_s": 1.2215857000555843,
+  "wall_s_search": 306.53308169997763,
+  "theta_best": [
+    0.2109830038877013,
+    0.6,
+    0.3,
+    0.3427877989203443,
+    0.3,
+    0.5786225655946169
+  ],
+  "pso_iters": 25,
+  "pso_particles": 12,
+  "fmu_steps_search": 50400,
+  "search_history": [
+    {
+      "iter": 0,
+      "gbest_f": 7301306.7430891115
+    },
+    {
+      "iter": 1,
+      "gbest_f": 7950754.969445632
+    },
+    {
+      "iter": 2,
+      "gbest_f": 8544830.789068865
+    },
+    {
+      "iter": 3,
+      "gbest_f": 8572298.878124967
+    },
+    {
+      "iter": 4,
+      "gbest_f": 8654638.252075711
+    },
+    {
+      "iter": 5,
+      "gbest_f": 8730437.201500708
+    },
+    {
+      "iter": 6,
+      "gbest_f": 8750486.754037043
+    },
+    {
+      "iter": 7,
+      "gbest_f": 8750486.754037043
+    },
+    {
+      "iter": 8,
+      "gbest_f": 8768552.460699571
+    },
+    {
+      "iter": 9,
+      "gbest_f": 8768552.460699571
+    },
+    {
+      "iter": 10,
+      "gbest_f": 8768552.460699571
+    },
+    {
+      "iter": 11,
+      "gbest_f": 8768552.460699571
+    },
+    {
+      "iter": 12,
+      "gbest_f": 8768552.460699571
+    },
+    {
+      "iter": 13,
+      "gbest_f": 8768552.460699571
+    },
+    {
+      "iter": 14,
+      "gbest_f": 8768552.460699571
+    },
+    {
+      "iter": 15,
+      "gbest_f": 8777021.419134049
+    },
+    {
+      "iter": 16,
+      "gbest_f": 8777021.419134049
+    },
+    {
+      "iter": 17,
+      "gbest_f": 8777454.027190091
+    },
+    {
+      "iter": 18,
+      "gbest_f": 8777454.027190091
+    },
+    {
+      "iter": 19,
+      "gbest_f": 8777454.027190091
+    },
+    {
+      "iter": 20,
+      "gbest_f": 8778309.816231877
+    },
+    {
+      "iter": 21,
+      "gbest_f": 8778309.816231877
+    },
+    {
+      "iter": 22,
+      "gbest_f": 8779218.669970658
+    },
+    {
+      "iter": 23,
+      "gbest_f": 8779401.250248665
+    },
+    {
+      "iter": 24,
+      "gbest_f": 8779401.250248665
+    }
+  ],
+  "search_fitness": 8779401.250248665,
+  "eval_week": 25,
+  "season": "transition",
+  "seed": 0,
+  "eval_start_time_seconds": 15120000.0,
+  "protocol": "paper_min_final_holdout_w12_25_38_51"
+}

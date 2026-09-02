@@ -1,0 +1,650 @@
+{
+  "status": "completed",
+  "method": "pso",
+  "eval": {
+    "steps": 168,
+    "valid_steps": 168,
+    "eval_status": "ok",
+    "eval_failed": false,
+    "failure": null,
+    "soft_shell": false,
+    "soft_shell_count": 0,
+    "soft_shell_hours": 0,
+    "episode_reward": 110.35124495662406,
+    "weekly_episode_reward": 110.35124495662406,
+    "weekly_discounted_return": 51.5963376143541,
+    "weekly_raw_total_cost": -15626934.152094573,
+    "weekly_terminal_soc_bonus": 15.0,
+    "terminal_soc_satisfied": true,
+    "cost_terms": {
+      "economic_cashflow_total": -9834374.600132676,
+      "economic_cashflow_delta": 15626934.152094573,
+      "cashflow_delta": 15626934.152094573,
+      "generalized_cashflow_delta": 15456425.705164194,
+      "economic_reward": 98.73797082752084,
+      "raw_total_cost": -15626934.152094573,
+      "raw_generalized_cost": -15456425.705164194,
+      "normalized_cost": -98.73797082752084,
+      "cost_reference": 156539.83544146415,
+      "cost_reference_missing": 0.0,
+      "terminal_soc_bonus": 15.0,
+      "reward": 110.35124495662406,
+      "external_cost_cny": 170508.44693038354,
+      "terminal_soc_l1_error": 0.028522017128170374,
+      "terminal_soc_l1_full": 42.414724900130544,
+      "terminal_soc_l1_energy": 40.385072626316536,
+      "terminal_soc_l2_error": 0.00041498143965917824,
+      "terminal_soc_tolerance": 0.06,
+      "terminal_soc_satisfied": 1.0,
+      "soc_shaping_reward": -3.3867258708967793,
+      "soc_shaping_potential": 0.37151813241797926,
+      "soc_shaping_absolute": -3.7582440033147595,
+      "soc_shaping_coef": 1250.0,
+      "soc_recovery_scale": 250.0,
+      "soc_l1_prev": 40.35655060918837,
+      "market_settlement_enabled": 168.0,
+      "market_grid_cashflow": 3479807.070465964,
+      "market_grid_cost": -3479807.070465964,
+      "market_buy_cost": 209713.0025645364,
+      "market_sell_revenue": 3689520.0730304983,
+      "market_energy_buy_mwh": 892.9566196332236,
+      "market_energy_sell_mwh": 19677.44038949599,
+      "market_buy_yuan_per_kwh": 92.78535000000008,
+      "market_sell_yuan_per_kwh": 31.5,
+      "p_grid_mw": -18784.483769862767,
+      "fmu_grid_cashflow_delta": -11716641.993890211,
+      "carbon_enabled": 168.0,
+      "carbon_mode": 336.0,
+      "carbon_mass_t": 12564.808417333754,
+      "carbon_mass_thermal_t": 12011.978974118829,
+      "carbon_mass_grid_t": 552.8294432149287,
+      "carbon_cost_cny": 116029.7625854066,
+      "carbon_thermal_step_cny": 0.0,
+      "carbon_grid_step_cny": 53895.3424190234,
+      "carbon_settlement_cny": 62134.4201663832,
+      "carbon_price_cny_per_t": 16378.319999999969,
+      "carbon_eta_thermal": 142.79999999999956,
+      "carbon_eta_grid": 104.00880000000033,
+      "carbon_beta_t_per_mwh": 135.22320000000045,
+      "carbon_e_thermal_mwh": 14131.739969551563,
+      "carbon_e_grid_buy_mwh": 892.9566196332236,
+      "carbon_allowance_t": 809076.8530758555,
+      "carbon_emissions_t": 854410.8896937221,
+      "carbon_position_t": -45334.03661786693,
+      "curtailment_enabled": 168.0,
+      "curtailment_energy_mwh": 0.0,
+      "unserved_energy_mwh": 0.0,
+      "curtailment_cost_cny": 0.0,
+      "unserved_cost_cny": 0.0,
+      "cut_total_cost_cny": 0.0,
+      "nu_curt_cny_per_mwh": 50400.0,
+      "nu_uns_cny_per_mwh": 168000.0,
+      "battery_deg_enabled": 168.0,
+      "battery_deg_mode": 336.0,
+      "battery_deg_cost_cny": 35.68377912107231,
+      "battery_discharge_mwh": 538.7855857610703,
+      "battery_deg_delta_mwh": 62453.28004360199,
+      "battery_deg_delta_prev_mwh": 61914.49445784092,
+      "battery_deg_delta_offset_mwh": 0.0,
+      "battery_deg_a0": 0.017100377912683398,
+      "battery_deg_power_exp": 341.039999999999,
+      "battery_deg_e_life_mwh": 268800000.0,
+      "battery_deg_capex_total_cny": 67200000000.0,
+      "battery_deg_marginal_cny_per_mwh": 15.471954713166978,
+      "c_lin_cny_per_mwh": 42000.0,
+      "battery_deg_capex_cny_per_kwh": 168000.0,
+      "battery_deg_n_cycles": 840000.0,
+      "battery_deg_dod_eq": 134.39999999999975,
+      "battery_deg_e_cap_mwh": 67200.0,
+      "caes_startup_enabled": 168.0,
+      "caes_startup_cost_cny": 541.7280000000002,
+      "caes_startup_events": 22.0,
+      "caes_startup_c_su_cny": 4136.831999999985,
+      "caes_startup_c_su_usd_ref": 574.5600000000001,
+      "caes_startup_p_ref_w": 134400000.0,
+      "caes_startup_usd_cny": 1209.6000000000038,
+      "caes_mode": 164.0,
+      "caes_mode_prev": 164.0,
+      "caes_mode_idle": 168.0,
+      "grid_contract_enabled": 168.0,
+      "grid_contract_cost_cny": 53901.272565855805,
+      "grid_contract_excess_mwh": 89.83545427642635,
+      "grid_contract_p_lim_w": 33600000000.0,
+      "grid_contract_nu_cny_per_mwh": 100800.0,
+      "grid_contract_p_abs_w": 20570397009.129223,
+      "storage_use_enabled": 0.0,
+      "storage_use_reward": 0.0,
+      "storage_use_small": 0.0,
+      "storage_use_large": 0.0,
+      "storage_use_p_disp_w": 0.0,
+      "storage_device_cash_excluded": 168.0,
+      "fmu_battery_cashflow_delta": -87112.21572710201,
+      "fmu_caes_cashflow_delta": -8880.016207695007,
+      "storage_bookkeeping_removed_cny": -95992.23193479702,
+      "economic_cashflow_wind": -101544645.5604926,
+      "economic_cashflow_delta_wind": -1276726.5583812927,
+      "raw_wind_cost": 1276726.5583812927,
+      "economic_cashflow_pv": -115192696.68635164,
+      "economic_cashflow_delta_pv": -1390118.7236994035,
+      "raw_pv_cost": 1390118.7236994035,
+      "economic_cashflow_thermal": -402518443.19826365,
+      "economic_cashflow_delta_thermal": -5652695.987820625,
+      "raw_thermal_cost": 5652695.987820625,
+      "economic_cashflow_battery": -13710234.656708082,
+      "economic_cashflow_delta_battery": -87112.21572710201,
+      "raw_battery_cost": 87112.21572710201,
+      "economic_cashflow_caes": -3602173.847258091,
+      "economic_cashflow_delta_caes": -8880.016207695007,
+      "raw_caes_cost": 8880.016207695007,
+      "economic_cashflow_load": 1733134807.9442983,
+      "economic_cashflow_delta_load": 20466668.35152983,
+      "raw_load_cost": -20466668.35152983,
+      "economic_cashflow_grid": -1106400988.595355,
+      "economic_cashflow_delta_grid": 3479807.070465964,
+      "raw_grid_cost": -3479807.070465964
+    },
+    "metrics": {
+      "curtailment_energy_mwh": 0.0,
+      "unserved_energy_mwh": 0.0,
+      "battery_throughput_mwh": 1180.7956786477007,
+      "caes_throughput_mwh": 3349.9500453472137,
+      "thermal_generation_mwh": 14131.739969551563,
+      "max_thermal_ramp_mw": 22.499996423721313,
+      "wind_available_mwh": 3647.7901668037002,
+      "pv_available_mwh": 5560.474894797616,
+      "wind_actual_mwh": 3647.7901668037002,
+      "pv_actual_mwh": 5560.474894797616,
+      "renewable_available_mwh": 9208.265061601314,
+      "grid_export_max_mw": 251.27099949200348,
+      "grid_import_max_mw": 146.5902011071282,
+      "grid_abs_max_mw": 251.27099949200348,
+      "max_grid_ramp_mw": 157.43449737531367,
+      "grid_contract_excess_mwh": 89.83545427642635,
+      "grid_contract_violation_hours": 10.0,
+      "solver_timeout_count": 0.0,
+      "solver_fail_count": 0.0,
+      "caes_hours_nonzero": 34.0,
+      "caes_hours_discharge": 19.0,
+      "caes_hours_idle": 134.0,
+      "caes_hours_charge": 15.0,
+      "caes_mode_switches": 22.0,
+      "caes_gas_soc_min": 0.7696526831870784,
+      "caes_gas_soc_max": 0.8971983949508489,
+      "curtailment_rate": 0.0,
+      "renewable_utilization": 1.0000000000000002,
+      "wind_utilization": 1.0,
+      "pv_utilization": 1.0,
+      "grid_peak_valley_mw": 397.8612005991317,
+      "decision_time_mean_s": 0.0025154398788886497,
+      "decision_time_p95_s": 0.009466055064694957,
+      "decision_time_max_s": 0.014570600003935397,
+      "decision_time_sum_s": 0.4225938996532932,
+      "caes_gas_soc_range": 0.1275457117637705
+    },
+    "terminal_soc": {
+      "battery_soc": 0.5162893957472132,
+      "caes_gas_soc": 0.8377673786190428,
+      "caes_hot_soc": 0.5265205213292399,
+      "caes_cold_soc": 0.4734794786707596
+    },
+    "initial_soc": {
+      "battery_soc": 0.5,
+      "caes_gas_soc": 0.85,
+      "caes_hot_soc": 0.5,
+      "caes_cold_soc": 0.5
+    },
+    "e_terminal": 0.028522017128170374,
+    "fmu_failure_count": 0,
+    "forbidden_action_count": 0,
+    "invalid_transition_count": 0,
+    "action_violation_count": 0,
+    "economic_cashflow_total": 334492.8558036065,
+    "economic_cashflow_components": {
+      "wind": -1276726.5583812927,
+      "pv": -1390118.7236994035,
+      "thermal": -5652695.987820625,
+      "battery": -87112.21572710201,
+      "caes": -8880.016207695007,
+      "load": 20466668.35152983,
+      "grid": -11716641.993890211
+    },
+    "caes_run_segments": [
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 8
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 9
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 12
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 13
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 14
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 17
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 18
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 19
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 20
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 21
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 36
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 37
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 38
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 41
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 42
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 43
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 60
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 61
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 62
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 65
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 66
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 67
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 84
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 85
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 86
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 89
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 90
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 91
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 108
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 109
+      },
+      {
+        "mode": 2,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 110
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 113
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 114
+      },
+      {
+        "mode": 0,
+        "steps": 1,
+        "completed": true,
+        "interrupted": false,
+        "end_step": 115
+      }
+    ],
+    "caes_min_run_interruption_count": 0,
+    "caes_min_run_compliance_rate": 1.0,
+    "gamma": 0.99
+  },
+  "kpi": {
+    "episode_reward": 110.35124495662406,
+    "sum_delta_j_gen": 15456425.705164194,
+    "comprehensive_cost_cny": -15456425.705164194,
+    "net_cashflow_j": 15626934.152094573,
+    "raw_total_cost": -15626934.152094573,
+    "economic_reward": 98.73797082752084,
+    "market_buy_cost": 209713.0025645364,
+    "market_sell_revenue": 3689520.0730304983,
+    "market_energy_buy_mwh": 892.9566196332236,
+    "market_energy_sell_mwh": 19677.44038949599,
+    "carbon_cost_cny": 116029.7625854066,
+    "curtailment_cost_cny": 0.0,
+    "unserved_cost_cny": 0.0,
+    "cut_cost_cny": 0.0,
+    "battery_deg_cost_cny": 35.68377912107231,
+    "caes_startup_cost_cny": 541.7280000000002,
+    "grid_contract_cost_cny": 53901.272565855805,
+    "external_cost_cny": 170508.44693038354,
+    "curtailment_mwh": 0.0,
+    "renewable_available_mwh": 9208.265061601314,
+    "wind_available_mwh": 3647.7901668037002,
+    "pv_available_mwh": 5560.474894797616,
+    "wind_actual_mwh": 3647.7901668037002,
+    "pv_actual_mwh": 5560.474894797616,
+    "curtailment_rate": 0.0,
+    "renewable_utilization": 1.0000000000000002,
+    "grid_contract_excess_mwh": 89.83545427642635,
+    "grid_contract_violation_hours": 10.0,
+    "grid_abs_max_mw": 251.27099949200348,
+    "grid_import_max_mw": 146.5902011071282,
+    "grid_export_max_mw": 251.27099949200348,
+    "grid_peak_valley_mw": 397.8612005991317,
+    "max_grid_ramp_mw": 157.43449737531367,
+    "unserved_mwh": 0.0,
+    "thermal_mwh": 14131.739969551563,
+    "battery_throughput_mwh": 1180.7956786477007,
+    "caes_throughput_mwh": 3349.9500453472137,
+    "caes_hours_charge": 15.0,
+    "caes_hours_discharge": 19.0,
+    "caes_hours_idle": 134.0,
+    "caes_mode_switches": 22.0,
+    "caes_gas_soc_min": 0.7696526831870784,
+    "caes_gas_soc_max": 0.8971983949508489,
+    "caes_gas_soc_range": 0.1275457117637705,
+    "e_terminal": 0.028522017128170374,
+    "terminal_soc_satisfied": true,
+    "terminal_soc_l1": 0.028522017128170374,
+    "terminal_soc_l1_full": 42.414724900130544,
+    "terminal_soc": {
+      "battery_soc": 0.5162893957472132,
+      "caes_gas_soc": 0.8377673786190428,
+      "caes_hot_soc": 0.5265205213292399,
+      "caes_cold_soc": 0.4734794786707596
+    },
+    "fmu_failure_count": 0,
+    "invalid_transition_count": 0,
+    "forbidden_action_count": 0,
+    "soft_shell_count": 0,
+    "givesafe_reject_proxy": 0,
+    "givesafe_rejection_rate": null,
+    "decision_time_mean_ms": 2.5154398788886496,
+    "decision_time_mean_s": 0.0025154398788886497,
+    "decision_time_p95_s": 0.009466055064694957,
+    "decision_time_max_s": 0.014570600003935397,
+    "decision_time_sum_s": 0.4225938996532932,
+    "solver_timeout_count": 0.0,
+    "solver_fail_count": 0.0,
+    "solver_timeout_rate": 0.0,
+    "wall_s": 0.0,
+    "fmu_steps": 168,
+    "steps": 168,
+    "valid_steps": 168
+  },
+  "wall_s": 1.6268912999657914,
+  "wall_s_search": 326.355545300059,
+  "theta_best": [
+    0.2,
+    0.6,
+    0.3,
+    0.9,
+    0.3,
+    1.0
+  ],
+  "pso_iters": 25,
+  "pso_particles": 12,
+  "fmu_steps_search": 50400,
+  "search_history": [
+    {
+      "iter": 0,
+      "gbest_f": 12479230.196366364
+    },
+    {
+      "iter": 1,
+      "gbest_f": 12823401.546385238
+    },
+    {
+      "iter": 2,
+      "gbest_f": 15160255.431494085
+    },
+    {
+      "iter": 3,
+      "gbest_f": 15437410.737819888
+    },
+    {
+      "iter": 4,
+      "gbest_f": 15453715.48741508
+    },
+    {
+      "iter": 5,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 6,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 7,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 8,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 9,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 10,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 11,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 12,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 13,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 14,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 15,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 16,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 17,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 18,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 19,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 20,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 21,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 22,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 23,
+      "gbest_f": 15456425.705164194
+    },
+    {
+      "iter": 24,
+      "gbest_f": 15456425.705164194
+    }
+  ],
+  "search_fitness": 15456425.705164194,
+  "eval_week": 51,
+  "season": "autumn",
+  "seed": 0,
+  "eval_start_time_seconds": 30844800.0,
+  "protocol": "paper_min_final_holdout_w12_25_38_51"
+}

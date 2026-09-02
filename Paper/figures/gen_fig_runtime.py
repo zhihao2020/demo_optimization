@@ -17,6 +17,7 @@ DATA = json.loads((FIG / "_holdout" / "runtime_kpis.json").read_text(encoding="u
 COLORS = {
     "Rule": "#0072B2",
     "MILP": "#E69F00",
+    "PSO": "#009E73",
     "PC-HybridTD3": "#D55E00",
 }
 MARKERS = {12: "o", 25: "s", 38: "^", 51: "D"}

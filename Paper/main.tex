@@ -20,7 +20,7 @@
 
 \begin{document}
 
-\title{Physics-Constrained Hybrid TD3 for Safe Economic Scheduling\\of an FMU-Based Multi-Energy System}
+\title{Coordinated Scheduling Optimization of Multi-Energy Systems\\via Physics-Constrained Hybrid-Action Reinforcement Learning}
 
 \author{\IEEEauthorblockN{1\textsuperscript{st} Zhihao Xu}
 \IEEEauthorblockA{\textit{Suzhou Tongyuan Software \& Control Technology Co., Ltd.}\\
@@ -38,11 +38,11 @@ Suzhou, China}
 \maketitle
 
 \begin{abstract}
-Rising shares of wind and photovoltaic generation require coordinated hourly dispatch of thermal units, battery storage, compressed-air energy storage (CAES) and the grid. This paper considers weekly price-taker scheduling of a multi-energy plant whose nonlinear dynamics are given by a Modelica functional mock-up unit (FMU). Device limits, inventories and interchange capacity induce a state-dependent hybrid action region that cannot be written in closed form. Physics-constrained hybrid TD3 (PC-HybridTD3) generates continuous thermal and battery set-points together with a CAES mode--magnitude pair already inside a computable joint feasible-support model \(\Afhat(s)\), applies GiveSafe as a residual physical check, and updates the critics only on executed transitions. The method is evaluated in closed loop on the 0903 Sysplorer FMU against a price-aware heuristic and a rolling mixed-integer linear programme on four seasonal final-holdout weeks. Ranking uses the weekly net objective \(CC\) (\(10^6\)~CNY/week; lower is better). PC-HybridTD3 improves mean \(CC\) by \(7.48\) million CNY/week relative to the rolling MILP and by \(10.78\) million CNY/week relative to the heuristic, with zero unserved energy and zero hard-constraint violations, at \(3.8\)~ms per step versus \(225\)~ms for the MILP.
+Rising shares of wind and photovoltaic generation require coordinated hourly dispatch of thermal units, battery storage, compressed-air energy storage (CAES) and the grid. This paper considers weekly price-taker scheduling of a multi-energy plant whose nonlinear dynamics are given by a Modelica functional mock-up unit (FMU). Device limits, inventories and interchange capacity induce a state-dependent hybrid action region that cannot be written in closed form. Physics-constrained hybrid TD3 (PC-HybridTD3) generates continuous thermal and battery set-points together with a CAES mode--magnitude pair already inside a computable joint feasible-support model \(\Afhat(s)\), applies GiveSafe as a residual physical check, and updates the critics only on executed transitions. The method is evaluated in closed loop on the Sysplorer FMU against a price-aware heuristic, a rolling mixed-integer linear programme and a week-wise FMU-based parametric PSO on four seasonal final-holdout weeks. Ranking uses the weekly net objective \(CC\) (\(10^6\)~CNY/week; lower is better). PC-HybridTD3 improves mean \(CC\) by \(3.35\) million CNY/week relative to the PSO, by \(7.48\) million relative to the rolling MILP and by \(10.78\) million relative to the heuristic, with zero unserved energy and zero hard-constraint violations, at \(3.8\)~ms per step versus \(225\)~ms for the MILP.
 \end{abstract}
 
 \begin{IEEEkeywords}
-multi-energy system, economic scheduling, hybrid-action reinforcement learning, physics-constrained TD3, functional mock-up unit
+multi-energy system, economic scheduling, hybrid-action reinforcement learning, physics-constrained TD3, particle swarm optimization, functional mock-up unit
 \end{IEEEkeywords}
 
 \section{Introduction}
@@ -370,17 +370,17 @@ Two encodings are not used by the live policy. Continuous projection maps a CAES
 \subsection{Experimental protocol}
 \label{sec:setup}
 
-All methods run on the 0903 Sysplorer FMU, the 2026 monthly 110~kV tariff, and the same traces. Each episode lasts \(T=168\)~h. Training uses the 36 stratified training weeks; checkpoints are not selected on the final test weeks. The reported comparison uses the second test week of each quarter---weeks 12, 25, 38 and 51---which were not used as the default development eval week. Inventories reset at each weekly start. PC-HybridTD3 is trained for \(4\times10^{5}\) physical hours. The main comparison uses a perfect 24~h forecast. Holdout rollouts ran on a workstation with an Intel Core i9-14900K CPU (24 cores, 32 threads) and one NVIDIA GeForce RTX 4080 GPU (16~GB). The heuristic and the rolling MILP decide on the CPU; PC-HybridTD3 evaluates the trained actor on the GPU. Decision times in Table~\ref{tab:kpi} and Fig.~\ref{fig:runtime} exclude the FMU step.
+All methods run on the Sysplorer FMU, the 2026 monthly 110~kV tariff, and the same traces. Each episode lasts \(T=168\)~h. Training uses the 36 stratified training weeks; checkpoints are not selected on the final test weeks. The reported comparison uses the second test week of each quarter---weeks 12, 25, 38 and 51---which were not used as the default development eval week. Inventories reset at each weekly start. Results use the predefined seed~0. PC-HybridTD3 is trained for \(4\times10^{5}\) physical hours. The main comparison uses a perfect 24~h forecast. Holdout rollouts ran on a workstation with an Intel Core i9-14900K CPU (24 cores, 32 threads) and one NVIDIA GeForce RTX 4080 GPU (16~GB). The heuristic, the rolling MILP and the PSO decide on the CPU; PC-HybridTD3 evaluates the trained actor on the GPU. Decision times in Table~\ref{tab:kpi} and Fig.~\ref{fig:runtime} exclude the FMU step.
 
-The baselines are a price-aware heuristic, a rolling MILP on a linear energy surrogate, and a six-parameter PSO price policy. Rule and MILP are deterministic. PSO searches \(12\times25\) FMU weeks on each evaluation week and then deploys the best parameter vector as a closed-loop policy; Table~\ref{tab:kpi} reports that subsequent one-step decision time, not the search. Ranking uses weekly \(CC\) from~\eqref{eq:C}. Unserved energy, hard-constraint violations and decision time complete the table.
+The baselines are a price-aware heuristic, a rolling MILP on a linear energy surrogate, and a week-wise FMU-based parametric PSO benchmark. Rule and MILP are deterministic. PSO is not a policy trained on the 36 training weeks and then frozen: for each holdout week \(w\) it re-solves \(\theta_w^*=\arg\min_\theta CC_w(\theta)\) by a \(12\times25\) particle search, each particle rolling the full 168~h FMU, and then deploys \(\theta_w^*\) as a closed-loop policy. Table~\ref{tab:kpi} reports the subsequent one-step decision time, not that search. PSO search time is reported separately because its parameters are re-optimized for each evaluation week. Ranking uses weekly \(CC\) from~\eqref{eq:C}. Unserved energy, hard-constraint violations and decision time complete the table.
 
 \subsection{Safety validation}
 \label{sec:learn}
 
-A 20\,000-step near-boundary stress on the 0903 plant recorded 18\,444 Oracle-legal actions and zero post-step hard failures. Stage~C (30k physical hours) passed gates C1--C5 with zero false-safes. Stage~D (400k hours) recorded zero post-step hard violations. Table~\ref{tab:safety} summarises the chain. Fig.~\ref{fig:training} is the training log, recorded every 500 physical hours: step reward stays in a bounded band, and critic loss drops by several orders of magnitude in the first \(5\times10^{4}\) hours. No holdout \(CC\) is computed during training.
+A 20\,000-step near-boundary stress on the plant recorded 18\,444 Oracle-legal actions and zero post-step hard failures. Stage~C (30k physical hours) passed gates C1--C5 with zero false-safes. Stage~D (400k hours) recorded zero post-step hard violations. Table~\ref{tab:safety} summarises the chain. Fig.~\ref{fig:training} is the training log, recorded every 500 physical hours: step reward stays in a bounded band, and critic loss drops by several orders of magnitude in the first \(5\times10^{4}\) hours. No holdout \(CC\) is computed during training.
 
 \begin{table}[!t]
-\caption{Physical safety evidence on the 0903 plant.}
+\caption{Physical safety evidence on the Sysplorer FMU plant.}
 \label{tab:safety}
 \centering
 \scriptsize
@@ -400,42 +400,50 @@ Final-holdout FMU failures & 0 / 4 weeks \\
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=0.95\textwidth]{fig_training}
-\caption{PC-HybridTD3 training log on the 0903 plant (\(4\times10^{5}\) physical hours): (a)~step reward and (b)~critic loss (log scale). Thin traces are raw log points every 500 hours; thick traces are moving averages. One reward spike at hour \(2.1\times10^{4}\) lies above the plotted range.}
+\caption{PC-HybridTD3 training log on the Sysplorer FMU plant (\(4\times10^{5}\) physical hours): (a)~step reward and (b)~critic loss (log scale). Thin traces are raw log points every 500 hours; thick traces are moving averages. One reward spike at hour \(2.1\times10^{4}\) lies above the plotted range.}
 \label{fig:training}
 \end{figure*}
 
 \subsection{System-level scheduling performance}
 \label{sec:kpi}
 
-Table~\ref{tab:kpi} reports \(CC\) on the four final weeks. Every cell traces to a 168~h \(\texttt{summary.json}\) on the 0903 FMU. PC-HybridTD3 attains the lowest (most negative) mean \(CC\). Fig.~\ref{fig:runtime} places the same weeks on the decision-time--\(CC\) plane: the rolling MILP is slower by about two orders of magnitude, while PC-HybridTD3 remains within a few milliseconds of the heuristic.
+Table~\ref{tab:kpi} reports \(CC\) on the four final weeks. Every cell traces to a 168~h \(\texttt{summary.json}\) on the Sysplorer FMU. PC-HybridTD3 attains the lowest (most negative) mean \(CC\). The week-wise PSO is a strong online-search baseline and still trails the trained policy, which is deployed without re-optimizing \(\theta\) on the holdout week. Fig.~\ref{fig:cc-weeks} restates the same four-week \(CC\) as grouped bars. Fig.~\ref{fig:runtime} places the weeks on the decision-time--\(CC\) plane: the rolling MILP is slower by about two orders of magnitude, while PC-HybridTD3 and PSO remain within a few milliseconds of the heuristic at inference; PSO's \(5.3\)~min/week search is excluded from that axis.
 
 \begin{table}[!t]
 \caption{Final-holdout weekly \(CC\) (\(10^6\)~CNY/week) on weeks 12, 25, 38 and 51. Lower is better.}
 \label{tab:kpi}
 \centering
 \scriptsize
-\setlength{\tabcolsep}{3.2pt}
-\begin{tabular}{@{}lrrr@{}}
+\setlength{\tabcolsep}{2.4pt}
+\begin{tabular}{@{}lrrrr@{}}
 \toprule
-Week (season) & Rule & MILP & PC-HybridTD3 \\
+Week (season) & Rule & MILP & PSO & PC-HybridTD3 \\
 \midrule
-12 (winter) & \(-6.47\) & \(-8.97\) & \(-17.25\) \\
-25 (transition) & \(-1.91\) & \(-6.47\) & \(-13.64\) \\
-38 (summer) & \(-7.19\) & \(-9.98\) & \(-17.74\) \\
-51 (autumn) & \(-8.87\) & \(-12.21\) & \(-18.92\) \\
-Mean \(CC\) & \(-6.11\) & \(-9.41\) & \(-16.89\) \\
-Unserved energy (MWh) & \(0\) & \(0\) & \(0\) \\
-Hard violations (count) & \(0\) & \(0\) & \(0\) \\
-Runtime (ms/step) & \(0.76\) & \(225\) & \(3.8\) \\
+12 (winter) & \(-6.47\) & \(-8.97\) & \(-13.90\) & \(-17.25\) \\
+25 (transition) & \(-1.91\) & \(-6.47\) & \(-10.19\) & \(-13.64\) \\
+38 (summer) & \(-7.19\) & \(-9.98\) & \(-14.43\) & \(-17.74\) \\
+51 (autumn) & \(-8.87\) & \(-12.21\) & \(-15.63\) & \(-18.92\) \\
+Mean \(CC\) & \(-6.11\) & \(-9.41\) & \(-13.54\) & \(-16.89\) \\
+Unserved energy (MWh) & \(0\) & \(0\) & \(0\) & \(0\) \\
+Hard violations (count) & \(0\) & \(0\) & \(0\) & \(0\) \\
+Runtime (ms/step) & \(0.76\) & \(225\) & \(2.0\) & \(3.8\) \\
+Search / train & -- & -- & \(5.3\)~min/week & \(4\times10^{5}\)~h offline \\
 \bottomrule
 \end{tabular}\\[2pt]
-{\footnotesize Source: 0903 FMU holdout rollouts. \(\Delta CC=CC_{\mathrm{base}}-CC_{\mathrm{PC}}\).}
+{\footnotesize Source: Sysplorer FMU holdout rollouts. PSO search is \(12\times25\) FMU weeks per holdout week (\(\approx 50\,400\) steps), reported separately from one-step inference. \(\Delta CC=CC_{\mathrm{base}}-CC_{\mathrm{PC}}\).}
 \end{table}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{fig_cc_weeks}
+\caption{Weekly \(CC\) on final-holdout weeks 12, 25, 38 and 51. Lower (more negative) is better. Values match Table~\ref{tab:kpi}.}
+\label{fig:cc-weeks}
+\end{figure}
 
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=0.95\textwidth]{fig_runtime}
-\caption{Online decision time versus weekly \(CC\) on final-holdout weeks 12, 25, 38 and 51. Small markers are individual weeks; stars are four-week means. Lower \(CC\) is better. Decision time excludes the FMU step. Rule and MILP run on an Intel Core i9-14900K CPU; PC-HybridTD3 evaluates the actor on an NVIDIA GeForce RTX 4080 GPU.}
+\caption{Online decision time versus weekly \(CC\) on final-holdout weeks 12, 25, 38 and 51. Small markers are individual weeks; stars are four-week means. Lower \(CC\) is better. Decision time excludes the FMU step and excludes PSO's per-week search. Rule, MILP and PSO run on an Intel Core i9-14900K CPU; PC-HybridTD3 evaluates the actor on an NVIDIA GeForce RTX 4080 GPU.}
 \label{fig:runtime}
 \end{figure*}
 
@@ -451,15 +459,32 @@ Fig.~\ref{fig:dispatch} shows operation on winter week 12. Thermal generation st
 \label{fig:dispatch}
 \end{figure*}
 
-\subsection{Encoding note}
+\subsection{Action-encoding ablation}
 \label{sec:ablation-results}
 
-Fig.~\ref{fig:action-rep} is a representation schematic. Projection TD3 and static-support hybrid TD3 are not in Table~\ref{tab:kpi}; they are not claimed as completed experimental controls in this version.
+Fig.~\ref{fig:action-rep} is the representation schematic. Table~\ref{tab:ablation} is a fixed-budget control on seed~0: projection TD3, static-support hybrid TD3 and PC-HybridTD3 are each trained for \(3\times10^{4}\) physical hours and evaluated on development week~11. This table tests the encoding, not final economics, and is not mixed with Table~\ref{tab:kpi}. Projection and static-support terminate with \(\texttt{NoSafeAction}\) before 168~h. PC-HybridTD3 completes the week with zero false-safes.
+
+\begin{table}[!t]
+\caption{Fixed-budget encoding ablation (seed~0, \(3\times10^{4}\) physical hours, week~11).}
+\label{tab:ablation}
+\centering
+\scriptsize
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Method & Eval hours & Week-11 \(CC\) & False-safe & No-safe \\
+\midrule
+Projection TD3 & 28 & -- & \(0\) & \(4\) \\
+Static-support hybrid & 5 & -- & \(0\) & \(5\) \\
+PC-HybridTD3 & 168 & \(-17.75\) & \(0\) & \(0\) \\
+\bottomrule
+\end{tabular}\\[2pt]
+{\footnotesize Incomplete rows stopped at \(\texttt{NoSafeAction}\); \(CC\) is reported only for a complete 168~h week (\(10^6\)~CNY).}
+\end{table}
 
 \section{Conclusion}
 \label{sec:conclusion}
 
-Weekly multi-energy scheduling on an FMU plant requires thermal generation, BESS, CAES and the grid to be moved together inside a state-dependent support that is not a product of device boxes. PC-HybridTD3 generates heterogeneous commands on a computable approximation \(\Afhat(s)\), screens them with GiveSafe, and learns only from executed hours. On four seasonal final-holdout weeks of the 0903 plant, PC-HybridTD3 improves mean weekly \(CC\) by \(7.48\) million CNY relative to a rolling MILP and by \(10.78\) million CNY relative to a price-aware rule, with zero unserved energy, at \(3.8\)~ms/step. The magnitude intervals \(\mathcal{M}_k(s)\) include oracle margins, inventories are reset each week, and September--December buy prices still follow the last published month.
+Weekly multi-energy scheduling on an FMU plant requires thermal generation, BESS, CAES and the grid to be moved together inside a state-dependent support that is not a product of device boxes. PC-HybridTD3 generates heterogeneous commands on a computable approximation \(\Afhat(s)\), screens them with GiveSafe, and learns only from executed hours. On four seasonal final-holdout weeks, PC-HybridTD3 improves mean weekly \(CC\) by \(3.35\) million CNY relative to a week-wise parametric PSO, by \(7.48\) million CNY relative to a rolling MILP and by \(10.78\) million CNY relative to a price-aware rule, with zero unserved energy, at \(3.8\)~ms/step. The magnitude intervals \(\mathcal{M}_k(s)\) include oracle margins, inventories are reset each week, and September--December buy prices still follow the last published month.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}

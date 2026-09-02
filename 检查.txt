@@ -1,181 +1,541 @@
-按 GitHub 最新提交看，**今天下午前仍有一条可以投稿的路线，但不能沿用你现在那张“5 方法 × 8 周 × 3 seed”的正文表，也绝不能把 0831 的 D 结果硬填进去。**
+对，**现在正文的对比算法还偏少**。而且按最新 GitHub `e10ddcd...` 看，当前稿子还有一个必须马上处理的逻辑不一致：
 
-最重要的一点是：**最新代码主线已经不是 0831。** `1d444b...` 中已经把 production plant 换成 0903 FMU（`e28c6753…c05cbb`），Oracle 换成 `d5.7-0903-charge-headroom`；0903 的 20k boundary stress 是 0 post-step failure，随后 Stage C 30k 的 C1–C5 全过，false-safe=0，greedy 约 \(-1.77\times10^7\)，random 约 \(-1.28\times10^7\)。提交记录也明确写了**旧 0831 C/D 作废**。
+* Introduction 已经写成“against a heuristic, a rolling MILP and a parametric PSO”；
+* Experimental protocol 也明确说 baseline 包括六参数 PSO；
+* 但 `tab:kpi` 里实际上只有 **Rule / MILP / PC-HybridTD3**。
 
-所以你现在列出的这些：
+所以 PSO 要么今天补完整，要么就必须从正文声明里删掉，不能保持现在这种“文字说做了、表里没有”的状态。
+
+## 先说 PSO：这个 week 25 的问题很好修
+
+你描述的失败和最新代码完全对应。
+
+当前 `ParametricPricePolicy.predict()` 是：
+
+```python
+u_bat = 0.0
+```
+
+只有触发：
+
+* recovery；
+* low-price charge；
+* high-price discharge；
+
+时才执行：
+
+```python
+np.clip(..., feas.u_battery_low, feas.u_battery_high)
+```
+
+但如果电价落在中间区间，`u_bat` 就一直保持 0，最后直接：
+
+```python
+return physical_dict(
+    float(np.clip(u_tp, lo, hi)),
+    float(u_bat),
+    ...
+)
+```
+
+也就是说，当 Oracle 给出：
 
 $$
--7.04M,\quad -8.82M,\quad C2=8/114/8
+u_{\mathrm{battery}}\in[0.013,1]
 $$
 
-如果确实来自 `pc_hybrid_td3_0831_s*`，**今天不要再花一分钟分析它们**。它们属于已经修掉的 plant/FMU 版本，不是当前论文实验。
+时，PSO 仍发送：
 
-## 先做一个 5 分钟身份门
+$$
+u_{\mathrm{battery}}=0
+$$
 
-你说“3×40 万已经跑完”，而 GitHub 最新 commit 只记录到“0903 d5.7 Stage D 已排队”，所以服务器状态比 GitHub 新。
+这就是 week 25 第 93 h 的直接原因。最新 commit 只补了 **CAES mode mask feasibility**，并没有补 battery 的最终动态可行域映射。
 
-第一件事只看这三路刚跑完的 `summary.json`：
+所以这里应该直接改成最终统一收口：
 
-| 字段             | 当前论文允许值                                  |
-| -------------- | ---------------------------------------- |
-| FMU SHA        | `e28c6753...c05cbb`                      |
-| GUID           | `{6b3357ac-171b-413e-85d5-7318a860a18d}` |
-| Oracle         | `d5.7-0903-charge-headroom`              |
-| Plant          | 0903                                     |
-| training steps | 400k                                     |
+```python
+u_bat = float(
+    np.clip(
+        u_bat,
+        float(feas.u_battery_low),
+        float(feas.u_battery_high),
+    )
+)
+```
 
-**如果刚跑完的 3×400k 是这组 0903/d5.7：不要重训，马上进入评估。**
+然后再 `physical_dict()`。
 
-**如果还是 0831：全部扔掉作为历史 debug 结果。今天不要再跑 3×400k。**
+这不是为了让 PSO“作弊”，而是修复它现在明显不完整的 action adapter。因为同一个 policy 已经对：
 
-这是今天路线的分叉点。
+* Thermal：动态 `[lo, hi]` clip；
+* CAES：根据 `mode_mask` + `u_from_mode_mag_feasible()` 映射；
+
+做了动态可行化。只留下 Battery 不映射，本身就是实现不对称。
+
+**我建议现在马上修这个，然后重跑 PSO 25 → 38 → 51。**
+
+week 12 的：
+
+$$
+CC=-13.91M
+$$
+
+可以保留，但最好最终四周都用**同一个修复后的代码版本**重新跑；如果时间实在不够，至少确认修复不会改变 week12 trajectory。
 
 ---
 
-## 更严重的是：当前论文不能原样提交
+## 但 PSO 不是现在最重要的缺项
 
-当前 `main.tex` 的摘要仍然直接写着：
-
-* 8 held-out test weeks；
-* heuristic / rolling MILP / projection TD3 / component-support / PC-HybridTD3；
-* PC-HybridTD3 比 projection 低 15%；
-* 比 MILP 低 7%；
-* 比 rule 低 22%；
-* zero hard violations；
-* 3.6 ms/step。
-
-而这些数字目前没有完整实验链支撑。
-
-结果段还明确写：
-
-> eight test weeks, averaged over three seeds
-> PC-HybridTD3 attains the lowest operating cost
-
-同样不能保留为既成事实。
-
-**今天最危险的事情不是实验少，而是论文里存在无法由实验目录追溯的具体数字。**
-
----
-
-# 今天我建议直接切成“可投稿最小实验版本”
-
-不要试图在几个小时内补齐原计划。原正式 protocol 本来要求 36/8/8 周划分，而且 PC-HybridTD3 和 projection TD3 都是 300k–500k physical steps × 3 seeds。 下午前重新完成 projection 3×400k + static-support 3×400k 根本不现实。
-
-今天执行下面这一个计划：
-
-1. **立即确认刚完成的 3×400k 是不是 0903+d5.7。** 如果是，直接用三个 checkpoint；如果不是，就以已经通过的 0903 Stage-C s0 为基础，马上并行/顺序补 `s1/s2` 的 **30k 固定预算**，不要跑 400k。三 seed 都固定 30k，论文就老老实实写 30k。
-
-2. **最终测试集不要再写 8 个“完全 held-out”周。** 你之前开发时已经反复看过至少第一个 TEST 周，例如 week 11，严格讲它已经被 development 污染了。今天最稳妥的是把每季度第二个从未参与调参的周作为 final holdout：**week 12 / 25 / 38 / 51**。前提是检查日志确认这四周此前没被用于调 Oracle、选 checkpoint 或改 reward。论文改成“四个季节性最终测试周”。这比虚称 8 个 held-out 强得多。
-
-3. **马上跑最便宜、最有价值的两个 baseline：Rule + rolling MILP。** 它们不需要训练，全部在 **0903 FMU、同一 tariff、同一四个 final weeks** 上闭环评价。冬/过渡/夏旧 MILP 不要混用；重新跑四周，补上秋季。Rule 同理。这两个应该是今天上午机器的第一优先级。
-
-4. **PC-HybridTD3 对四个 final weeks 做真正的 168 h greedy evaluation。** 如果刚完成的 0903 400k 三 seed 全部 C2=0，且经济性能正常，就直接用 400k。若 400k 最终 checkpoint 出现训练后期 collapse，但保存了周期 checkpoint，可以**只根据 VAL weeks 选择 checkpoint**，然后一次性跑 final holdout；绝不能根据 final test 挑 checkpoint。如果刚才那三路实际是 0831，则改用 0903 的 30k×3 seed。
-
-5. **今天把 projection TD3 和 static-support Hybrid 从正式主结果中删掉。** 摘要、实验设置、`tab:kpi`、ablation subsection 都删掉“已经比较”的措辞。`fig_action_rep` 可以留作方法表示方式示意，但不要声称实验已经证明 projection/static-support 更差。如果主表和论文都完成后还有余量，再跑一个 30k single-seed ablation，明确标成 exploratory ablation；它不能承担摘要结论。
-
-6. **正文主表缩成三种方法：Rule / rolling MILP / PC-HybridTD3。** 最好按四个季度分别给 \(CC\)，再给 Mean、Unserved MWh、Hard violations、Decision time。PC 三 seed 在每个周先求 seed mean，再跨四周汇总；Rule/MILP 本身 deterministic，不需要假装有三个 seed。另设一个小的 safety validation 表，真实报告 `20k boundary stress: 0 false-safe` 和 Stage C 的安全门结果。
-
-7. **中午之前设硬停止线。** 四个 final weeks 必须全部完成 168 h；PC 三 seed 不能出现任何 post-step hard violation；Rule/MILP 全部有完整轨迹；所有正文数字必须能追溯到 CSV/summary。满足这些才提交结果型论文。如果 PC 没有成本第一，也照实写，不要再调。若它略差于 MILP但决策速度显著快，可以把结论改成“near-MILP economic performance with substantially lower online decision latency”；若它同时明显差于 Rule，则这篇论文今天就不应该声称经济调度优势，只能把重点退到 safe hybrid action generation。
-
----
-
-## 还有一个现在必须改的统计措辞
-
-你现在很多 `weekly_raw_total_cost` 是负数，而且定义是：
+从审稿角度，目前真正明显缺的是：
 
 $$
-CC_{\text{lower}}\Rightarrow\text{better}.
+\boxed{\text{同族 RL baseline}}
+$$
+
+你提出的是 **PC-HybridTD3**。
+
+现在只有：
+
+* Rule：规则控制；
+* MILP：运筹优化；
+* PSO：元启发式；
+* PC-HybridTD3：你的方法。
+
+Reviewer 很容易问：
+
+> 你到底证明了“强化学习优于传统方法”，还是证明了“你提出的 physics-constrained hybrid TD3 优于普通 TD3”？
+
+现在后一个问题**没有实验回答**。
+
+而仓库本来就已经定义了：
+
+```text
+--ablation projection
+--ablation static-support
+```
+
+甚至 CLI 已经把算法矩阵明确成：
+
+* continuous-projection TD3；
+* static-support hybrid TD3；
+* PC-HybridTD3。
+
+最新稿为了赶时间，已经把这两种改成了：
+
+> “not claimed as completed experimental controls”
+
+也就是说 GitHub 自己已经明确承认：**目前没有完成 RL ablation。**
+
+---
+
+# 如果今天只能再补实验，我的优先级不是“再加很多算法”
+
+我建议最终做到 **5 个方法已经足够**：
+
+| 类型                        | 方法                        |     必要程度 |
+| ------------------------- | ------------------------- | -------: |
+| heuristic                 | Price-aware Rule          |       必须 |
+| mathematical optimization | Rolling MILP              |       必须 |
+| metaheuristic             | PSO                       |       推荐 |
+| standard/same-family RL   | Continuous-projection TD3 | **强烈建议** |
+| proposed                  | PC-HybridTD3              |       必须 |
+
+如果还有时间，再加：
+
+> **Static-support Hybrid TD3**
+
+它不是为了“算法多”，而是为了回答你的两个创新点分别贡献了什么：
+
+$$
+\text{Projection TD3}
+\rightarrow
+\text{Hybrid action}
+\rightarrow
+\text{Dynamic joint feasible support}.
+$$
+
+对应：
+
+$$
+\boxed{
+\text{continuous}
+\rightarrow
+\text{hybrid}
+\rightarrow
+\text{physics-constrained hybrid}
+}
+$$
+
+这才是最漂亮的消融链。
+
+---
+
+## SAC、PPO、DQN 要不要再跑？
+
+**今天不要。**
+
+仓库里确实还存在 SAC、FS-HSAC、HMSD、linprog 等旧方法，CLI 甚至支持：
+
+```text
+hmsd
+td3
+sac
+fs_hsac
+pso
+linprog
+milp
+rule
+```
+
+但它们很多是旧研究线、旧 FMU 或历史 protocol；拿来凑表反而会把实验搞乱。
+
+而且：
+
+* DQN 不适合你现在的参数化连续+离散动作；
+* PPO 与论文主创新没有直接关系；
+* SAC 可以作为 RL baseline，但不如 TD3 baseline 有解释力；
+* linprog 与 rolling MILP 信息高度重叠。
+
+所以不是“算法越多越好”。
+
+对于 IEEE conference，这组已经够：
+
+$$
+\boxed{
+\text{Rule}
++
+\text{MILP}
++
+\text{PSO}
++
+\text{Projection TD3}
++
+\text{PC-HybridTD3}
+}
+$$
+
+若能加 static-support：
+
+$$
+\boxed{
++
+\text{Static-support Hybrid TD3}
+}
+$$
+
+就相当完整了。
+
+---
+
+# 但今天 Projection TD3 不要再跑 400k
+
+时间不够。
+
+你现在 PC 的正式训练是：
+
+$$
+400k
+$$
+
+而最新 paper figure 也是明确从 **seed-0 400k physical-step log** 生成。
+
+不能现在跑：
+
+$$
+30k\ \text{Projection TD3}
+$$
+
+然后和：
+
+$$
+400k\ \text{PC-HybridTD3}
+$$
+
+放在同一主表里说 PC 更好。
+
+不公平。
+
+### 今天可以采用“两层实验”
+
+主表继续：
+
+$$
+\boxed{
+400k\ PC
+\quad vs\quad
+Rule/MILP/PSO
+}
+$$
+
+然后单独增加一个小型：
+
+> **Fixed-budget structural ablation**
+
+三种方法全部统一：
+
+$$
+30k
 $$
 
 例如：
 
-$$
--17.7M<-12.8M.
-$$
+| Method                | Budget | Week-11 VAL CC | False-safe | No-safe |
+| --------------------- | -----: | -------------: | ---------: | ------: |
+| Projection TD3        |    30k |              … |          … |       … |
+| Static-support Hybrid |    30k |              … |          … |       … |
+| PC-HybridTD3          |    30k |              … |          0 |       … |
 
-在这种情况下直接写：
+这里 PC 用你已经存在的 **Stage C 30k checkpoint**。
 
-> reduces operating cost by 15%
+Projection 和 Static-support 各训练 30k。
 
-很容易产生数学歧义，因为 denominator 本身可能为负。
-
-今天建议主表直接报告：
-
-$$
-CC\;[\text{million CNY/week}]
-$$
-
-以及绝对改进：
+这样比较非常公平：
 
 $$
-\Delta CC
+30k=30k=30k
+$$
+
+而且不用再等两次 400k。
+
+更重要的是，**这个消融表的目的不是证明最终经济性能最高，而是验证结构设计的作用**。
+
+---
+
+# PSO 还有一个论文方法学问题需要马上改文字
+
+最新代码现在的 PSO 是：
+
+```python
+run_pso(start_time=start)
+```
+
+即在**每一个 final holdout week 本身**执行：
+
+$$
+12\ particles\times25\ iterations
+$$
+
+每个粒子直接完整滚一周 FMU，然后取该周最好的 \(\theta\)。
+
+这意味着它严格来说不是：
+
+> “trained on TRAIN weeks and generalized to held-out week”
+
+而是：
+
+> **直接在该测试周上进行 FMU-based direct search。**
+
+所以不能和 PC-HybridTD3 一起描述成：
+
+> four held-out policies
+
+PSO 应该叫：
+
+> **week-wise FMU-based parametric PSO benchmark**
+
+甚至可以把它解释成一个很强的 baseline：
+
+$$
+\theta_w^*
 =
-CC_{\rm baseline}-CC_{\rm PC}.
+\arg\min_\theta CC_w(\theta),
 $$
 
-例如：
+即它实际上针对每一个测试周都重新搜索，而 PC-HybridTD3 是一次训练后直接部署。
+
+这对你反而有利。
+
+但要把成本报告出来。
+
+不能只报告 PSO 最后：
 
 $$
-CC_{\rm baseline}=-12.8,\qquad
-CC_{\rm PC}=-17.7
+\text{policy inference time}
 $$
 
-则写：
-
-> PC-HybridTD3 improves the weekly net economic objective by 4.9 million CNY.
-
-如果一定要百分比，就必须明确定义：
+却把：
 
 $$
-I=
-\frac{CC_{\rm baseline}-CC_{\rm PC}}
-{|CC_{\rm baseline}|}\times100\%.
+12\times25\times168
+\approx 50\,400
 $$
 
-不要直接叫“cost reduction”。
+次 FMU steps 的 search cost 完全藏掉。
+
+最新稿甚至写了：
+
+> Table reports subsequent one-step decision time, not the search.
+
+这个需要加一句：
+
+> PSO search time is reported separately because its parameters are re-optimized for each evaluation week.
+
+最好新增列：
+
+| Method       | Online ms/step | Offline/Search time |
+| ------------ | -------------: | ------------------: |
+| Rule         |           0.76 |                   – |
+| MILP         |            225 |                   – |
+| PSO          |              x |         xx min/week |
+| PC-HybridTD3 |            3.8 |    training offline |
+
+否则 reviewer 会觉得 runtime comparison 不公平。
 
 ---
 
-# 我认为今天最合理的最终论文结构
+# 还有一个比 PSO 更值得你现在注意的问题
 
-**不要追求原来那张大矩阵。**
+最新 GitHub 已经保存了三 seed final holdout：
 
-保留：
+| week |     s0 |     s1 |        s2 |
+| ---- | -----: | -----: | --------: |
+| 12   | -17.25 | -17.36 | **-7.17** |
+| 25   | -13.64 | -13.90 | **-2.42** |
+| 38   | -17.74 | -17.87 | **-7.42** |
+| 51   | -18.92 | -19.18 | **-9.02** |
 
-**PC-HybridTD3 method → 0903 FMU physical validation → Rule/MILP comparison → four-season final holdout evaluation → safety evidence。**
+而且文件明确写着：
 
-删掉今天根本补不齐的：
+> Seed 2 failed Stage D C5 and is kept in the mean.
 
-`projection 3 seeds`、`static-support 3 seeds`、`8-week claim`、`8760h robustness`、`forecast-noise robustness`，以及当前摘要里所有预填百分比。
+三 seed mean 实际只有：
 
-这样论文实验量会变小，但**证据链是完整的**。
+$$
+-13.49M
+$$
 
-而且当前 GitHub 其实已经有一条相当不错的方法论故事：0901 诊断发现 FMI/Modelica 模式切换问题 → 0903 修复 plant → d5.5/d5.7 重标 Oracle → 20k stress 0 false-safe → Stage C C1–C5 通过。这比拿一个有 C2 的旧 0831 400k 结果强得多。
+而当前正文主表却用的是 **seed0**：
 
-### 今天上午的机器优先级
+$$
+-16.89M.
+$$
 
-**先不要开任何新的 400k。**
+所以既然你上一轮决定采用**单 seed 论文**，就一定要明确写：
 
-最高优先级是：
+> Results use the predefined seed 0.
+
+不能一处用 s0，另一处又说 robustness 来自 3 seeds。
+
+现在 main.tex 已经删掉 `seeds 0,1,2`，这是对的。
+
+---
+
+# 我建议你从现在到投稿按这个顺序干
+
+1. **先修 PSO battery final projection。**
+
+核心就是：
+
+```python
+u_bat = np.clip(
+    u_bat,
+    feas.u_battery_low,
+    feas.u_battery_high,
+)
+```
+
+然后重新跑：
+
+$$
+12,\ 25,\ 38,\ 51.
+$$
+
+PSO 本身一周 12×25 的搜索在仓库旧记录里通常是分钟级，不像 TD3 训练那么慢，所以值得补。仓库历史 PSO 本来就已经可以完整搜索大量 FMU steps。
+
+2. **如果 PSO 四周全部 168h 成功，直接加入主表。**
+
+主表：
 
 $$
 \boxed{
-\text{确认 3×400k 身份}
-\rightarrow
-\text{4 周 PC evaluation}
-\parallel
-\text{4 周 Rule/MILP}
+Rule,\ MILP,\ PSO,\ PC-HybridTD3
 }
 $$
 
-如果确认那三路是 0831：
+如果 week25 修完仍然失败，则：
+
+$$
+\boxed{\text{PSO 整列不进主表}}
+$$
+
+同时从 Introduction contribution 和 Experimental protocol 删除“PSO comparison”。
+
+**不要只放 week12。**
+
+3. **机器空闲后立即跑两个 30k 消融。**
+
+$$
+\text{projection TD3, seed0, 30k}
+$$
+
+和
+
+$$
+\text{static-support Hybrid, seed0, 30k}.
+$$
+
+PC 则直接复用已经通过的：
+
+$$
+\text{Stage C seed0, 30k}.
+$$
+
+这三者做一个独立小表。
+
+4. **不再碰 SAC/PPO/HMSD/FS-HSAC。**
+
+今天它们的边际收益远小于把：
+
+$$
+\text{Projection}
+\rightarrow
+\text{Hybrid}
+\rightarrow
+\text{PC-Hybrid}
+$$
+
+这条创新证据链补完整。
+
+---
+
+所以，你现在的感觉是对的：
+
+> **只有 Rule / MILP / PC-HybridTD3，对一篇提出 TD3 新结构的论文来说偏薄。**
+
+但最该补的顺序不是：
+
+$$
+PSO\rightarrow SAC\rightarrow PPO\rightarrow更多算法
+$$
+
+而是：
 
 $$
 \boxed{
-0903\;30k\;s1+s2
+\text{先修好 PSO}
 \rightarrow
-3\ seed\times4\ final\ weeks
+\text{Projection TD3}
+\rightarrow
+\text{Static-support Hybrid}
 }
 $$
 
-这条路线才有机会让你**今天下午拿到一张真实、能追溯、能投稿的主表**。
+最终如果今天能形成：
+
+**主表：**
+
+$$
+Rule + MILP + PSO + PC\text{-}HybridTD3
+$$
+
+**消融表：**
+
+$$
+Projection\ TD3
++Static\text{-}support\ Hybrid
++PC\text{-}HybridTD3
+\quad (30k,\ seed0)
+$$
+
+这篇会议论文的实验结构就已经明显完整得多了，不需要再去临时塞 SAC/PPO。

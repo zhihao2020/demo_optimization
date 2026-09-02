@@ -225,19 +225,23 @@ class HybridActor(nn.Module):
         original_u = float(u_caes)
         snapped = False
         raw_miss = 0.0
-        mode = mode_from_u(u_caes)
-        if "caes_mode_onehot" in out:
-            oh = out["caes_mode_onehot"][0].detach().cpu().numpy()
-            mode = int(oh.argmax())
-        span = None
-        if mode == 0:
-            span = feasible.u_caes_discharge
-        elif mode == 2:
-            span = feasible.u_caes_charge
-        if span is not None:
-            lo, hi = min(float(span[0]), float(span[1])), max(float(span[0]), float(span[1]))
-            raw_miss = interval_outside_abs(u_caes, lo, hi)
-            u_caes, snapped = snap_to_interval_endpoint(u_caes, lo, hi)
+        # ULP snap vs Oracle dynamic intervals is a hybrid-decoder contract.
+        # Projection / static-support decode on device boxes; a 0.15 miss
+        # against a tighter dynamic band is the ablation, not a decoder bug.
+        if self.use_dynamic_support:
+            mode = mode_from_u(u_caes)
+            if "caes_mode_onehot" in out:
+                oh = out["caes_mode_onehot"][0].detach().cpu().numpy()
+                mode = int(oh.argmax())
+            span = None
+            if mode == 0:
+                span = feasible.u_caes_discharge
+            elif mode == 2:
+                span = feasible.u_caes_charge
+            if span is not None:
+                lo, hi = min(float(span[0]), float(span[1])), max(float(span[0]), float(span[1]))
+                raw_miss = interval_outside_abs(u_caes, lo, hi)
+                u_caes, snapped = snap_to_interval_endpoint(u_caes, lo, hi)
         ctx = coupling_from_feasible(feasible)
         if ctx is not None:
             u_tp, u_bat = decode_joint_numpy(

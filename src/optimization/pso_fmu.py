@@ -111,9 +111,19 @@ class ParametricPricePolicy:
             elif mask.discharge:
                 mode, mag = CaesMode.DISCHARGE, max(float(mag), 0.5)
 
+        # Final dynamic feasible-set map, matching thermal [lo,hi] and CAES
+        # mode_mask. Mid-price hours used to keep u_bat=0 even when Oracle
+        # had already excluded 0 (week-25 hour 93).
+        u_bat = float(
+            np.clip(
+                u_bat,
+                float(feas.u_battery_low),
+                float(feas.u_battery_high),
+            )
+        )
         return physical_dict(
             float(np.clip(u_tp, lo, hi)),
-            float(u_bat),
+            u_bat,
             u_from_mode_mag_feasible(feas, mode, mag),
         )
 

@@ -213,6 +213,30 @@ def test_raw_endpoint_miss_trips_hard_fail_without_snap_flag():
     assert collector.stats["numerical_endpoint_snap_count"] == 1
 
 
+def test_projection_and_static_support_skip_dynamic_endpoint_miss():
+    """Ablations decode on device boxes; collector hard-fail is hybrid-only."""
+    import numpy as np
+    from training.hybrid_td3.actor import HybridActor
+
+    feasible = DynamicFeasibleActionSet(
+        u_tp_low=1.0 / 3.0,
+        u_tp_high=1.0,
+        u_battery_low=-1.0,
+        u_battery_high=1.0,
+        mode_mask=ModeMask(discharge=True, idle=True, charge=True),
+        u_caes_discharge=(-1.0, -0.48),
+        u_caes_charge=(0.92, 1.0),
+    )
+    obs = np.zeros(4, dtype=np.float32)
+    for kwargs in (
+        {"parameterized_caes": False, "use_dynamic_support": False},
+        {"parameterized_caes": True, "use_dynamic_support": False},
+    ):
+        actor = HybridActor(4, **kwargs)
+        packed = actor.act_numpy(obs, feasible, deterministic=True)
+        assert float(packed["caes_raw_endpoint_miss_abs"]) == 0.0
+
+
 def test_interval_outside_abs():
     assert interval_outside_abs(0.93, 0.86, 0.93) == 0.0
     assert interval_outside_abs(0.93000000715, 0.86, 0.93) == pytest.approx(7.15e-9)
