@@ -94,7 +94,7 @@ Fig.~\ref{fig:topology} shows the plant. Wind and PV inject at the electric bus;
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=0.88\textwidth]{fig_topology.png}
-\caption{Topology of the FMU-based multi-energy system, including wind/PV generation, thermal generation, BESS, CAES, grid exchange, and load.}
+\caption{Plant topology.}
 \label{fig:topology}
 \end{figure*}
 
@@ -248,17 +248,17 @@ r_t
 +\mathbf{1}_{t=T-1}R^{\mathrm{SOC}},
 \label{eq:reward}
 \end{equation}
-with \(C_{\mathrm{ref}}=1.565\times10^{5}\)~CNY. \(\Phi\) is an inventory potential on battery and CAES-gas SoC relative to the episode start (coefficient \(5\), absolute L1 term \(0.08\), recovery scale \(5\) on the last \(40\)~h). A terminal bonus \(R^{\mathrm{SOC}}=15\) is paid if that L1 error is at most \(0.06\). Ranking uses \(CC\).
+with \(C_{\mathrm{ref}}=1.565\times10^{5}\)~CNY. \(\Phi\) is an inventory potential on battery and CAES-gas SoC relative to the episode start. A terminal bonus \(R^{\mathrm{SOC}}=15\) is paid if that L1 error is at most \(0.06\). Ranking uses \(CC\).
 
 \section{Physics-Constrained Hybrid TD3}
 \label{sec:method}
 
-PC-HybridTD3~\cite{lillicrap2016ddpg,fujimoto2018td3,fan2019hybrid} is a single-timescale actor--critic on a parameterized hybrid action~\cite{hausknecht2016pas,masson2016paa}: thermal and battery heads are continuous, while CAES is a mode--magnitude pair because~\eqref{eq:legal} is disconnected. We implement a residual safety filter, termed GiveSafe, as the last physical screen~\cite{garcia2015safe,sun2024constrained}. Fig.~\ref{fig:algorithm} summarises the loop.
+PC-HybridTD3~\cite{lillicrap2016ddpg,fujimoto2018td3,fan2019hybrid} is a single-timescale actor--critic on a parameterized hybrid action~\cite{hausknecht2016pas,masson2016paa}: thermal and battery heads are continuous, while CAES is a mode--magnitude pair because~\eqref{eq:legal} is disconnected. We implement a residual safety filter, termed GiveSafe, as the last physical screen~\cite{garcia2015safe,sun2024constrained}. Fig.~\ref{fig:algorithm} summarises the hybrid actor, joint feasible support and critic update.
 
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=0.88\textwidth]{PC-HybridTD3_Architecture.png}
-\caption{Architecture of PC-HybridTD3: hybrid actor, joint feasible support and critic update.}
+\caption{PC-HybridTD3 architecture.}
 \label{fig:algorithm}
 \end{figure*}
 
@@ -364,7 +364,7 @@ Executed FMU transitions enter the economic replay \(\mathcal{D}_{\mathrm{B}}\) 
 \end{algorithm}
 
 \begin{table}[!t]
-\caption{Principal PC-HybridTD3 hyperparameters.}
+\caption{PC-HybridTD3 hyperparameters.}
 \label{tab:hyper}
 \centering
 \scriptsize
@@ -385,12 +385,12 @@ episode length \(T\) & 168 h & training steps & \(4\times10^{5}\) \\
 \subsection{Ablations}
 \label{sec:ablation}
 
-Two encodings are not used by the live policy. Continuous projection maps a CAES latent by \(u_{\mathrm{caes}}=\Pi_{\mathrm{bands}}(\tanh(z))\), sending the illegal gap to idle. A static-support hybrid retains the mode mask~\eqref{eq:mask} but decodes magnitude on device boxes, without the sequential grid-coupled decoder. Fig.~\ref{fig:action-rep} shows the three representations; only (c) is executed in the case study. The CAES head is the hybrid sub-action of a plant-wide policy.
+Two encodings are not used by the live policy. Continuous projection maps a CAES latent by \(u_{\mathrm{caes}}=\Pi_{\mathrm{bands}}(\tanh(z))\), sending the illegal gap to idle. A static-support hybrid retains the mode mask~\eqref{eq:mask} but decodes magnitude on device boxes, without the sequential grid-coupled decoder. Fig.~\ref{fig:action-rep} shows continuous projection, static hybrid bands and state-dependent intervals; only the last is executed in the case study. The CAES head is the hybrid sub-action of a plant-wide policy.
 
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=0.88\textwidth]{fig_action_rep}
-\caption{CAES sub-action representations: (a)~continuous scalar action followed by projection, (b)~mode--magnitude decoding on static device bands, and (c)~mode--magnitude decoding on state-dependent feasible intervals, used by PC-HybridTD3.}
+\caption{CAES action representations.}
 \label{fig:action-rep}
 \end{figure*}
 
@@ -416,10 +416,10 @@ The rolling MILP uses linear energy SoC for the battery and the CAES gas tank, o
 \subsection{Safety validation}
 \label{sec:learn}
 
-A 20\,000-candidate near-boundary stress recorded the chain candidate \(\to\) \(\Afhat\)-legal \(\to\) executed \(\to\) post-step valid: 18\,444 proposals passed the feasibility precheck and were stepped on the FMU; the remaining 1\,556 were rejected before the plant moved; every executed action had zero post-step hard failures. Screening at \(3\times10^{4}\) steps and training at \(4\times10^{5}\) steps recorded zero post-step hard violations (Table~\ref{tab:safety}: C1 finite losses; C2 zero FMU hard failures; C3 no held-out hour without a safe action; C4 unserved energy below \(10^{-3}\)~MWh on a complete week; C5 greedy-week \(CC\) better than a random feasible policy).
+A 20\,000-candidate near-boundary stress tested whether actions admitted by \(\Afhat(s)\) remain feasible after the FMU step: 18\,444 proposals passed the feasible-support precheck and were executed; the remaining 1\,556 were rejected before the plant moved; every executed action had zero post-step hard failures. Screening at \(3\times10^{4}\) steps and training at \(4\times10^{5}\) steps recorded zero post-step hard violations (Table~\ref{tab:safety}: C1 finite losses; C2 zero FMU hard failures; C3 no held-out hour without a safe action; C4 unserved energy below \(10^{-3}\)~MWh on a complete week; C5 greedy-week \(CC\) better than a random feasible policy).
 
 \begin{table}[!t]
-\caption{Physical safety evidence on the Sysplorer FMU plant.}
+\caption{Safety checks.}
 \label{tab:safety}
 \centering
 \scriptsize
@@ -427,7 +427,7 @@ A 20\,000-candidate near-boundary stress recorded the chain candidate \(\to\) \(
 \toprule
 Check & Result \\
 \midrule
-20k boundary stress & 18\,444 / 20\,000 \(\Afhat\)-legal; 0 post-step fail \\
+20k boundary stress & 18\,444 / 20\,000 admitted by \(\Afhat\); 0 post-step fail \\
 C1--C5 at \(3\times10^{4}\) steps & all passed; 0 undetected violation \\
 C2 at \(4\times10^{5}\) steps & 0 post-step hard violations \\
 C5 at \(4\times10^{5}\) steps (vs random) & passed \\
@@ -439,10 +439,10 @@ Final-holdout FMU failures & 0 / 4 weeks \\
 \subsection{System-level scheduling performance}
 \label{sec:kpi}
 
-Table~\ref{tab:kpi} reports the modeled weekly net objective \(CC\) on the four final weeks. Each entry is a complete 168~h closed-loop rollout on the Sysplorer FMU. The mean is the average over those four seasonal weeks. PC-HybridTD3 attains \(-16.89\) million CNY/week, on par with the same heuristic run at thermal \(P_{\min}\) (\(-16.92\)) and below the unconstrained rule, the rolling MILP and the week-wise PSO. PSO re-optimizes \(\theta\) on each evaluation week; the trained actor is applied as a closed-loop policy. Table~\ref{tab:decomp} shows why: thermal generation at \(P_{\min}\) cuts fuel from \(9.97\) to \(3.43\) million CNY/week, and the TOU grid term \(C_{\mathrm{grid}}=C_{\mathrm{buy}}-C_{\mathrm{sell}}\) falls from \(0.64\) to about \(-3.6\) million. Load and renewable device cash \(C_{\mathrm{fixed}}\) is common across complete weeks, so the four columns of Table~\ref{tab:decomp} sum to \(CC\). Table~\ref{tab:util} reports device utilization.
+Table~\ref{tab:kpi} reports the modeled weekly net objective \(CC\) (\(10^6\)~CNY/week; lower is better) on the four final weeks. Each entry is a complete 168~h closed-loop rollout on the Sysplorer FMU. The mean is the average over those four seasonal weeks. In the table, PC is PC-HybridTD3 and Th-\(P_{\min}\) is the same heuristic with thermal generation held at its feasible lower bound. PC-HybridTD3 attains \(-16.89\) million CNY/week, on par with Th-\(P_{\min}\) (\(-16.92\)) and below the unconstrained rule, the rolling MILP and the week-wise PSO. PSO re-optimizes \(\theta\) on each evaluation week; the trained actor is applied as a closed-loop policy, and the PSO search time is reported separately from one-step inference. Table~\ref{tab:decomp} shows why: thermal generation at \(P_{\min}\) cuts fuel from \(9.97\) to \(3.43\) million CNY/week, and the TOU grid term \(C_{\mathrm{grid}}=C_{\mathrm{buy}}-C_{\mathrm{sell}}\) falls from \(0.64\) to about \(-3.6\) million. Load and renewable device cash \(C_{\mathrm{fixed}}\) is common across complete weeks, so the four columns sum to \(CC\); two-decimal rounding shifts \(C_{\mathrm{fixed}}\) by at most \(0.01\). The soft \(\pm200\)~MW contract is recorded but is not inside ranking \(CC\). Table~\ref{tab:util} reports device utilization.
 
 \begin{table}[!t]
-\caption{Final-holdout weekly \(CC\) (\(10^6\)~CNY/week) on weeks 12, 25, 38 and 51. Lower is better. Mean is the four-week average.}
+\caption{Holdout weekly \(CC\) (\(10^6\)~CNY/week).}
 \label{tab:kpi}
 \centering
 \scriptsize
@@ -461,12 +461,11 @@ Hard violations (count) & \(0\) & \(0\) & \(0\) & \(0\) & \(0\) \\
 Runtime (ms/step) & \(0.76\) & \(0.97\) & \(225\) & \(2.0\) & \(3.8\) \\
 Search / train & -- & -- & -- & \(5.3\)~min/week & \(4\times10^{5}\) steps \\
 \bottomrule
-\end{tabular}\\[2pt]
-{\footnotesize Th-\(P_{\min}\): Rule with thermal generation held at its feasible lower bound. PC is PC-HybridTD3. PSO search is \(12\times25\) FMU weeks per holdout week, reported separately from one-step inference.}
+\end{tabular}
 \end{table}
 
 \begin{table}[!t]
-\caption{Four-week-mean ranking cash (\(10^6\)~CNY/week). Columns sum to \(CC\).}
+\caption{Cost breakdown (\(10^6\)~CNY/week).}
 \label{tab:decomp}
 \centering
 \scriptsize
@@ -481,12 +480,11 @@ PSO & \(5.63\) & \(-2.44\) & \(-16.73\) & \(-13.54\) \\
 Th-\(P_{\min}\) & \(3.43\) & \(-3.63\) & \(-16.72\) & \(-16.92\) \\
 PC-HybridTD3 & \(3.43\) & \(-3.60\) & \(-16.72\) & \(-16.89\) \\
 \bottomrule
-\end{tabular}\\[2pt]
-{\footnotesize \(C_{\mathrm{grid}}=C_{\mathrm{buy}}-C_{\mathrm{sell}}\). \(C_{\mathrm{fixed}}\) is load and renewable device cash (identical across methods at full precision; two-decimal rounding shifts it by at most \(0.01\)). The soft \(\pm200\)~MW contract is recorded but is not inside ranking \(CC\).}
+\end{tabular}
 \end{table}
 
 \begin{table}[!t]
-\caption{PC-HybridTD3 on the four final-holdout weeks. Energies in GWh; \(N_{\mathrm{C/I/D}}\) is CAES charge/idle/discharge hours.}
+\caption{Holdout utilization.}
 \label{tab:util}
 \centering
 \scriptsize
@@ -501,29 +499,28 @@ Week & \(P_{\mathrm{th}}^{\mathrm{mean}}\) & \(E_{\mathrm{bat}}\) & \(E_{\mathrm
 38 & \(51.0\) & \(0.17\) & \(3.54\) & \(15/127/26\) & \(0.75\) & \(22.50\) & \(357\) \\
 51 & \(51.0\) & \(0.17\) & \(2.59\) & \(13/142/13\) & \(1.53\) & \(25.85\) & \(366\) \\
 \bottomrule
-\end{tabular}\\[2pt]
-{\footnotesize Thermal energy is \(8.58\)~GWh every week (\(P_{\min}\) to numerical precision). BESS terminal SoC is \(0.156\) (bound \(0.1\)). \(E^{\mathrm{buy}}/E^{\mathrm{sell}}\) follow~\eqref{eq:tou-energy} with \(P^{g}>0\) import. Settled sell revenue is \(3.75\)--\(4.85\) million CNY/week; the recorded \(\pm200\)~MW contract term is \(1.01\)--\(1.19\) million CNY/week.}
+\end{tabular}
 \end{table}
 
 \subsection{Weekly dispatch on a holdout week}
 \label{sec:dispatch}
 
-Fig.~\ref{fig:dispatch} shows operation on winter week 12. Thermal generation sits at \(P_{\min}\) for \(98\%\) of the hours (mean \(51.0\)~MW). BESS throughput is \(0.17\)~GWh and SoC stays near the lower bound (mean \(0.16\), terminal \(0.156\)). CAES occupies 17 charge hours and 21 discharge hours; the rest is idle. TOU settlement records \(22.9\)~GWh sell against \(1.3\)~GWh buy, and interchange reaches \(364\)~MW. Table~\ref{tab:util} shows the same pattern on weeks 25, 38 and 51: the four-week \(CC\) follows from thermal generation at \(P_{\min}\) and large settled export. In panel~(b), BESS and CAES are charge-positive and grid interchange is import-positive \(P^{g}\)~\eqref{eq:grid-sign}.
+Fig.~\ref{fig:dispatch} shows operation on winter week 12: load and renewable availability, device and grid power, TOU price with net load, and storage inventories. Thermal generation sits at \(P_{\min}\) for \(98\%\) of the hours (mean \(51.0\)~MW). BESS throughput is \(0.17\)~GWh and SoC stays near the lower bound (mean \(0.16\), terminal \(0.156\)). CAES occupies 17 charge hours and 21 discharge hours; the rest is idle. TOU settlement records \(22.9\)~GWh sell against \(1.3\)~GWh buy, and interchange reaches \(364\)~MW. In panel~(b), BESS and CAES are charge-positive and grid interchange is import-positive \(P^{g}\)~\eqref{eq:grid-sign}. Table~\ref{tab:util} shows the same pattern on weeks 25, 38 and 51 (\(N_{\mathrm{C/I/D}}\): CAES charge/idle/discharge hours; energies in GWh): thermal energy is \(8.58\)~GWh every week, settled sell revenue is \(3.75\)--\(4.85\) million CNY/week, and the recorded \(\pm200\)~MW contract term is \(1.01\)--\(1.19\) million. The four-week \(CC\) follows from thermal generation at \(P_{\min}\) and large settled export.
 
 \begin{figure*}[!t]
 \centering
 \includegraphics[width=0.88\textwidth]{fig_dispatch_week}
-\caption{PC-HybridTD3 on holdout week 12: (a)~load and renewable availability, (b)~thermal generation (positive), BESS/CAES charge-positive power and import-positive grid power, (c)~TOU buy price and net load, and (d)~storage inventories. Battery SoC remains near the lower bound.}
+\caption{Holdout week 12 dispatch.}
 \label{fig:dispatch}
 \end{figure*}
 
 \subsection{Action-encoding ablation}
 \label{sec:ablation-results}
 
-Fig.~\ref{fig:action-rep} is the representation schematic. Table~\ref{tab:ablation} trains projection TD3, static-support hybrid TD3 and PC-HybridTD3 for \(3\times10^{4}\) environment interactions and evaluates them on development week~11. Joint support is required to finish the week at this budget: continuous projection and static hybrid stop after 28~h and 5~h with no remaining safe action, while PC-HybridTD3 completes 168~h.
+Fig.~\ref{fig:action-rep} is the representation schematic. Table~\ref{tab:ablation} trains projection TD3, static-support hybrid TD3 and PC-HybridTD3 for \(3\times10^{4}\) environment interactions and evaluates them on development week~11. Joint support is required to finish the week at this budget: continuous projection and static hybrid stop after 28~h and 5~h with no remaining safe action, while PC-HybridTD3 completes 168~h. Incomplete rows report no \(CC\); the metric is given only for a complete 168~h week.
 
 \begin{table}[!t]
-\caption{Fixed-budget encoding ablation (\(3\times10^{4}\) environment interactions, week~11).}
+\caption{Encoding ablation.}
 \label{tab:ablation}
 \centering
 \scriptsize
@@ -536,8 +533,7 @@ Continuous projection & No & 28 & NoSafeAction & -- \\
 Static hybrid & No & 5 & NoSafeAction & -- \\
 PC-HybridTD3 & Yes & 168 & None & \(-17.75\) \\
 \bottomrule
-\end{tabular}\\[2pt]
-{\footnotesize One development-week evaluation. Incomplete rows stop when no safe action remains; \(CC\) is reported only for a complete 168~h week (\(10^6\)~CNY).}
+\end{tabular}
 \end{table}
 
 \FloatBarrier
