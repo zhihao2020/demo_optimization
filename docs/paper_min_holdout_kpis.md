@@ -39,3 +39,11 @@ All rows: `eval_status=ok`, `valid_steps=168`, unserved=0, fmu_failure=0, action
 Seed 2 failed Stage D C5 (worse than random on the default eval week) and is kept in the mean.
 
 PC mean decision time: 4.01 ms/step.
+
+## Seed-0 utilization (paper Table `tab:util`)
+
+Source: `runs/paper_min/{rule,milp,pso,pc_s0}_w{12,25,38,51}/summary.json` pulled 2026-09-02.
+
+PC-HybridTD3 seed 0 on **all four** weeks: thermal mean \(51.04\) MW (\(P_{\min}\) to numerical precision), BESS throughput \(168.9\) MWh, terminal battery SoC \(0.156\). CAES charge/idle/discharge hours and settled buy/sell vary by week; settled sell is \(20\)--\(26\) GWh vs buy \(0.8\)--\(4.3\) GWh. Live paper title is **Economic** scheduling (not Coordinated).
+
+文档更新：2026-09-02 18:00 (+08:00)

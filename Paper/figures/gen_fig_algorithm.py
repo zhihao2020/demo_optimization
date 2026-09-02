@@ -106,8 +106,8 @@ def main() -> None:
         2.08,
         7.30,
         1.05,
-        "GiveSafe (adopted residual check)",
-        r"train: up to $N_{\mathrm{try}}=64$; evaluation: one attempt",
+        "GiveSafe (residual safety filter)",
+        r"reject: audit + resample up to $K{=}64$; eval: one try",
         tc=C_ORANGE,
     )
 

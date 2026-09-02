@@ -1,5 +1,9 @@
 #!/usr/bin/env python
-"""Overlay journal labels on the plant topology illustration."""
+"""Overlay journal labels on the plant topology illustration.
+
+The live Fig. 1 is `fig_topology.png` (illustration with Wind/PV labels).
+Do not run this overlay on that file; it was written for an unlabeled source.
+"""
 from __future__ import annotations
 
 from pathlib import Path

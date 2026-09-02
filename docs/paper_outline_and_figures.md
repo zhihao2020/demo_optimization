@@ -2,7 +2,7 @@
 
 文档更新：2026-08-31 18:30 (+08:00)
 
-**Working title:** *Physics-Constrained Hybrid TD3 for Safe Economic Scheduling of an FMU-Based Multi-Energy System*
+**Working title:** *Economic Scheduling Optimization of Multi-Energy Systems via Physics-Constrained Hybrid-Action Reinforcement Learning*
 
 **短标题:** *Physics-constrained hybrid TD3 for multi-energy scheduling*
 
@@ -30,7 +30,7 @@
 
 **写作门槛:** Stage D 前 **§5 表图占位不填假数**；不声称 RL 现金优于 MILP。FS-HSAC 不再是论文身份。
 
-文档更新：2026-08-31 18:30 (+08:00)。按 `论文修改.txt` 做 conference reset：单一 IEEE 稿、5 张图、TOU/碳/CAES 调试段落退出正文。Stage D 前不填假数。
+文档更新：2026-09-02 18:00 (+08:00)。标题改为 Economic Scheduling；GiveSafe 为 residual filter，不是 adopted。
 
 ---
 
@@ -57,7 +57,7 @@
 | Cui *Applied Energy* OCTD3 | option/HRL 以多时间尺度与 initiation 为主；这里强调同小时参数化混合动作 + \(\mathcal K(s),\mathcal M_k(s)\) 密度；闭环在 Sysplorer FMU |
 | Cui *Energy* GHTD3 | 不以库存目标分层为身份；直接优化模式—幅值混合支撑 |
 | CHPO NeurIPS 2025 | 会议方法名；这里是厂级 FMU 调度应用 |
-| GiveSafe / Ceusters | 安全层「采用」，不是提出 |
+| GiveSafe / Ceusters | 安全层是本工作实现的 residual filter；Garcia 等是 safety-filter 背景，不是 GiveSafe 来源 |
 | 凸 IES / 盒动作 DRL | 少写状态相关混合支撑，或不用多罐 CAES 多物理闭环验证 |
 
 ---

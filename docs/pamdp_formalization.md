@@ -64,9 +64,11 @@ Trainer knobs: \(\varepsilon:1.0\to 0.05\), \(\mathrm{lr}=3\times10^{-4}\), \(\t
 
 ---
 
-## 3. GiveSafe (adopted)
+## 3. GiveSafe (residual filter)
 
-GiveSafe is the last screen before the FMU steps (fallback off, 64 tries). Residual \(C_\psi\) is **not** part of the PC-HybridTD3 claim (that was FS-HSAC appendix).
+GiveSafe is a residual safety filter implemented in this work, not a method adopted from Garcia 2015. Garcia *et al.* are background for safety filters / safe RL. Rejected proposals leave the plant unmoved, go to SafetyDataset, and trigger resample-on-state up to \(K=64\) (evaluation: one try); exhausting \(K\) raises `NoSafeActionFound`. Fallback is forbidden. Residual \(C_\psi\) is **not** part of the PC-HybridTD3 claim (that was FS-HSAC appendix).
+
+文档更新：2026-09-02 18:00 (+08:00)
 
 ---
 
