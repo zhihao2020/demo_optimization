@@ -80,6 +80,22 @@ DEFAULT_OUTPUTS = (
     "economic_cashflow_grid",
 )
 
+# 诊断 FMU 只读输出：0831 无这些口；新导出后由 try_get / 显式 outputs 读取。
+# 不进 DEFAULT_OUTPUTS，避免旧 FMU KeyError。
+DIAGNOSTIC_OUTPUTS = (
+    "diag_cold_mflow_c1",
+    "diag_cold_mflow_c2",
+    "diag_cold_port_a_mflow",
+    "diag_cold_port_b_mflow",
+    "diag_cold_net_mflow",
+    "diag_cold_mass",
+    "diag_cold_level",
+    "diag_cold_soc",
+    "diag_hot_mflow_h1",
+    "diag_hot_mflow_h2",
+    "diag_u_dispatch",
+)
+
 # 内嵌表参考输出：仅回归验收用，不进 RL observation。
 BOUNDARY_REF_OUTPUTS = (
     "v_wind_ref",
@@ -87,6 +103,29 @@ BOUNDARY_REF_OUTPUTS = (
     "t_air_ref",
     "p_load_plan_ref",
 )
+
+# CS Event Mode 离散状态迭代上限（FMI 3.0 updateDiscreteStates）。
+_EVENT_ITER_MAX = 64
+
+
+def require_communication_step(step_size: float, internal_step: float | None) -> None:
+    """通信步必须能被 FMU ``fixedInternalStepSize`` 整除。
+
+    0901/0831 为 360 s。300/60/72/900 会被 FMU 拒绝。
+    """
+    if internal_step is None:
+        return
+    internal = float(internal_step)
+    if internal <= 0.0:
+        return
+    step = float(step_size)
+    ratio = step / internal
+    if abs(ratio - round(ratio)) > 1e-9:
+        raise ValueError(
+            f"FMU communication step {step} s is not divisible by "
+            f"fixedInternalStepSize={internal} s"
+        )
+
 
 # 与模型 start 一致的默认初值（须落在允许输入集合内）
 DEFAULT_INITIAL_INPUTS = {"u_tp": 1.0, "u_battery": 0.0, "u_caes": 0.0}
@@ -222,6 +261,11 @@ class FmuSession:
         self._has_boundaries = all(name in self._vrs for name in BOUNDARY_NAMES)
         self.outputs = requested_outputs
         self._read_vrs = [self._vrs[name] for name in self.outputs]
+        cs = self._md.coSimulation
+        self._event_mode_used = bool(getattr(cs, "hasEventMode", False))
+        internal = getattr(cs, "fixedInternalStepSize", None)
+        self._internal_step = float(internal) if internal not in (None, "") else None
+        require_communication_step(self.step_size, self._internal_step)
         self._unzipdir: str | None = None
         self._fmu: FMU3Slave | None = None
         self.time = 0.0
@@ -271,11 +315,12 @@ class FmuSession:
             modelIdentifier=self._md.coSimulation.modelIdentifier,
             instanceName="power_dispatch_session",
         )
-        self._fmu.instantiate()
+        self._fmu.instantiate(eventModeUsed=self._event_mode_used)
         self._fmu.enterInitializationMode(startTime=float(start_time))
         self.set_inputs(self.initial_inputs)
         self.set_boundaries(boundaries if boundaries is not None else self.initial_boundaries)
         self._fmu.exitInitializationMode()
+        self._process_cs_events()
         self.time = float(start_time)
         return self.read()
 
@@ -385,11 +430,16 @@ class FmuSession:
             self.set_boundaries(boundaries)
         elif self._has_boundaries and self.require_boundaries:
             raise ValueError("新 FMU 每步必须提供 boundaries，否则边界会冻在上一值")
-        self._fmu.doStep(
+        self._process_cs_events()
+        event_encountered, terminate, _early, _last = self._fmu.doStep(
             currentCommunicationPoint=self.time,
             communicationStepSize=self.step_size,
         )
+        if terminate:
+            raise RuntimeError("FMU requested terminate during doStep")
         self.time += self.step_size
+        if self._event_mode_used and event_encountered:
+            self._process_cs_events()
         return self.read()
 
     def rollout(
@@ -453,6 +503,26 @@ class FmuSession:
                 "error": error,
             },
         )
+
+    def _process_cs_events(self) -> None:
+        """FMI 3.0 CS Event Mode：输入不连续后迭代离散状态再回到 Step Mode。
+
+        ``hasEventMode=false`` 的 0831/0901 导出上这是空操作。
+        """
+        if not self._event_mode_used or self._fmu is None:
+            return
+        self._fmu.enterEventMode()
+        for _ in range(_EVENT_ITER_MAX):
+            need_update, terminate, *_rest = self._fmu.updateDiscreteStates()
+            if terminate:
+                raise RuntimeError("FMU requested terminate during event iteration")
+            if not need_update:
+                break
+        else:
+            raise RuntimeError(
+                f"FMU event iteration did not converge in {_EVENT_ITER_MAX} steps"
+            )
+        self._fmu.enterStepMode()
 
     def _release_instance(self) -> None:
         """终止并释放当前 FMI 实例（忽略 terminate 异常）。"""

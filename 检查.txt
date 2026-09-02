@@ -1,264 +1,343 @@
-### 下一步不要只加 previous mode，要直接抓内部流量
+还**不能直接上全量训练**。但现在和前一轮相比，情况已经明显更清楚了：你已经不只是“怀疑 C2”，而是用 0901 diagnostic FMU **稳定复现了一个确定的 plant/FMU transition anomaly**。
 
-我建议 exact-prefix replay 时，把诊断层再往 FMU 内部伸一层。失败那一小时至少要拿到：
-
-$$
-u_{\rm caes}^{readback},
-\quad
-Mdot_{c1},
-\quad
-Mdot_{c2},
-\quad
-coldtank.port_a.m\_flow,
-\quad
-coldtank.port_b.m\_flow,
-\quad
-coldtank.m,
-\quad
-coldtank.SOC.
-$$
-
-先检查 `modelDescription.xml` 里这些 local variable 是否已经有 VR；如果有，不需要重新导 FMU，诊断程序直接 `getFloat64()` 读。如果没有，再考虑做**仅增加只读诊断输出、不修改方程**的 diagnostic FMU。
-
-这样 exact-prefix replay 会直接分成四种情况：
-
-| 结果                                        | 真正含义                          |
-| ----------------------------------------- | ----------------------------- |
-| read-back `u_caes ≠ 0`                    | FMI 输入写入/动作链问题                |
-| read-back = 0，但 `Mdot_c2` 仍≈上一小时 charge 值 | **FMU 输入切换/代数分支/Co-Sim 同步问题** |
-| read-back = 0、Mdot 两端 = 0，但 cold mass 仍下降 | **Tank/FMU 数值状态推进问题**         |
-| FMU 内部都正常，但外部 failure 显示下降                | **日志时序/状态映射错位**               |
-
-一旦有这个证据，根因就不是猜测了。
-
----
-
-### 不用等下一次 400k，先做一个“定向预处理 probe”
-
-你现在虽然没有 D 的完整 action prefix，但完全没必要马上重新训练才能继续定位。
-
-现有“从 SOC=0.5 充 8 h→idle”的 probe 太单一。D 失败显然集中在**低 cold SOC + 前一小时大功率 charge**。
-
-可以直接构造一个小矩阵：
-
-* `cold SOC before idle`：0.25 / 0.20 / 0.15 / 0.12 / 0.10；
-* previous charge magnitude：0.86 / 0.93 / 1.0；
-* continuous charge length：1 / 2 / 4 / 8 / 16 h；
-* 然后切 `u_caes=0` 一小时；
-* 同时读上述内部 Mdot。
-
-核心不是扫描几万个点，而是回答：
+最关键的证据就是这一条：
 
 $$
-\Delta SOC_{\rm cold}^{idle}
-=
-f(SOC_{\rm cold},u_{t-1},L_{\rm charge},\text{thermal state})?
+u_{\rm caes}=0,\quad
+\dot m_{c1}=\dot m_{c2}=0,\quad
+\dot m_{\rm tank,net}=0
 $$
 
-如果：
+但一个 1 h communication step 后却有
 
 $$
-SOC=0.12,\quad u_{t-1}=0.93
+\Delta SOC_{\rm cold}=-0.0454.
 $$
 
-就能稳定产生：
+只看通信点，这违反了你希望使用的质量守恒关系。它只能说明两种事情之一：**要么 3600 s 内部某段时间其实还有非零质量流，只是你在通信点看不到；要么状态积分/事件处理发生了历史量延续或状态跳变。**
+
+所以现在的主问题已经不是 TD3，也不应该先改 Oracle。
+
+## 我认为下一步要先查 FMI Co-Simulation 的事件处理，而不是马上重写 Tank
+
+这里有一个新的、而且很强的嫌疑。
+
+你的动作是连续 `Float64` 输入，例如：
 
 $$
-\Delta SOC=-0.10,
+u_{\rm caes}:0.93\rightarrow0
 $$
 
-那么即使没有 ep10/step153 的完整 prefix，也已经证明**charge→idle 转换本身存在状态相关的 transition artifact**。
+这是一个**不连续输入变化**。
 
-如果这个矩阵仍然完全复现不了，才说明真正依赖更长的全系统 trajectory，exact-prefix 就必须做。
+FMI 3.0 规范明确指出：对 Co-Simulation 来说，continuous input 的不连续变化属于 input event；如果使用 Event Mode，importer 需要主动进行事件处理；如果不使用 Event Mode，那么 FMU 对这种输入跳变的检测和内部积分器重置只能依赖内部 heuristic。([fmi-standard.org][1])
 
----
-
-### prefix 日志这次不要只存“前4小时”
-
-前4小时适合 taxonomy，但**不足以 exact replay**。
-
-一个 episode 才 168 步，存完整 executed physical action 几乎没有成本。直接每个 episode 保存：
+而你现在的执行路径仍然本质是：
 
 ```text
-episode_index
-start_time
-scenario_id
-step
-
-u_tp_executed
-u_battery_executed
-u_caes_executed
+setFloat64(action)
+→ set boundaries
+→ doStep(3600 s)
+→ get outputs
 ```
 
-最好再带：
+当前 `FmuSession.step()` 没有显式的 communication-point event handling。
+
+这和你看到的现象非常吻合：
+
+$$
+charge
+\rightarrow
+idle
+$$
+
+在通信点代数量已经变成 0，但内部连续状态可能还拿着前一工况的积分器/history 信息推进一段。
+
+### 所以先做这个判别实验
+
+不要训练。拿你已经能稳定复现的：
+
+> `T=280.65 K + charge → idle → Δcold=-0.0454`
+
+作为**最小失败测例**。
+
+同一动作序列同时跑：
+
+| 测试                     | 目的                    |
+| ---------------------- | --------------------- |
+| Modelica 原生 simulation | 判断 Modelica 方程自身是否有问题 |
+| FMU，step=3600 s        | 当前真实环境                |
+| FMU，step=900 s         | 看误差是否缩小               |
+| FMU，step=300 s         | 看误差是否继续缩小             |
+| FMU，step=60/72 s       | 接近内部积分尺度              |
+
+注意：**RL 决策周期仍然保持 3600 s**。这里只是在一个小时内，把相同动作保持不变，然后 FMU 做：
+
+$$
+12\times300s
+$$
+
+而不是一次：
+
+$$
+1\times3600s.
+$$
+
+同时把 `modelDescription.xml` 的：
 
 ```text
-u_caes_readback
-caes_mode
-cold_soc_before
-cold_soc_after
-p_caes_before
-p_caes_after
+CoSimulation.hasEventMode
 ```
 
-真正用于 replay 的必须是：
+查出来，并确认你当前 FMPy `instantiate()` 到底是不是 `eventModeUsed=False`。
 
-> **canonicalized + GiveSafe 通过后 + 实际送入主 FMU 的 physical action**
-
-而不是 actor proposal。
-
-边界条件是按 start time 从 CSV 再生的，所以没必要把每小时风光负荷都重复保存。
-
-400k 行这种数据非常小，完全不值得为了省日志把根因证据丢掉。
+FMI 规范也明确说，如果 `hasEventMode=true` 且 importer 选择使用 Event Mode，那么 importer 必须在通信点主动触发 Event Mode。([fmi-standard.org][2])
 
 ---
 
-### Oracle 最终怎么改，现在先不要定死成 previous-mode guard
+## 这个实验会直接决定修哪一层
 
-你判断：
-
-$$
-\delta(SOC_t,m_{t-1})
-$$
-
-比现在：
+如果出现：
 
 $$
-\delta(SOC_t)
+\Delta SOC_{3600}=-0.045
 $$
 
-更合理，这个方向没错。
-
-但如果最终发现异常幅度和：
-
-* 前一时刻 `p_caes`；
-* 连续 charge 时长；
-* 上一步 \(\Delta SOC_{cold}\)；
-* cold temperature；
-
-有明显关系，那么仅仅 `previous mode = charge` 还是太粗。
-
-更合理的最小扩展可能是：
+而：
 
 $$
-x_t^{safe}=
-[
-SOC_t,\,
-u_{t-1}^{CAES},\,
-p_{t-1}^{CAES},\,
-\Delta SOC_{t-1}
-].
+\Delta SOC_{300}\approx-0.004
 $$
 
-甚至可以不用 ML，继续保持论文方法干净：
+甚至：
 
 $$
-\widehat{\Delta SOC}_{cold,t+1}
-=
-f_{\rm mode}
-(SOC_t,p_{t-1}^{CAES},\Delta SOC_{t-1})
+\Delta SOC_{60}\approx0,
 $$
 
-再加危险方向 residual envelope。
-
-如果最后证明只是一个明确的 `charge→idle` 单步 carry-over，那么更简单：
+同时原生 Modelica simulation 在切 idle 后质量立刻不再变化，那么根因几乎可以定成：
 
 $$
-SOC_{cold,t}
--
-\widehat d_{\rm switch}
->
-SOC_{cold}^{min}
+\boxed{\text{FMI Co-Simulation 通信步/输入事件处理}}
 $$
 
-只在：
+这时**不要改 Tank 物理方程**。
+
+工程上最稳的修法就是把：
 
 $$
-m_{t-1}=charge,\quad m_t=idle
+T_{\rm decision}=3600s
 $$
 
-时启用。
+和：
 
-这比把**所有 idle** 的 margin 从 0.02 扩到 0.12合理得多，也不会把整个可行域砍掉。
+$$
+T_{\rm FMU\ communication}
+$$
+
+解耦。
+
+例如：
+
+$$
+T_{\rm FMU}=300s,\qquad N=12.
+$$
+
+每个 RL step：
+
+```text
+a_t = policy(...)
+for i = 1..12:
+    FMU.step(a_t, boundary(t+i*300s), 300s)
+return final observation
+```
+
+也就是：
+
+$$
+a_t
+$$
+
+仍是小时级调度动作，但物理孪生内部按更细时间步演化。
+
+这其实比靠 Oracle 加一个 0.12 的 margin 合理得多。
 
 ---
 
-### 还有两个问题不要被 C2 抢走注意力
+如果反过来，**原生 Modelica 也出现 charge→idle 后继续掉质量**，那才真正进入 Modelica 修复。
 
-第一，你给出的 taxonomy 数字现在还有 **1 条没对上**：
+这时我才建议动两个地方。
 
-$$
-8+114+8=130,
-$$
-
-但：
+第一，`mflow_coldtank` 的：
 
 $$
-128\ \text{cold-low}
-+
-1\ \text{temperature-high}
-=129.
++152.876
 $$
 
-所以在报告里暂时不要写“130 条已全部归类”。把剩下那 **1/130** 查清楚。可能只是汇总口径/笔误，但 C2 是零容忍门，这里不能留一个 unknown。
-
-第二，**C5 是独立 blocker，而且目前不是小问题。**
-
-s0/s2：
+需要根据原始 CAES 数据修正。现在它已经被实际 probe 证明是 active 的，并会在“充电”时向 cold tank 加质量；从同表其他点以及 hot/cold 对称关系看，它高度疑似应为：
 
 $$
-C_{\rm policy}\approx-7.04M
+\boxed{-152.876}.
 $$
 
-而 random：
+第二，`Tank` 当前：
 
-$$
-C_{\rm random}\approx-13.5M.
-$$
+```modelica
+if noEvent(SOC > SOC_min and SOC < SOC_max) then
+    der(m) = port_a.m_flow + port_b.m_flow;
+else
+    der(m) = 0;
+end if;
+```
 
-代码当前就是只有 policy 完整、random 完整以后才直接比较 `policy_cost < random_cost`。 因此即使明天 C2 被彻底修掉，**现在这两个 seed 的经济策略仍然没有资格进入主结果。**
+也不适合作为最终安全边界模型。`noEvent()` 的语义就是让其中的 Real relation **不触发状态/时间事件**。([Modelica 语言规范][3])
 
-所以后续实际上存在两个阶段：
-
-$$
-\boxed{\text{先解决 C2：安全模型可信}}
-$$
-
-然后：
-
-$$
-\boxed{\text{再解决 C5：TD3 是否真的学到经济调度}}
-$$
-
-千万不要在修 C2 时顺便改 reward、TD3 超参，否则 safety root cause 和 policy-quality root cause 会重新混在一起。
-
----
-
-### 我会把现在的正式执行顺序冻结成这样
-
-1. `expected_sha256` fail-fast + content-addressed FMU cache；同时解决 `git_commit` 为空的问题，服务器没 `.git` 时由 launcher 显式传 `OPTIMAL_DEMO_GIT_COMMIT`，或者写 source manifest hash。当前缓存确实只是 mtime/size 判定。
-2. 补 FmuSession input read-back，并优先尝试读取 CAES 内部 `Mdot_c1/Mdot_c2`。
-3. collector 保存**完整 episode executed-action prefix**。
-4. 先跑低 SOC `charge→idle` 定向 probe，不训练。
-5. 再 exact replay `s1 ep10/step153`。
-6. 只有确认异常机制后，才对 **0831** transition 数据重新标定 Oracle。
-7. 做 ≥20k boundary stress，要求全部 post-step hard = 0。
-8. 重跑 Stage C 30k。
-9. C1–C4 过后再单独解决 C5，不要直接开 3×400k。
-10. C1–C5 都稳定后，才重新启动 D + projection + component-support ablation + rule + rolling MILP + 固定 8 TEST weeks。
-
-所以你的最后一句我会再精确一点：
-
-> **Method implementation ready; FMU–Oracle switching consistency unresolved; economic policy superiority not yet demonstrated; comparative evidence incomplete.**
-
-现在最有价值的不是再训练，而是验证这个很具体的假设：
+对于你这篇论文，我更建议 Tank 始终满足：
 
 $$
 \boxed{
-0.08\sim0.17\ 的 cold\ SOC\ 下降
-\approx
-一小时上一充电工况的冷罐质量流量
+\frac{dm}{dt}
+=
+\dot m_a+\dot m_b
 }
 $$
 
-如果内部 Mdot 日志证实这一点，整个 C2 为什么反复出现就基本被抓住了。
+SOC 上下限由 Oracle / GiveSafe 保证。
+
+如果物理上真的需要“满罐后阀门关闭”，也应该限制**边界流量**：
+
+$$
+\dot m_{\rm effective},
+$$
+
+而不是等 SOC 已经越界以后：
+
+$$
+\dot m=0
+$$
+
+把状态冻在那里。
+
+但这一步现在还**不应该先改**，因为还没排除 Co-Simulation 本身。
+
+---
+
+## exact-prefix replay 现在是什么地位？
+
+我会稍微调整你现在的计划：
+
+**exact-prefix 仍然要做，但已经不是证明“有没有 bug”的硬条件。**
+
+因为你已经用受控实验复现出了：
+
+$$
+\Delta SOC=-0.0454
+$$
+
+这种同类异常。
+
+exact-prefix 的作用现在变成：
+
+> 证明 D 中的 \(-0.08\sim-0.17\) 是否也是同一个机制，而不是另一种 failure。
+
+因此可以把 frozen s1 prefix-capture 和上面的 Modelica/FMI 判别实验**并行做**。
+
+完全没有必要等新的 400k。
+
+---
+
+## 还有一个地方我确认了：V0=60000 不是新问题
+
+我重新检查了你这份最新 Modelica 源码。
+
+虽然 `Tank` 类自身默认参数不是这个值，但 `PowerSystem_8760h` 实例化 CAES 时确实对：
+
+```text
+hottank
+coldtank
+```
+
+做了顶层 modifier：
+
+```text
+V0 = 60000
+A  = 1000
+```
+
+所以你 diagnostic FMU 得到：
+
+$$
+\frac{m}{SOC}=6\times10^7kg
+$$
+
+以及：
+
+$$
+\frac{level}{SOC}=60m
+$$
+
+是和当前系统级 Modelica 实例一致的。
+
+这一项不用再追。
+
+---
+
+# 那到底什么时候能全量训练？
+
+我建议把“允许 D 3×400k”的门冻结成这样：
+
+| 阶段               | 必须满足                                          |
+| ---------------- | --------------------------------------------- |
+| Plant/FMU        | charge→idle 最小测例解释清楚；质量守恒残差正常                 |
+| CAES 数据          | `+152.876` 原始数据核实并修复，如确为 typo                 |
+| FMU              | 最终 production FMU 固定新 SHA/GUID                |
+| Oracle           | **基于最终 FMU 重新标定**，不能继续拿 8-17 参数直接用            |
+| Safety stress    | ≥20k targeted stress，post-step false-safe = 0 |
+| Known regression | 原来 charge→idle signature 全部通过                 |
+| Stage C          | 30k，C1–C5 全 PASS                              |
+| Economic sanity  | greedy 至少优于 random；不能再出现旧 s0/s2 那种 C5 倒挂      |
+| Stage D          | 此时才开 3 seed × 400k                            |
+
+其中有一点非常重要：
+
+如果你最终把 FMU communication 从：
+
+$$
+3600s
+$$
+
+改成：
+
+$$
+300s\times12,
+$$
+
+那么这是**plant transition 定义发生了变化**。
+
+因此：
+
+> 旧 Oracle calibration、旧 Stage C、旧 D 结果全部不能继续作为正式实验结果。
+
+都要以新的 production FMU execution protocol 重跑。
+
+---
+
+### 所以我现在的判断非常明确
+
+**不建议今天直接提交全量 3×400k。**
+
+现在最值得做的不是再抓几十条 C2，而是花一两个小时把：
+
+$$
+\boxed{
+3600s\rightarrow900s\rightarrow300s\rightarrow60/72s
+}
+$$
+
+这个 communication-step sensitivity 做出来，并和 Modelica 原生仿真对照。
+
+如果异常随着 communication step 缩短近似消失，那其实是一个好结果——因为你就不需要把 Oracle 搞成复杂的 previous-mode safety model，根因是**FMU 联合仿真的数值时间尺度**，修完以后算法反而可以继续保持现在这个更干净的无记忆物理安全结构。
+
+[1]: https://fmi-standard.org/docs/3.0/?utm_source=chatgpt.com "Functional Mock-up Interface Specification"
+[2]: https://fmi-standard.org/docs/3.0/ "Functional Mock-up Interface Specification"
+[3]: https://specification.modelica.org/master/MLS.pdf?utm_source=chatgpt.com "Modelica® Language Specification version 3.7"

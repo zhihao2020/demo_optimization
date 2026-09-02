@@ -1,5 +1,8 @@
 # Modelica → Paper equation map (§3)
 
+文档更新：2026-09-01 12:43 (+08:00)
+
+活源码：`D:\Code\0622\m_resources\`（`docs/TypicalScensrio/` 是快照，勿当导出源）。
 Source tree: `D:\Code\0622\docs\TypicalScensrio\`  
 Top-level instance: `Example/TypicalScene/PowerSystem_8760h.mo`  
 Library: `TypicalScenarios.mo`
@@ -15,9 +18,9 @@ Modelica uses generation-negative; magnitudes match.
 | (eq:th) thermal | `ThermalPower`: `P_plan = -u_dispatch*P_cap`, `P_act=P_plan` | `P_cap=150 MW`, `P_min=50 MW` |
 | (eq:th-ramp) ramp | `rate_max=0.0025/60` (enforced in Python oracle; Modelica ramp commented) | `0.15 pu/h` |
 | (eq:caes-p)(eq:caes-legal) | `CAES`: `PBS.P_plan=u_dispatch*P_cap`; min-run bands in Python/`device_params` | `P_cap=150 MW`; `u∈[-1,-0.33]∪{0}∪[0.86,1]` |
-| (eq:bat-p)(eq:bat-soc) | `Battery`: charge `der(SOC)=P_act/E_cap`; discharge `der(SOC)=P_act/(E_cap*eta)` | `P_cap=100 MW`, `E_cap=500 MWh`, `eta=0.85`, `SOC∈[0.1,0.9]` |
-| (eq:gas-soc)(eq:gas-mass)(eq:gas-energy) | `GasTank`: `SOC=p/p_norm`; mass/energy DAEs | `p_norm=100 bar`, `SOC∈[0.6,1]`, `V≈4.27e5 m³` |
-| (eq:thermal-soc)(eq:tank-bal) | `Tank`: `SOC=level/(V0/A)`; mass/enthalpy | `V0=15000 m³`, `A=100 m²`, `SOC∈[0.05,0.95]` |
+| (eq:bat-p)(eq:bat-soc) | `Battery`: `noEvent(P_act>=0)` 时 `der(SOC)=P_act*eta_charge/E_cap`（`eta_charge=1`），否则 `P_act/(E_cap*eta)` | `P_cap=100 MW`, `E_cap=500 MWh`, `eta=0.85`, `SOC∈[0.1,0.9]` |
+| (eq:gas-soc)(eq:gas-mass)(eq:gas-energy) | `GasTank`: `SOC=p/p_norm`; mass/energy DAEs（始终积分，无冻结） | `p_norm=100 bar`, `SOC∈[0.6,1]`, `V≈4.27e5 m³` |
+| (eq:thermal-soc)(eq:tank-bal) | `Tank`: `SOC=level/(V0/A)`；始终 `der(m)=port_a+port_b`，越界 assert 而非冻结 | 库默认 `V0=15000,A=100`；8760h 热/冷罐 **`V0=60000,A=1000`**，`SOC∈[0.05,0.95]` |
 | (eq:balance) bus | `Bus`: residual → curtail wind then PV; load down to 20%; `P_res` residual | exported as `p_curtailment`, `p_unserved` |
 | (eq:grid) | `Grid`: `P1=500 MW`, `P2=-500 MW` | ±500 MW |
 

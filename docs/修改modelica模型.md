@@ -1,5 +1,7 @@
 # Modelica 模型修改记录
 
+文档更新：2026-09-01 12:43 (+08:00)
+
 ## 设计原则
 
 - Modelica 负责状态演化和物理量输出
@@ -97,4 +99,30 @@ P_res = -Power_PV.P_act + P_res2 + Power_PV.P_plan;
 - 第一，职责分离，FMU保证物理过程正确，python侧控制优化目标和约束。
 - 第二，模型中保留必要的assert,保证物理过程正确
 - 第三，强化学习需要构成马尔科夫观测，需要原始SOC、功率平衡、设备实际功率及CAES热力状态等物理量，而不是只能消费一个已经混合了固定权重的目标值。
+
+## Tank 质量守恒与 Battery 模式切换（待导出 0903）
+
+活源码在 `D:\Code\0622\m_resources\`，不是 `docs/TypicalScensrio/` 那份快照。
+
+热罐/冷罐 `Tank` 不再用 `if noEvent(SOC > SOC_min and SOC < SOC_max)` 在越界后把 `der(m)`、`der(h)` 置零。方程为：
+
+```modelica
+der(m) = port_a.m_flow + port_b.m_flow;
+m * der(h) = port_a.m_flow * inStream(port_a.h_outflow)
+           + port_b.m_flow * port_b.h_outflow + Q_gen;
+```
+
+SOC 上下限由 Python Oracle / GiveSafe 保证；越界仍 `assert`。`GasTank` 本来就始终积分，`SOC=p/p_norm`。
+
+电池：
+
+```modelica
+if noEvent(PBS.P_act >= 0) then
+  der(SOC) = PBS.P_act * eta_charge / E_cap;
+else
+  der(SOC) = PBS.P_act / E_cap / eta;
+end if;
+```
+
+CAES 工况选择保持 `noEvent(u_dispatch > 0 / < 0)`；冷罐表 −152.876 保持。`data/0903PowerSystem_8760h.fmu` 已按此源码导出并锁入 `env_config`。
 

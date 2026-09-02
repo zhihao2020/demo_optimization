@@ -442,10 +442,12 @@ class FeasibilityOracle:
         p_cap_b = float(bat["P_cap_W"])
         e_cap = float(bat["E_cap_J"])
         eta = float(bat["eta"])
+        eta_charge = float(bat.get("eta_charge", 1.0))
         soc = float(outputs["battery_soc"])
         u_b = physical.u_battery
         if u_b >= 0:
-            soc_next = soc + u_b * p_cap_b * self.dt / e_cap
+            # Modelica: der(SOC) = P_act * eta_charge / E_cap；8760h 实例 eta_charge=1.0
+            soc_next = soc + u_b * p_cap_b * self.dt * eta_charge / e_cap
         else:
             soc_next = soc + u_b * p_cap_b * self.dt / (e_cap * eta)
         p_cap_c = float(self.params["caes"]["P_cap_W"])
@@ -789,8 +791,11 @@ class FeasibilityOracle:
         safe_min = max(safe_min, float(p["SOC_safe_min"]))
         safe_max = min(safe_max, float(p["SOC_safe_max"]))
         dt = self.dt
+        eta_charge = float(p.get("eta_charge", 1.0))
         u_charge_max = (
-            (safe_max - soc) * e_cap / (p_cap * dt) if p_cap * dt > 0 else 0.0
+            (safe_max - soc) * e_cap / (p_cap * dt * max(eta_charge, 1e-9))
+            if p_cap * dt > 0
+            else 0.0
         )
         u_discharge_min = (
             (safe_min - soc) * e_cap * eta / (p_cap * dt) if p_cap * dt > 0 else 0.0
@@ -972,6 +977,8 @@ class FeasibilityOracle:
             "cold": float(idle.get("residual_p99_cold", 0.0)) + float(idle.get("margin_cold", 0.0)),
             "pressure": float(idle.get("residual_p99_pressure", 0.0))
             + float(idle.get("margin_pressure_Pa", 0.0)),
+            # 高压侧单独：不得把冷天低压尾巴套到 9.5 MPa 附近。
+            "pressure_high": float(idle.get("residual_p99_pressure_high", 0.0)),
             "temp": float(idle.get("residual_p99_temp_abs", 0.0))
             + float(idle.get("margin_temp_K", 0.0)),
             "gas_min": float(c["gas_SOC_min"]),
@@ -996,6 +1003,7 @@ class FeasibilityOracle:
         g = self.idle_robust_guards()
         audit = {
             "idle_pressure_margin": g["pressure"],
+            "idle_pressure_high_margin": g["pressure_high"],
             "idle_gas_margin": g["gas"],
             "idle_hot_margin": g["hot"],
             "idle_cold_margin": g["cold"],
@@ -1006,9 +1014,10 @@ class FeasibilityOracle:
         cold = float(outputs["caes_cold_soc"])
         p = float(outputs.get("caes_gas_pressure", 8.5e6))
 
-        if not (g["pressure_min"] + g["pressure"] <= p <= g["pressure_max"] - g["pressure"]):
-            side = "low" if p < g["pressure_min"] + g["pressure"] else "high"
-            return False, f"idle_pressure_{side}", audit
+        if p < g["pressure_min"] + g["pressure"]:
+            return False, "idle_pressure_low", audit
+        if p > g["pressure_max"] - g["pressure"]:
+            return False, "idle_pressure_high", audit
         if not (g["gas_min"] + g["gas"] <= gas <= g["gas_max"] - g["gas"]):
             side = "low" if gas < g["gas_min"] + g["gas"] else "high"
             return False, f"idle_gas_{side}", audit
@@ -1084,6 +1093,13 @@ class FeasibilityOracle:
         # 冷罐守卫方向必须与气/热罐相反，否则充电时冷罐被抽干却无人拦截。
         chg = cm.get("charge", {})
         dis = cm.get("discharge", {})
+        idle_g = self.idle_robust_guards()
+        # 一步充电 Δp≈0.19 MPa。必须在 idle 高压 envelope（约 9.11 MPa）之下停充，
+        # 否则落到「禁 idle、禁充、只许放电」带，充→放 360 s 滞后会顶过 9.50。
+        charge_step_pa = float(chg.get("headroom_to_idle_envelope_Pa", 2.2e5))
+        p_charge_max = (
+            float(c["gas_pressure_max_Pa"]) - float(idle_g["pressure"]) - charge_step_pa
+        )
         charge_ok = charge_ok and (
             gas
             < float(c["gas_SOC_max"])
@@ -1097,10 +1113,7 @@ class FeasibilityOracle:
             > float(c["cold_SOC_min"])
             + float(chg.get("margin_cold", 0.0))
             + float(chg.get("residual_p99_cold_low", 0.0))
-            and p
-            < float(c["gas_pressure_max_Pa"])
-            - float(chg.get("margin_pressure_Pa", 0.0))
-            - float(chg.get("residual_p99_pressure_high", 0.0))
+            and p < p_charge_max
         )
         discharge_ok = discharge_ok and (
             gas
@@ -1119,6 +1132,9 @@ class FeasibilityOracle:
             > float(c["gas_pressure_min_Pa"])
             + float(dis.get("margin_pressure_Pa", 0.0))
             + float(dis.get("residual_p99_pressure_low", 0.0))
+            and p
+            < float(c["gas_pressure_max_Pa"])
+            - float(dis.get("residual_p99_pressure_high", 0.0))
         )
         return ModeMask(
             discharge=bool(discharge_ok), idle=bool(idle_ok), charge=bool(charge_ok)
@@ -1189,12 +1205,26 @@ class FeasibilityOracle:
                 )
             ):
                 return False
+            # 气罐 SOC=p/p_norm，硬界是 9.5 MPa 不是 SOC=1.0；残差必须打在压力上。
+            if float(pred["caes_gas_pressure"]) > float(c["gas_pressure_max_Pa"]) - float(
+                margins.get("residual_p99_pressure_high", 0.0)
+            ):
+                return False
         if direction in ("low", "both"):
             if float(pred["caes_gas_soc"]) < float(c["gas_SOC_min"]) + float(
                 margins.get(
                     "residual_p99_gas_low", margins.get("residual_p99_gas", 0.0)
                 )
             ):
+                return False
+            if float(pred["caes_gas_pressure"]) < float(c["gas_pressure_min_Pa"]) + float(
+                margins.get("residual_p99_pressure_low", 0.0)
+            ):
+                return False
+            # 充电切放电时预测会降压，实测 360 s 滞后仍可能抬压过 9.5 MPa。
+            if float(outputs.get("caes_gas_pressure", pred["caes_gas_pressure"])) > float(
+                c["gas_pressure_max_Pa"]
+            ) - float(margins.get("residual_p99_pressure_high", 0.0)):
                 return False
         return True
 

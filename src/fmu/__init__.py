@@ -11,9 +11,11 @@ from .session import (
     ACTION_NAMES,
     DEFAULT_INITIAL_INPUTS,
     DEFAULT_OUTPUTS,
+    DIAGNOSTIC_OUTPUTS,
     FmuSession,
     describe_fmu,
     fmu_platform_supported,
+    require_communication_step,
 )
 from .types import DispatchPlan, SimulationResult
 from .validate import validate_inputs, validate_outputs
@@ -23,6 +25,7 @@ __all__ = [
     "ACTION_NAMES",  # 调度输入名元组
     "DEFAULT_INITIAL_INPUTS",  # 与 Modelica start 一致的默认初值
     "DEFAULT_OUTPUTS",  # 默认读取的 FMU 输出名
+    "DIAGNOSTIC_OUTPUTS",  # 诊断 FMU 只读质量流/SOC，0831 没有这些口
     "DispatchPlan",  # 按时序排列的调度计划
     "FmuAdapter",  # Gymnasium 环境用 FMU 生命周期适配器
     "FmuSession",  # FMI 3.0 固定步长 Co-Simulation 会话
@@ -34,6 +37,7 @@ __all__ = [
     "describe_fmu",  # sha256 / guid / modelDescription hash
     "fmu_platform_supported",  # 当前 OS 是否有对应 FMU 二进制
     "read_model_info",  # 只读解析 modelDescription
+    "require_communication_step",  # 通信步须整除 fixedInternalStepSize
     "validate_inputs",  # 调度输入边界校验
     "validate_outputs",  # 物理输出合理性校验
 ]

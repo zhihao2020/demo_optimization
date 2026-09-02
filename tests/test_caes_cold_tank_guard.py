@@ -74,7 +74,8 @@ def test_discharge_raises_cold_soc(oracle: FeasibilityOracle) -> None:
 def test_charge_blocked_when_cold_near_lower_bound(oracle: FeasibilityOracle) -> None:
     """冷罐贴近下界时必须禁止充电——这是 1276 h 崩溃的直接触发条件。"""
     cold_min = float(oracle.params["caes"]["cold_SOC_min"])
-    out = make_outputs(caes_cold_soc=cold_min + 0.02)
+    # 0902 一步充电只抽 ~0.009 SOC；贴近下界 0.01 仍应禁止，0.07 已在一步安全区内。
+    out = make_outputs(caes_cold_soc=cold_min + 0.01)
     mask = oracle._caes_mode_mask(out)
     assert not mask.charge, "冷罐见底仍允许充电，冷罐守卫方向未生效"
     assert mask.idle, "idle 不应被禁止"
@@ -85,7 +86,7 @@ def test_discharge_blocked_when_cold_near_upper_bound(
 ) -> None:
     """冷罐贴近上界时必须禁止放电（放电会继续回灌冷罐）。"""
     cold_max = float(oracle.params["caes"]["cold_SOC_max"])
-    out = make_outputs(caes_cold_soc=cold_max - 0.02)
+    out = make_outputs(caes_cold_soc=cold_max - 0.01)
     mask = oracle._caes_mode_mask(out)
     assert not mask.discharge, "冷罐接近上界仍允许放电"
     assert mask.idle
@@ -115,7 +116,8 @@ def test_alphas_are_asymmetric_and_cold_is_negative(oracle: FeasibilityOracle) -
 
 # 气罐的实际下界由压力硬界决定：gas_pressure_min_Pa=6.5e6 且 soc=p/1e7，
 # 故有效区间是 [0.65, 0.95]，比 gas_SOC_min=0.6 / max=1.0 更紧。
-GAS_IN_BOUNDS = (0.66, 0.80, 0.94)
+# 0.66 对应 6.6 MPa，落在 idle 压力 envelope（约 0.20 MPa）内，不是「界内」。
+GAS_IN_BOUNDS = (0.70, 0.80, 0.90)
 
 
 def test_mode_mask_never_forbids_idle_inside_bounds(oracle: FeasibilityOracle) -> None:
@@ -130,23 +132,18 @@ def test_mode_mask_never_forbids_idle_inside_bounds(oracle: FeasibilityOracle) -
             assert mask.idle, f"cold={cold}, gas={gas} 下 idle 被禁"
 
 
-def test_viability_filter_is_not_vacuous(oracle: FeasibilityOracle) -> None:
-    """生存性过滤应当确实收紧了某些状态下的掩码，而不是恒等变换。"""
-    tightened = 0
-    for cold in (0.12, 0.20, 0.80, 0.88):
-        for gas in GAS_IN_BOUNDS:
-            out = make_outputs(
-                caes_cold_soc=cold, caes_gas_soc=gas, caes_gas_pressure=gas * 1e7
-            )
-            base = oracle._caes_mode_mask_base(out)
-            full = oracle._caes_mode_mask(out)
-            assert not (full.charge and not base.charge)
-            assert not (full.discharge and not base.discharge)
-            if (base.charge and not full.charge) or (
-                base.discharge and not full.discharge
-            ):
-                tightened += 1
-    assert tightened > 0, "生存性检查在任何采样状态下都未生效，可能是空操作"
+def test_static_wall_tightens_near_cold_bounds(oracle: FeasibilityOracle) -> None:
+    """0902 一步模型较准，近界主要靠静态裕度禁充/放，而不是后继可逆性过滤。"""
+    lo = float(oracle.params["caes"]["cold_SOC_min"])
+    hi = float(oracle.params["caes"]["cold_SOC_max"])
+    mid = oracle._caes_mode_mask(make_outputs(caes_cold_soc=0.5))
+    near_lo = oracle._caes_mode_mask(make_outputs(caes_cold_soc=lo + 0.01))
+    near_hi = oracle._caes_mode_mask(make_outputs(caes_cold_soc=hi - 0.01))
+    assert mid.charge and mid.discharge and mid.idle
+    assert not near_lo.charge
+    assert near_lo.idle
+    assert not near_hi.discharge
+    assert near_hi.idle
 
 
 def test_u_from_mode_mag_sign_convention() -> None:

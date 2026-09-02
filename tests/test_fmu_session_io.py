@@ -6,7 +6,16 @@
 
 from __future__ import annotations
 
-from fmu.session import ACTION_NAMES, DEFAULT_INITIAL_INPUTS, DEFAULT_OUTPUTS, FmuSession
+import pytest
+
+from fmu.session import (
+    ACTION_NAMES,
+    DEFAULT_INITIAL_INPUTS,
+    DEFAULT_OUTPUTS,
+    DIAGNOSTIC_OUTPUTS,
+    FmuSession,
+    require_communication_step,
+)
 from fmu.validate import validate_inputs
 
 
@@ -59,8 +68,63 @@ def test_try_get_exists_and_mdot_not_in_default_outputs() -> None:
     assert hasattr(FmuSession, "try_get")
     assert "Mdot_c1" not in DEFAULT_OUTPUTS
     assert "Mdot_c2" not in DEFAULT_OUTPUTS
+    assert "diag_cold_net_mflow" in DIAGNOSTIC_OUTPUTS
+    assert "diag_cold_net_mflow" not in DEFAULT_OUTPUTS
 
 
 def test_default_initial_inputs_are_valid() -> None:
     """默认初值须通过输入校验（可直接用于 reset）。"""
     validate_inputs(DEFAULT_INITIAL_INPUTS)
+
+
+def test_communication_step_must_divide_internal() -> None:
+    require_communication_step(3600.0, 360.0)
+    require_communication_step(360.0, 360.0)
+    require_communication_step(3600.0, None)
+    with pytest.raises(ValueError, match="not divisible"):
+        require_communication_step(300.0, 360.0)
+    with pytest.raises(ValueError, match="not divisible"):
+        require_communication_step(900.0, 360.0)
+
+
+class _DummyFmu:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.need_updates = 0
+
+    def enterEventMode(self) -> None:
+        self.calls.append("enterEventMode")
+
+    def updateDiscreteStates(self):
+        self.calls.append("updateDiscreteStates")
+        if self.need_updates > 0:
+            self.need_updates -= 1
+            return (1, 0, 0, 0, 0, 0.0)
+        return (0, 0, 0, 0, 0, 0.0)
+
+    def enterStepMode(self) -> None:
+        self.calls.append("enterStepMode")
+
+
+def test_process_cs_events_noop_when_has_event_mode_false() -> None:
+    sess = FmuSession.__new__(FmuSession)
+    sess._event_mode_used = False
+    dummy = _DummyFmu()
+    sess._fmu = dummy
+    sess._process_cs_events()
+    assert dummy.calls == []
+
+
+def test_process_cs_events_enters_event_then_step_mode() -> None:
+    sess = FmuSession.__new__(FmuSession)
+    sess._event_mode_used = True
+    dummy = _DummyFmu()
+    dummy.need_updates = 1
+    sess._fmu = dummy
+    sess._process_cs_events()
+    assert dummy.calls == [
+        "enterEventMode",
+        "updateDiscreteStates",
+        "updateDiscreteStates",
+        "enterStepMode",
+    ]

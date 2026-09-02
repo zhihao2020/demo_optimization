@@ -131,6 +131,40 @@ def test_env_does_not_step_fmu_on_forbidden_idle():
     env.close()
 
 
+def test_charge_then_weak_discharge_near_pmax_is_blocked():
+    """Stage C 两条 false-safe：9.48 MPa 充电后切 u=-0.33，实测压力升过 9.50。"""
+    oracle = FeasibilityOracle.from_root()
+    out = _base(
+        caes_gas_soc=0.9481939540520397,
+        caes_gas_pressure=9481939.540520396,
+        caes_hot_soc=0.5644694895075674,
+        caes_cold_soc=0.43553051049243346,
+        caes_gas_temperature=282.6202567294596,
+        p_caes=150e6,
+    )
+    feas = oracle.compute(out)
+    assert feas.mode_mask.charge is False
+    assert feas.mode_mask.discharge is False
+    ok, reason = oracle.check_action_executable(
+        PhysicalFmuAction(0.3333333333333333, 0.0, -0.33), out
+    )
+    assert ok is False
+    assert reason is not None
+
+
+def test_charge_stops_before_idle_pressure_dead_zone():
+    """停充点必须低于 idle 高压 envelope，避免冲进 9.11–9.50 只许放电的死区。"""
+    oracle = FeasibilityOracle.from_root()
+    g = oracle.idle_robust_guards()
+    p_dead = g["pressure_max"] - g["pressure"] + 1.0e4  # just inside idle-forbidden band
+    feas = oracle.compute(_base(caes_gas_pressure=p_dead, caes_gas_soc=p_dead / 1e7))
+    assert feas.mode_mask.charge is False
+    p_ok = 8.80e6
+    feas_ok = oracle.compute(_base(caes_gas_pressure=p_ok, caes_gas_soc=0.88))
+    assert feas_ok.mode_mask.charge is True
+    assert feas_ok.mode_mask.idle is True
+
+
 def test_empty_set_is_not_rescued_by_idle():
     oracle = FeasibilityOracle.from_root()
     feas = oracle.compute(

@@ -236,7 +236,7 @@ class BoundaryStressTester:
             feasible = env.get_feasible_action_spec()
             try:
                 hybrid = physical_from_dict(action)
-                env.hybrid_validator.validate(hybrid, feasible)
+                env.action_validator.validate(hybrid, feasible)
                 ok, reason = self.oracle.check_action_executable(
                     hybrid, outputs, feasible, prev_th
                 )

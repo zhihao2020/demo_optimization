@@ -5,6 +5,7 @@ battery:
   P_cap_W: 1.0e8
   E_cap_J: 1.8e12  # 500e6 * 3600
   eta: 0.85
+  eta_charge: 1.0  # Modelica Battery.eta_charge；1.0=无损充电，与 8760h 实例一致
   SOC_min: 0.1
   SOC_max: 0.9
   SOC_safe_min: 0.15

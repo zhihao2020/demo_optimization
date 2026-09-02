@@ -33,6 +33,32 @@ from .buffer import SafetyDataset
 from .givesafe_collector import GiveSafeTransitionCollector
 
 
+def _torch_device() -> str:
+    """Honor OPTIMAL_DEMO_DEVICE / CUDA_VISIBLE_DEVICES before auto CUDA."""
+    raw = (os.environ.get("OPTIMAL_DEMO_DEVICE") or "").strip().lower()
+    hidden = (os.environ.get("CUDA_VISIBLE_DEVICES") or "").strip()
+    if raw == "cpu" or hidden in ("-1", "none"):
+        return "cpu"
+    import torch
+
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def _pin_torch_threads() -> None:
+    threads = int(os.environ.get("OPTIMAL_DEMO_TORCH_THREADS") or os.environ.get("OMP_NUM_THREADS") or "0")
+    if threads <= 0:
+        return
+    import torch
+
+    for key in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        os.environ.setdefault(key, str(threads))
+    torch.set_num_threads(max(1, threads))
+    try:
+        torch.set_num_interop_threads(1)
+    except RuntimeError:
+        pass
+
+
 def _soft_shell_enabled(explicit: bool | None = None) -> bool:
     """CLI/显式参数优先；否则读环境变量 ``SOFT_SHELL=1``。"""
     if explicit is not None:
@@ -442,6 +468,7 @@ def run_hybrid_training(
     )
     rew_cfg = env.reward_calculator.config
     paper_algo = _paper_algo_cfg(root)
+    _pin_torch_threads()
     agent = HybridTD3(
         obs_dim=int(np.prod(env.observation_space.shape)),
         gamma=float(paper_algo.get("gamma", rew_cfg.get("gamma", 0.99))),
@@ -453,6 +480,7 @@ def run_hybrid_training(
         q_clip=float(paper_algo.get("q_clip", 200.0)),
         parameterized_caes=bool(parameterized_caes),
         use_dynamic_support=bool(use_dynamic_support),
+        device=_torch_device(),
     )
     # 目标网络与带先验的 actor 同步
     agent.actor_target.load_state_dict(agent.actor.state_dict())
